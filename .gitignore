@@ -1,0 +1,4 @@
+# Root-level env files (if any)
+.env
+.env.*
+!.env.example
