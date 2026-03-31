@@ -1,0 +1,181 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum TenantId {
+  SAMS_TRADERS
+  AM_TRADERS
+}
+
+enum ProductType {
+  READY_MADE
+  MANUFACTURED
+}
+
+model Unit {
+  id                       String        @id @default(uuid()) @db.Uuid
+  tenantId                 TenantId      @map("tenant_id")
+  name                     String
+  rawMaterialPurchaseUnits RawMaterial[] @relation("RawMaterialPurchaseUnit")
+  rawMaterialSellingUnits  RawMaterial[] @relation("RawMaterialSellingUnit")
+  createdAt                DateTime      @default(now()) @map("created_at")
+  updatedAt                DateTime      @updatedAt @map("updated_at")
+  deletedAt                DateTime?     @map("deleted_at")
+
+  @@unique([tenantId, name])
+  @@map("units")
+}
+
+model Brand {
+  id           String        @id @default(uuid()) @db.Uuid
+  tenantId     TenantId      @map("tenant_id")
+  name         String
+  rawMaterials RawMaterial[]
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+  deletedAt    DateTime?     @map("deleted_at")
+
+  @@unique([tenantId, name])
+  @@map("brands")
+}
+
+model Category {
+  id           String        @id @default(uuid()) @db.Uuid
+  tenantId     TenantId      @map("tenant_id")
+  name         String
+  rawMaterials RawMaterial[]
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+  deletedAt    DateTime?     @map("deleted_at")
+
+  @@unique([tenantId, name])
+  @@map("categories")
+}
+
+model Size {
+  id           String        @id @default(uuid()) @db.Uuid
+  tenantId     TenantId      @map("tenant_id")
+  name         String
+  rawMaterials RawMaterial[]
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+  deletedAt    DateTime?     @map("deleted_at")
+
+  @@unique([tenantId, name])
+  @@map("sizes")
+}
+
+model Warehouse {
+  id        String    @id @default(uuid()) @db.Uuid
+  tenantId  TenantId  @map("tenant_id")
+  name      String
+  location  String
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([tenantId, name])
+  @@map("warehouses")
+}
+
+model Customer {
+  id           String    @id @default(uuid()) @db.Uuid
+  tenantId     TenantId  @map("tenant_id")
+  name         String
+  businessName String    @map("business_name")
+  email        String?
+  mobileNumber String    @map("mobile_number")
+  location     String
+  address      String
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+
+  @@unique([tenantId, businessName])
+  @@index([tenantId, name])
+  @@map("customers")
+}
+
+model Supplier {
+  id           String    @id @default(uuid()) @db.Uuid
+  tenantId     TenantId  @map("tenant_id")
+  name         String
+  businessName String    @map("business_name")
+  email        String?
+  mobileNumber String    @map("mobile_number")
+  location     String
+  address      String
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+
+  @@unique([tenantId, businessName])
+  @@index([tenantId, name])
+  @@map("suppliers")
+}
+
+model RawMaterial {
+  id             String               @id @default(uuid()) @db.Uuid
+  tenantId       TenantId             @map("tenant_id")
+  name           String
+  brandId        String               @db.Uuid @map("brand_id")
+  categoryId     String               @db.Uuid @map("category_id")
+  sizeId         String               @db.Uuid @map("size_id")
+  purchaseUnitId String               @db.Uuid @map("purchase_unit_id")
+  sellingUnitId  String               @db.Uuid @map("selling_unit_id")
+  quantity       Decimal              @db.Decimal(18, 2)
+  purchasePrice  Decimal              @map("purchase_price") @db.Decimal(18, 2)
+  sellingPrice   Decimal              @map("selling_price") @db.Decimal(18, 2)
+  brand          Brand                @relation(fields: [brandId], references: [id])
+  category       Category             @relation(fields: [categoryId], references: [id])
+  size           Size                 @relation(fields: [sizeId], references: [id])
+  purchaseUnit   Unit                 @relation("RawMaterialPurchaseUnit", fields: [purchaseUnitId], references: [id])
+  sellingUnit    Unit                 @relation("RawMaterialSellingUnit", fields: [sellingUnitId], references: [id])
+  productLines   ProductRawMaterial[]
+  createdAt      DateTime             @default(now()) @map("created_at")
+  updatedAt      DateTime             @updatedAt @map("updated_at")
+  deletedAt      DateTime?            @map("deleted_at")
+
+  @@unique([tenantId, name])
+  @@index([tenantId, name])
+  @@map("raw_materials")
+}
+
+model Product {
+  id            String               @id @default(uuid()) @db.Uuid
+  tenantId      TenantId             @map("tenant_id")
+  name          String
+  productType   ProductType          @map("product_type")
+  packagingCost Decimal              @map("packaging_cost") @db.Decimal(18, 2)
+  netAmount     Decimal              @map("net_amount") @db.Decimal(18, 2)
+  materials     ProductRawMaterial[]
+  createdAt     DateTime             @default(now()) @map("created_at")
+  updatedAt     DateTime             @updatedAt @map("updated_at")
+  deletedAt     DateTime?            @map("deleted_at")
+
+  @@unique([tenantId, name])
+  @@index([tenantId, name])
+  @@map("products")
+}
+
+model ProductRawMaterial {
+  id            String      @id @default(uuid()) @db.Uuid
+  tenantId      TenantId    @map("tenant_id")
+  productId     String      @db.Uuid @map("product_id")
+  rawMaterialId String      @db.Uuid @map("raw_material_id")
+  quantity      Decimal     @db.Decimal(18, 2)
+  rate          Decimal     @db.Decimal(18, 2)
+  amount        Decimal     @db.Decimal(18, 2)
+  product       Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  rawMaterial   RawMaterial @relation(fields: [rawMaterialId], references: [id])
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+  deletedAt     DateTime?   @map("deleted_at")
+
+  @@index([tenantId, productId])
+  @@map("product_raw_materials")
+}
