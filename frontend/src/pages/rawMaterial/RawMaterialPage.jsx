@@ -131,7 +131,7 @@ const RawMaterialPage = () => {
             <p className="text-xs font-bold uppercase tracking-[0.26em] text-blue-500">
               Inventory Control
             </p>
-            <h2 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900">
+            <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">
               Raw Materials
             </h2>
             <p className="mt-2 text-sm text-slate-500">
@@ -236,12 +236,13 @@ const RawMaterialPage = () => {
           <FormInput label="Purchase Price" required type="number" step="0.01" error={form.formState.errors.purchasePrice?.message} {...form.register("purchasePrice")} />
           <FormInput label="Selling Price" required type="number" step="0.01" error={form.formState.errors.sellingPrice?.message} {...form.register("sellingPrice")} />
 
-          <div className="flex gap-3 xl:col-span-3">
-            <Button type="submit">{editingId ? "Update" : "Create"}</Button>
+          <div className="flex flex-col gap-3 sm:flex-row xl:col-span-3">
+            <Button type="submit" className="w-full sm:w-auto">{editingId ? "Update" : "Create"}</Button>
             {editingId && (
               <Button
                 type="button"
                 variant="secondary"
+                className="w-full sm:w-auto"
                 onClick={() => {
                   setEditingId("");
                   form.reset(defaultValues);
@@ -318,9 +319,9 @@ const RawMaterialPage = () => {
             </table>
           </div>
 
-          <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-5 py-4 text-sm text-slate-500">
-            <span>{total} total records</span>
-            <div className="flex items-center gap-2">
+          <div className="flex flex-col gap-3 border-t border-slate-100 px-5 py-4 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+            <span className="text-center sm:text-left">{total} total records</span>
+            <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-end">
               <Button variant="secondary" type="button" disabled={page <= 1} onClick={() => load(page - 1, search)}>
                 Prev
               </Button>

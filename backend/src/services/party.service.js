@@ -20,8 +20,14 @@ const buildListWhere = (tenantId, search) => ({
             },
           },
           {
-            mobileNumber: {
+            phoneNumber: {
               contains: search,
+            },
+          },
+          {
+            email: {
+              contains: search,
+              mode: "insensitive",
             },
           },
         ],
@@ -34,8 +40,7 @@ const mapPartyData = (tenantId, data) => ({
   name: data.name,
   businessName: data.businessName,
   email: data.email || null,
-  mobileNumber: data.mobileNumber,
-  location: data.location,
+  phoneNumber: data.phoneNumber,
   address: data.address,
 });
 

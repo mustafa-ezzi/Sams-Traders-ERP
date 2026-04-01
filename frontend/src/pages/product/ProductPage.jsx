@@ -114,7 +114,7 @@ const ProductPage = () => {
             <p className="text-xs font-bold uppercase tracking-[0.26em] text-blue-500">
               Production Catalog
             </p>
-            <h2 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900">
+            <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">
               Products
             </h2>
             <p className="mt-2 text-sm text-slate-500">
@@ -274,14 +274,15 @@ const ProductPage = () => {
             )}
           </div>
 
-          <div className="flex gap-3 xl:col-span-3">
-            <Button className="w-fit" type="submit">
+          <div className="flex flex-col gap-3 sm:flex-row xl:col-span-3">
+            <Button className="w-full sm:w-fit" type="submit">
               {editingId ? "Update" : "Create"}
             </Button>
             {editingId && (
               <Button
                 type="button"
                 variant="secondary"
+                className="w-full sm:w-auto"
                 onClick={() => {
                   setEditingId("");
                   form.reset(defaultValues);
@@ -360,9 +361,9 @@ const ProductPage = () => {
             </table>
           </div>
 
-          <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-5 py-4 text-sm text-slate-500">
-            <span>{total} total records</span>
-            <div className="flex items-center gap-2">
+          <div className="flex flex-col gap-3 border-t border-slate-100 px-5 py-4 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+            <span className="text-center sm:text-left">{total} total records</span>
+            <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-end">
               <Button variant="secondary" type="button" disabled={page <= 1} onClick={() => load(page - 1, search)}>
                 Prev
               </Button>

@@ -26,8 +26,7 @@ export const partyBodySchema = z.object({
     .email("Email must be valid")
     .optional()
     .or(z.literal("")),
-  mobileNumber: z.string().trim().min(1, "Mobile number is required"),
-  location: z.string().trim().min(1, "Location is required"),
+  phoneNumber: z.string().trim().min(1, "Phone number is required"),
   address: z.string().trim().min(1, "Address is required"),
 });
 

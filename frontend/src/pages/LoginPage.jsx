@@ -90,14 +90,28 @@ const LoginPage = () => {
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-10">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(55,125,255,0.22),transparent_24%),radial-gradient(circle_at_80%_20%,rgba(0,187,249,0.18),transparent_20%),linear-gradient(180deg,#f3f7ff_0%,#eef3fb_100%)]" />
 
-      <div className="relative z-10 flex justify-center w-full">
-        <Card className="bg-white/92 w-full max-w-lg">
+      <div className="relative z-10 flex w-full justify-center">
+        <Card className="w-full max-w-lg bg-white/92 px-4 py-5 sm:px-5 sm:py-6">
           <h2 className="text-2xl font-extrabold tracking-tight text-slate-900">Sign In</h2>
           <p className="mt-2 text-sm text-slate-500">
             Choose API login if your auth route is ready, or paste a JWT manually.
           </p>
-
-
+          <div className="mt-6 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1">
+            <Button
+              type="button"
+              onClick={() => setTab("api")}
+              variant={tab === "api" ? "primary" : "ghost"}
+            >
+              API Login
+            </Button>
+            <Button
+              type="button"
+              onClick={() => setTab("manual")}
+              variant={tab === "manual" ? "primary" : "ghost"}
+            >
+              Manual Token
+            </Button>
+          </div>
 
           <div className="mt-6">
             {tab === "api" ? (

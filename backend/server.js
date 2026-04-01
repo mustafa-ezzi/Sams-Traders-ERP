@@ -12,6 +12,8 @@ import unitRoutes from "./src/routes/unitRoutes.js";
 import sizeRoutes from "./src/routes/sizeRoutes.js";
 import categoryRoutes from "./src/routes/categoryRoutes.js";
 import brandRoutes from "./src/routes/brandRoutes.js";
+import warehouseRoutes from "./src/routes/warehouse.routes.js";
+import openingStockRoutes from "./src/routes/openingStock.routes.js";
 
 dotenv.config();
 
@@ -29,6 +31,8 @@ app.use("/api/v1/units", authenticateTenant, unitRoutes);
 app.use("/api/v1/sizes", authenticateTenant, sizeRoutes);
 app.use("/api/v1/categories", authenticateTenant, categoryRoutes);
 app.use("/api/v1/brands", authenticateTenant, brandRoutes);
+app.use("/api/v1/warehouses", authenticateTenant, warehouseRoutes);
+app.use("/api/v1/opening-stocks", authenticateTenant, openingStockRoutes);
 
 app.get("/", async (req, res) => {
   try {

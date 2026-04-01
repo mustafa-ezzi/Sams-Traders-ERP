@@ -22,7 +22,7 @@ const ChevronRight = ({ className = "" }) => (
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
-    strokeWidth="2"
+    strokeWidth="1.8"
     strokeLinecap="round"
     strokeLinejoin="round"
     className={className}
@@ -72,13 +72,20 @@ const icons = {
       <path d="M12 11v10" />
     </Icon>
   ),
+  parties: (
+    <Icon className="h-[15px] w-[15px]">
+      <path d="M16 20v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+      <circle cx="10" cy="7" r="4" />
+      <path d="M20 8v6" />
+      <path d="M17 11h6" />
+    </Icon>
+  ),
 };
 
 const navigation = [
   {
-    title: "Inventory Core",
+    title: "Inventory",
     id: "inventory",
-    defaultOpen: true,
     items: [
       { to: "/raw-materials", label: "Raw Materials", icon: icons.raw },
       { to: "/products", label: "Products", icon: icons.products },
@@ -87,9 +94,16 @@ const navigation = [
     ],
   },
   {
+    title: "Parties",
+    id: "parties",
+    items: [
+      { to: "/customers", label: "Customers", icon: icons.parties },
+      { to: "/suppliers", label: "Suppliers", icon: icons.parties },
+    ],
+  },
+  {
     title: "Masters",
     id: "masters",
-    defaultOpen: true,
     items: [
       { to: "/masters/units", label: "Units", icon: icons.masters },
       { to: "/masters/sizes", label: "Sizes", icon: icons.masters },
@@ -100,15 +114,17 @@ const navigation = [
 ];
 
 const pageTitles = {
-  "/": { title: "Dashboard", eyebrow: "ERP Overview" },
-  "/raw-materials": { title: "Raw Materials", eyebrow: "Inventory Control" },
-  "/products": { title: "Products", eyebrow: "Production Catalog" },
-  "/warehouses": { title: "Warehouses", eyebrow: "Storage Network" },
-  "/opening-stock": { title: "Opening Stock", eyebrow: "Inventory Snapshot" },
-  "/masters/units": { title: "Units", eyebrow: "Master Data" },
-  "/masters/sizes": { title: "Sizes", eyebrow: "Master Data" },
-  "/masters/categories": { title: "Categories", eyebrow: "Master Data" },
-  "/masters/brands": { title: "Brands", eyebrow: "Master Data" },
+  "/": { title: "Dashboard", eyebrow: "Overview" },
+  "/raw-materials": { title: "Raw Materials", eyebrow: "Inventory" },
+  "/products": { title: "Products", eyebrow: "Inventory" },
+  "/warehouses": { title: "Warehouses", eyebrow: "Inventory" },
+  "/opening-stock": { title: "Opening Stock", eyebrow: "Inventory" },
+  "/customers": { title: "Customers", eyebrow: "Parties" },
+  "/suppliers": { title: "Suppliers", eyebrow: "Parties" },
+  "/masters/units": { title: "Units", eyebrow: "Masters" },
+  "/masters/sizes": { title: "Sizes", eyebrow: "Masters" },
+  "/masters/categories": { title: "Categories", eyebrow: "Masters" },
+  "/masters/brands": { title: "Brands", eyebrow: "Masters" },
 };
 
 const tenantLabels = {
@@ -116,50 +132,62 @@ const tenantLabels = {
   AM_TRADERS: "AM Traders",
 };
 
-// Collapsible nav section
 const NavSection = ({ section, onNavigate }) => {
-  const [open, setOpen] = useState(section.defaultOpen);
+  const [open, setOpen] = useState(false); // collapsed by default
 
   return (
     <div>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="group flex w-full items-center justify-between rounded-xl px-3 py-2 transition hover:bg-white/5"
+        className="group flex w-full items-center justify-between rounded-lg px-3 py-2 transition-colors hover:bg-white/[0.05]"
       >
-        <span className="text-[10px] font-bold uppercase tracking-[0.28em] text-slate-500">
+        <span className="text-[14px] font-semibold uppercase tracking-widest text-slate-500 transition-colors group-hover:text-slate-400">
           {section.title}
         </span>
         <ChevronRight
-          className={`h-3.5 w-3.5 text-slate-600 transition-transform duration-200 ${
+          className={`h-3 w-3 text-slate-600 transition-all duration-200 group-hover:text-slate-400 ${
             open ? "rotate-90" : ""
           }`}
         />
       </button>
 
       <div
-        className={`overflow-hidden transition-all duration-250 ease-in-out ${
-          open ? "max-h-96 opacity-100" : "max-h-0 opacity-0"
+        className={`overflow-hidden transition-all duration-200 ease-in-out ${
+          open ? "max-h-80 opacity-100" : "max-h-0 opacity-0"
         }`}
       >
-        <div className="mt-1 space-y-0.5 pb-1">
+        <div className="mt-0.5 space-y-px pb-1">
           {section.items.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
               onClick={onNavigate}
               className={({ isActive }) =>
-                `group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${
+                `group flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all ${
                   isActive
-                    ? "bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-[0_8px_20px_-10px_rgba(56,189,248,0.65)]"
-                    : "text-slate-300 hover:bg-white/[0.07] hover:text-white"
+                    ? "bg-white/[0.1] text-white"
+                    : "text-slate-400 hover:bg-white/[0.05] hover:text-slate-200"
                 }`
               }
             >
-              <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-white/8 text-cyan-300 transition group-hover:bg-white/12">
-                {item.icon}
-              </span>
-              <span>{item.label}</span>
+              {({ isActive }) => (
+                <>
+                  <span
+                    className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md transition-colors ${
+                      isActive
+                        ? "bg-blue-500/20 text-blue-300"
+                        : "text-slate-500 group-hover:text-slate-300"
+                    }`}
+                  >
+                    {item.icon}
+                  </span>
+                  <span className="font-medium">{item.label}</span>
+                  {isActive && (
+                    <span className="ml-auto h-1.5 w-1.5 rounded-full bg-blue-400" />
+                  )}
+                </>
+              )}
             </NavLink>
           ))}
         </div>
@@ -174,44 +202,52 @@ const Layout = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const pageMeta = useMemo(
-    () => pageTitles[pathname] || { title: "ERP Workspace", eyebrow: "Operations" },
+    () => pageTitles[pathname] || { title: "Workspace", eyebrow: "ERP" },
     [pathname]
   );
 
   const SidebarContent = () => (
-    <>
-      {/* Tenant card */}
-      <div className="rounded-2xl border border-white/8 bg-white/[0.05] p-4">
-        <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">Active Tenant</p>
-        <p className="mt-1.5 text-base font-semibold text-white">{tenantLabels[tenantId]}</p>
+    <div className="flex h-full flex-col">
+      {/* Brand / Tenant */}
+      <div className="px-3 pb-5">
+        <p className="text-[26px] font-semibold text-white/90">{tenantLabels[tenantId]}</p>
+        <p className="mt-0.5 text-[14px] text-slate-500">ERP Workspace</p>
       </div>
 
-      {/* Dashboard — always visible, no section */}
-      <div className="mt-6">
+      <div className="h-px bg-white/[0.06]" />
+
+      {/* Dashboard */}
+      <div className="mt-4 px-0">
         <NavLink
           to="/"
           end
           onClick={() => setMobileOpen(false)}
           className={({ isActive }) =>
-            `group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${
+            `group flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all ${
               isActive
-                ? "bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-[0_8px_20px_-10px_rgba(56,189,248,0.65)]"
-                : "text-slate-300 hover:bg-white/[0.07] hover:text-white"
+                ? "bg-white/[0.1] text-white"
+                : "text-slate-400 hover:bg-white/[0.05] hover:text-slate-200"
             }`
           }
         >
-          <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-white/8 text-cyan-300 transition group-hover:bg-white/12">
-            {icons.dashboard}
-          </span>
-          <span>Dashboard</span>
+          {({ isActive }) => (
+            <>
+              <span
+                className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md transition-colors ${
+                  isActive ? "bg-blue-500/20 text-blue-300" : "text-slate-500 group-hover:text-slate-300"
+                }`}
+              >
+                {icons.dashboard}
+              </span>
+              <span className="font-medium">Dashboard</span>
+              {isActive && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-blue-400" />}
+            </>
+          )}
         </NavLink>
       </div>
 
-      {/* Divider */}
-      <div className="my-4 h-px bg-white/[0.07]" />
-
       {/* Collapsible sections */}
-      <nav className="space-y-2">
+      <nav className="mt-4 flex-1 space-y-0.5">
         {navigation.map((section) => (
           <NavSection
             key={section.id}
@@ -220,26 +256,22 @@ const Layout = () => {
           />
         ))}
       </nav>
-
-      {/* Status card */}
-      
-    </>
+    </div>
   );
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-slate-50">
       {/* Sidebar */}
-      <div
-        className={`fixed inset-y-0 left-0 z-40 w-[272px] transform border-r border-white/8 bg-[linear-gradient(180deg,#0c1429_0%,#101c38_50%,#111827_100%)] px-4 py-6 text-white shadow-[20px_0_50px_-20px_rgba(15,23,42,0.7)] transition duration-300 lg:translate-x-0 ${
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 w-[240px] transform border-r border-white/[0.06] bg-[#0d1424] px-3 py-5 transition duration-300 lg:translate-x-0 ${
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="flex items-center justify-between">
-          {/* Logo slot */}
-          <div />
+        <div className="mb-4 flex items-center justify-between px-3">
+          {/* Logo slot — drop your SVG/wordmark here */}
           <button
             type="button"
-            className="rounded-xl border border-white/10 bg-white/5 p-2 text-slate-300 lg:hidden"
+            className="rounded-lg p-1.5 text-slate-500 hover:bg-white/5 hover:text-slate-300 lg:hidden"
             onClick={() => setMobileOpen(false)}
           >
             <Icon className="h-4 w-4">
@@ -248,50 +280,48 @@ const Layout = () => {
           </button>
         </div>
 
-        <div className="mt-6 flex h-[calc(100vh-80px)] flex-col overflow-y-auto">
+        <div className="h-[calc(100vh-56px)] overflow-y-auto">
           <SidebarContent />
         </div>
-      </div>
+      </aside>
 
       {/* Mobile backdrop */}
       {mobileOpen && (
         <button
           type="button"
-          className="fixed inset-0 z-30 bg-slate-950/50 backdrop-blur-sm lg:hidden"
+          aria-label="Close menu"
+          className="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm lg:hidden"
           onClick={() => setMobileOpen(false)}
         />
       )}
 
-      {/* Main content */}
-      <div className="lg:pl-[272px]">
-        <header className="sticky top-0 z-20 border-b border-white/60 bg-white/75 backdrop-blur-xl">
-          <div className="flex items-center justify-between gap-4 px-4 py-4 lg:px-8">
+      {/* Main */}
+      <div className="lg:pl-[240px]">
+        <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-white/80 backdrop-blur-xl">
+          <div className="flex items-center justify-between gap-4 px-4 py-3 lg:px-7">
             <div className="flex items-center gap-3">
               <button
                 type="button"
-                className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm lg:hidden"
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 lg:hidden"
                 onClick={() => setMobileOpen(true)}
               >
-                <Icon className="h-5 w-5">
+                <Icon className="h-4 w-4">
                   <path d="M4 7h16M4 12h16M4 17h16" />
                 </Icon>
               </button>
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.26em] text-blue-500">
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-blue-500">
                   {pageMeta.eyebrow}
                 </p>
-                <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">
+                <h1 className="text-lg font-bold tracking-tight text-slate-900 sm:text-xl">
                   {pageMeta.title}
                 </h1>
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center justify-end gap-3">
-              <div className="rounded-xl border border-cyan-200 bg-cyan-50 px-3.5 py-2 text-sm font-medium text-cyan-700">
-                {tenantLabels[tenantId]}
-              </div>
+            <div className="flex items-center gap-2">
               <select
-                className="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
                 value={tenantId}
                 onChange={(e) => setTenant(e.target.value)}
               >
@@ -305,7 +335,7 @@ const Layout = () => {
           </div>
         </header>
 
-        <main className="px-4 py-6 lg:px-8 lg:py-8">
+        <main className="px-3 py-5 sm:px-5 lg:px-7 lg:py-7">
           <div className="mx-auto max-w-[1600px]">
             <Outlet />
           </div>

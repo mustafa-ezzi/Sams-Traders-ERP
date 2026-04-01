@@ -5,6 +5,10 @@ export const createMasterService = (resource) => ({
     const response = await axiosInstance.get(`/${resource}`, { params });
     return response.data;
   },
+  async getById(id) {
+    const response = await axiosInstance.get(`/${resource}/${id}`);
+    return response.data;
+  },
   async create(payload) {
     const response = await axiosInstance.post(`/${resource}`, payload);
     return response.data;
@@ -18,4 +22,3 @@ export const createMasterService = (resource) => ({
     return response.data;
   },
 });
-
