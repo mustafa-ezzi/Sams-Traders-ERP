@@ -17,16 +17,14 @@ const schema = z.object({
   date: z.string().min(1, "Date is required"),
   warehouseId: z.string().uuid("warehouseId must be a valid UUID"),
   rawMaterialId: z.string().uuid("rawMaterialId must be a valid UUID"),
-  purchaseQuantity: z.coerce.number().min(0),
-  sellingQuantity: z.coerce.number().min(0),
+  quantity: z.coerce.number().min(0),
 });
 
 const defaultValues = {
   date: "",
   warehouseId: "",
   rawMaterialId: "",
-  purchaseQuantity: 0,
-  sellingQuantity: 0,
+  quantity: 0,
 };
 
 const selectClassName =
@@ -47,6 +45,7 @@ const OpeningStockPage = () => {
   const limit = 10;
   const toast = useToast();
   const form = useForm({ resolver: zodResolver(schema), defaultValues });
+  const selectedRawMaterialId = form.watch("rawMaterialId");
 
   const load = async (nextPage = page, nextSearch = search) => {
     setLoading(true);
@@ -91,15 +90,16 @@ const OpeningStockPage = () => {
   const onSubmit = form.handleSubmit(async (values) => {
     try {
       if (editingId) {
-        await openingStockService.update(editingId, values);
-        toast.success("Opening stock updated");
+        const response = await openingStockService.update(editingId, values);
+        toast.success(response.message || "Opening stock updated");
       } else {
-        await openingStockService.create(values);
-        toast.success("Opening stock created");
+        const response = await openingStockService.create(values);
+        toast.success(response.message || "Opening stock created");
       }
       setEditingId("");
       form.reset(defaultValues);
       await load();
+      await loadOptions();
     } catch (submitError) {
       const message =
         submitError?.response?.data?.message || "Save failed";
@@ -113,6 +113,7 @@ const OpeningStockPage = () => {
       await openingStockService.remove(id);
       toast.success("Opening stock deleted");
       await load();
+      await loadOptions();
     } catch (deleteError) {
       const message =
         deleteError?.response?.data?.message || "Delete failed";
@@ -122,6 +123,15 @@ const OpeningStockPage = () => {
   };
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
+  const editingRecord = records.find((item) => item.id === editingId);
+  const selectedRawMaterial = rawMaterials.find(
+    (item) => item.id === selectedRawMaterialId
+  );
+  const currentAvailability = Number(selectedRawMaterial?.quantity || 0);
+  const previousAvailabilityHint =
+    editingRecord && editingRecord.rawMaterialId === selectedRawMaterialId
+      ? Number(editingRecord.previousAvailability || 0)
+      : currentAvailability;
 
   return (
     <section className="space-y-6">
@@ -140,14 +150,11 @@ const OpeningStockPage = () => {
       <Card className="bg-[linear-gradient(135deg,rgba(255,255,255,0.92),rgba(240,248,255,0.96))]">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="text-xs font-bold uppercase tracking-[0.26em] text-blue-500">
-              Inventory Snapshot
-            </p>
             <h2 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900">
               Opening Stock
             </h2>
             <p className="mt-2 text-sm text-slate-500">
-              Register initial stock balances so the ERP starts from a clean baseline.
+              Opening stock updates raw material inventory automatically.
             </p>
           </div>
           <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
@@ -212,10 +219,12 @@ const OpeningStockPage = () => {
                 {form.formState.errors.rawMaterialId.message}
               </p>
             )}
+            <p className="text-xs font-medium text-slate-500">
+              Previous available stock: {formatDecimal(previousAvailabilityHint)}
+            </p>
           </div>
 
-          <FormInput label="Purchase Quantity" required type="number" step="0.01" error={form.formState.errors.purchaseQuantity?.message} {...form.register("purchaseQuantity")} />
-          <FormInput label="Selling Quantity" required type="number" step="0.01" error={form.formState.errors.sellingQuantity?.message} {...form.register("sellingQuantity")} />
+          <FormInput label="Quantity" required type="number" step="0.01" error={form.formState.errors.quantity?.message} {...form.register("quantity")} />
           <div className="flex flex-col gap-3 xl:justify-end">
             <Button className="w-full" type="submit">
               {editingId ? "Update" : "Create"}
@@ -246,8 +255,9 @@ const OpeningStockPage = () => {
                   <th className="px-5 py-4 font-bold text-slate-700">Date</th>
                   <th className="px-5 py-4 font-bold text-slate-700">Warehouse</th>
                   <th className="px-5 py-4 font-bold text-slate-700">Raw Material</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Purchase Qty</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Selling Qty</th>
+                  <th className="px-5 py-4 font-bold text-slate-700">Previous Stock</th>
+                  <th className="px-5 py-4 font-bold text-slate-700">Opening Qty</th>
+                  <th className="px-5 py-4 font-bold text-slate-700">Available Stock</th>
                   <th className="px-5 py-4 text-right font-bold text-slate-700">Actions</th>
                 </tr>
               </thead>
@@ -257,10 +267,11 @@ const OpeningStockPage = () => {
                     <td className="px-5 py-4 font-semibold text-slate-800">{String(row.date).slice(0, 10)}</td>
                     <td className="px-5 py-4 text-slate-600">{row.warehouse?.name || "-"}</td>
                     <td className="px-5 py-4 text-slate-600">{row.rawMaterial?.name || "-"}</td>
-                    <td className="px-5 py-4 text-slate-600">{formatDecimal(row.purchaseQuantity)}</td>
-                    <td className="px-5 py-4 text-slate-600">{formatDecimal(row.sellingQuantity)}</td>
+                    <td className="px-5 py-4 text-slate-600">{formatDecimal(row.previousAvailability)}</td>
+                    <td className="px-5 py-4 text-slate-600">{formatDecimal(row.quantity)}</td>
+                    <td className="px-5 py-4 text-slate-600">{formatDecimal(row.availableQuantity)}</td>
                     <td className="px-5 py-4 text-right">
-                      <button type="button" className="mr-3 font-semibold text-blue-600 transition hover:text-blue-800" onClick={() => { setEditingId(row.id); form.reset({ date: String(row.date).slice(0, 10), warehouseId: row.warehouseId, rawMaterialId: row.rawMaterialId, purchaseQuantity: Number(row.purchaseQuantity), sellingQuantity: Number(row.sellingQuantity) }); }}>
+                      <button type="button" className="mr-3 font-semibold text-blue-600 transition hover:text-blue-800" onClick={() => { setEditingId(row.id); form.reset({ date: String(row.date).slice(0, 10), warehouseId: row.warehouseId, rawMaterialId: row.rawMaterialId, quantity: Number(row.quantity) }); }}>
                         Edit
                       </button>
                       <button type="button" className="font-semibold text-rose-600 transition hover:text-rose-800" onClick={() => setDeleteId(row.id)}>

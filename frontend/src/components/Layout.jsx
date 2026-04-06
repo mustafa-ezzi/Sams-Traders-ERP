@@ -320,14 +320,14 @@ const Layout = () => {
             </div>
 
             <div className="flex items-center gap-2">
-              <select
+              {/* <select
                 className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
                 value={tenantId}
                 onChange={(e) => setTenant(e.target.value)}
               >
                 <option value="SAMS_TRADERS">SAMS Traders</option>
                 <option value="AM_TRADERS">AM Traders</option>
-              </select>
+              </select> */}
               <Button variant="secondary" onClick={logout}>
                 Logout
               </Button>

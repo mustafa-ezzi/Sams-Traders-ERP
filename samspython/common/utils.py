@@ -1,0 +1,4 @@
+TENANTS = {
+    "SAMS_TRADERS": "SAMS_TRADERS",
+    "AM_TRADERS": "AM_TRADERS",
+}

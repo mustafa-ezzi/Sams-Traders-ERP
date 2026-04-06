@@ -12,19 +12,19 @@ import { useToast } from "../context/ToastContext";
 
 const schema = z.object({
   token: z.string().min(1, "JWT token is required"),
-  tenantId: z.enum(["SAMS_TRADERS", "AM_TRADERS"]),
+  tenant_id: z.enum(["SAMS_TRADERS", "AM_TRADERS"]),
 });
 
 const apiLoginSchema = z.object({
   email: z.string().email("Enter a valid email"),
   password: z.string().min(6, "Password must be at least 6 characters"),
-  tenantId: z.enum(["SAMS_TRADERS", "AM_TRADERS"]),
+  tenant_id: z.enum(["SAMS_TRADERS", "AM_TRADERS"]),
 });
 
 const decodeTenantFromJwt = (token) => {
   try {
     const payload = JSON.parse(atob(token.split(".")[1]));
-    return payload?.tenant_id || payload?.tenantId || "";
+    return payload?.tenant_id || payload?.tenant_id || "";
   } catch {
     return "";
   }
@@ -40,22 +40,22 @@ const LoginPage = () => {
 
   const form = useForm({
     resolver: zodResolver(schema),
-    defaultValues: { token: "", tenantId: "SAMS_TRADERS" },
+    defaultValues: { token: "", tenant_id: "SAMS_TRADERS" },
   });
   const apiForm = useForm({
     resolver: zodResolver(apiLoginSchema),
-    defaultValues: { email: "", password: "", tenantId: "SAMS_TRADERS" },
+    defaultValues: { email: "", password: "", tenant_id: "SAMS_TRADERS" },
   });
 
   const onSubmit = form.handleSubmit((values) => {
     setError("");
     const tenantInJwt = decodeTenantFromJwt(values.token);
-    if (tenantInJwt && tenantInJwt !== values.tenantId) {
+    if (tenantInJwt && tenantInJwt !== values.tenant_id) {
       setError(`Selected tenant does not match token tenant (${tenantInJwt}).`);
       toast.error("Tenant mismatch in token");
       return;
     }
-    login(values.token, values.tenantId);
+    login(values.token, values.tenant_id);
     toast.success("Login successful");
     navigate("/");
   });
@@ -71,7 +71,7 @@ const LoginPage = () => {
         toast.error("Token missing in response");
         return;
       }
-      login(token, values.tenantId);
+      login(token, values.tenant_id);
       toast.success("Login successful");
       navigate("/");
     } catch (apiError) {
@@ -120,7 +120,7 @@ const LoginPage = () => {
                 <FormInput label="Password" required type="password" error={apiForm.formState.errors.password?.message} {...apiForm.register("password")} />
                 <div className="space-y-2">
                   <label className="block text-sm font-semibold text-slate-700">Tenant</label>
-                  <select className="w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100" {...apiForm.register("tenantId")}>
+                  <select className="w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100" {...apiForm.register("tenant_id")}>
                     <option value="SAMS_TRADERS">SAMS Traders</option>
                     <option value="AM_TRADERS">AM Traders</option>
                   </select>
@@ -134,7 +134,7 @@ const LoginPage = () => {
                 <FormInput label="JWT Token" required as="textarea" rows={5} error={form.formState.errors.token?.message} {...form.register("token")} />
                 <div className="space-y-2">
                   <label className="block text-sm font-semibold text-slate-700">Tenant</label>
-                  <select className="w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100" {...form.register("tenantId")}>
+                  <select className="w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100" {...form.register("tenant_id")}>
                     <option value="SAMS_TRADERS">SAMS Traders</option>
                     <option value="AM_TRADERS">AM Traders</option>
                   </select>

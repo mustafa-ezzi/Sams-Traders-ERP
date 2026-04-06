@@ -58,15 +58,11 @@ const WarehousePage = () => {
   return (
     <section className="space-y-6">
       <Card className="bg-[linear-gradient(135deg,rgba(255,255,255,0.92),rgba(240,248,255,0.96))]">
-        <p className="text-xs font-bold uppercase tracking-[0.26em] text-blue-500">
-          Storage Network
-        </p>
+        
         <h2 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900">
           Warehouses
         </h2>
-        <p className="mt-2 text-sm text-slate-500">
-          Create and manage storage locations for your ERP inventory flow.
-        </p>
+       
       </Card>
 
       <Card>

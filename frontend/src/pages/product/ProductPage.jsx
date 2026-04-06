@@ -111,15 +111,11 @@ const ProductPage = () => {
       <Card className="bg-[linear-gradient(135deg,rgba(255,255,255,0.92),rgba(240,248,255,0.96))]">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="text-xs font-bold uppercase tracking-[0.26em] text-blue-500">
-              Production Catalog
-            </p>
+            
             <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">
               Products
             </h2>
-            <p className="mt-2 text-sm text-slate-500">
-              Manage ready-made and manufactured products with clean costing inputs.
-            </p>
+           
           </div>
           <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
             <input

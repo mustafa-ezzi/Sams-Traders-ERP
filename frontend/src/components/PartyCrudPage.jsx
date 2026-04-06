@@ -140,15 +140,11 @@ const PartyCrudPage = ({ title, service }) => {
       <Card className="bg-[linear-gradient(135deg,rgba(255,255,255,0.92),rgba(224,242,254,0.96))]">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="text-xs font-bold uppercase tracking-[0.26em] text-sky-500">
-              Party Workflow
-            </p>
+           
             <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">
               {title}
             </h2>
-            <p className="mt-2 text-sm text-slate-500">
-              Manage {title.toLowerCase()} separately with complete contact details.
-            </p>
+           
           </div>
           <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
             <input
