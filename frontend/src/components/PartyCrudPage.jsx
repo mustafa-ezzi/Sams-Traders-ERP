@@ -12,16 +12,16 @@ import { useToast } from "../context/ToastContext";
 const schema = z.object({
   name: z.string().trim().min(1, "Name is required"),
   email: z.union([z.string().trim().email("Email must be valid"), z.literal("")]),
-  phoneNumber: z.string().trim().min(1, "Phone number is required"),
-  businessName: z.string().trim().min(1, "Business name is required"),
+  phone_number: z.string().trim().min(1, "Phone number is required"),
+  business_name: z.string().trim().min(1, "Business name is required"),
   address: z.string().trim().min(1, "Address is required"),
 });
 
 const defaultValues = {
   name: "",
   email: "",
-  phoneNumber: "",
-  businessName: "",
+  phone_number: "",
+  business_name: "",
   address: "",
 };
 
@@ -98,8 +98,8 @@ const PartyCrudPage = ({ title, service }) => {
       form.reset({
         name: record.name || "",
         email: record.email || "",
-        phoneNumber: record.phoneNumber || "",
-        businessName: record.businessName || "",
+        phone_number: record.phone_number || "",
+        business_name: record.business_name || "",
         address: record.address || "",
       });
     } catch (editError) {
@@ -173,8 +173,8 @@ const PartyCrudPage = ({ title, service }) => {
             label="Business Name"
             required
             placeholder="Enter business name"
-            error={form.formState.errors.businessName?.message}
-            {...form.register("businessName")}
+            error={form.formState.errors.business_name?.message}
+            {...form.register("business_name")}
           />
           <FormInput
             label="Email"
@@ -186,8 +186,8 @@ const PartyCrudPage = ({ title, service }) => {
             label="Phone Number"
             required
             placeholder="Enter phone number"
-            error={form.formState.errors.phoneNumber?.message}
-            {...form.register("phoneNumber")}
+            error={form.formState.errors.phone_number?.message}
+            {...form.register("phone_number")}
           />
           <FormInput
             label="Address"
@@ -245,9 +245,9 @@ const PartyCrudPage = ({ title, service }) => {
                     className="border-t border-slate-100 bg-white/80 transition hover:bg-blue-50/50"
                   >
                     <td className="px-5 py-4 font-medium text-slate-700">{record.name}</td>
-                    <td className="px-5 py-4 text-slate-600">{record.businessName}</td>
+                    <td className="px-5 py-4 text-slate-600">{record.business_name}</td>
                     <td className="px-5 py-4 text-slate-600">{record.email || "-"}</td>
-                    <td className="px-5 py-4 text-slate-600">{record.phoneNumber}</td>
+                    <td className="px-5 py-4 text-slate-600">{record.phone_number}</td>
                     <td className="px-5 py-4 text-slate-600">{record.address}</td>
                     <td className="px-5 py-4 text-right">
                       <button

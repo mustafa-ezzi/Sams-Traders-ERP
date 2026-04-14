@@ -56,7 +56,19 @@ const OpeningStockPage = () => {
         limit,
         search: nextSearch,
       });
-      setRecords(response.data || []);
+
+      // Transform response to ensure camelCase field names
+      const transformedRecords = (response.data || []).map(item => ({
+        ...item,
+        previousAvailability: item.previous_availability ?? item.previousAvailability,
+        currentAvailability: item.current_availability ?? item.currentAvailability,
+        availableQuantity: item.available_quantity ?? item.availableQuantity,
+        rawMaterial: item.raw_material ?? item.rawMaterial,
+        rawMaterialId: item.raw_material_id ?? item.rawMaterialId,
+        warehouseId: item.warehouse_id ?? item.warehouseId,
+      }));
+
+      setRecords(transformedRecords);
       setTotal(response.total || 0);
       setPage(response.page || nextPage);
     } catch (loadError) {

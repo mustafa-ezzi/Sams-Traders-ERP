@@ -3,6 +3,7 @@ from rest_framework.exceptions import AuthenticationFailed
 
 VALID_TENANTS = ["SAMS_TRADERS", "AM_TRADERS"]
 
+
 class TenantJWTAuthentication(JWTAuthentication):
     def authenticate(self, request):
         result = super().authenticate(request)
@@ -22,5 +23,6 @@ class TenantJWTAuthentication(JWTAuthentication):
             raise AuthenticationFailed("Tenant mismatch")
 
         request.tenant_id = tenant_id
+        user.tenant_id = tenant_id  # Attach tenant_id to user object for viewset access
 
         return (user, token)

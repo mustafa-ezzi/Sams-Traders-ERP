@@ -19,5 +19,21 @@ axiosInstance.interceptors.request.use((config) => {
   return config;
 });
 
+// Response interceptor to handle 401 (token expired or invalid)
+axiosInstance.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      // Token expired or invalid - clear storage and redirect to login
+      console.warn("Token expired or invalid. Logging out...");
+      localStorage.removeItem("token");
+      localStorage.removeItem("tenantId");
+      // Redirect to login page
+      window.location.href = "/login";
+    }
+    return Promise.reject(error);
+  }
+);
+
 export default axiosInstance;
 

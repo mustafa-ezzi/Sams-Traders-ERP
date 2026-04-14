@@ -16,26 +16,26 @@ import { useToast } from "../../context/ToastContext";
 
 const schema = z.object({
   name: z.string().trim().min(1, "Name is required"),
-  brandId: z.string().uuid("brandId must be a valid UUID"),
-  categoryId: z.string().uuid("categoryId must be a valid UUID"),
-  sizeId: z.string().uuid("sizeId must be a valid UUID"),
-  purchaseUnitId: z.string().uuid("purchaseUnitId must be a valid UUID"),
-  sellingUnitId: z.string().uuid("sellingUnitId must be a valid UUID"),
+  brand: z.string().uuid("brandId must be a valid UUID"),
+  category: z.string().uuid("categoryId must be a valid UUID"),
+  size: z.string().uuid("sizeId must be a valid UUID"),
+  purchase_unit: z.string().uuid("purchase_unit must be a valid UUID"),
+  selling_unit: z.string().uuid("selling_unitId must be a valid UUID"),
   quantity: z.coerce.number().min(0),
-  purchasePrice: z.coerce.number().min(0),
-  sellingPrice: z.coerce.number().min(0),
+  purchase_price: z.coerce.number().min(0),
+  selling_price: z.coerce.number().min(0),
 });
 
 const defaultValues = {
   name: "",
-  brandId: "",
-  categoryId: "",
-  sizeId: "",
-  purchaseUnitId: "",
-  sellingUnitId: "",
+  brand: "",
+  category: "",
+  size: "",
+  purchase_unit: "",
+  selling_unit: "",
   quantity: 0,
-  purchasePrice: 0,
-  sellingPrice: 0,
+  purchase_price: 0,
+  selling_price: 0,
 };
 
 const selectClassName =
@@ -128,11 +128,11 @@ const RawMaterialPage = () => {
       <Card className="bg-[linear-gradient(135deg,rgba(255,255,255,0.92),rgba(240,248,255,0.96))]">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-           
+
             <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">
               Raw Materials
             </h2>
-            
+
           </div>
           <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
             <input
@@ -162,7 +162,7 @@ const RawMaterialPage = () => {
             <label className="block text-sm font-semibold text-slate-700">
               Brand <span className="text-rose-500">*</span>
             </label>
-            <select className={selectClassName} {...form.register("brandId")} disabled={loadingOptions}>
+            <select className={selectClassName} {...form.register("brand")} disabled={loadingOptions}>
               <option value="">Select brand</option>
               {brands.map((item) => (
                 <option key={item.id} value={item.id}>
@@ -176,7 +176,7 @@ const RawMaterialPage = () => {
             <label className="block text-sm font-semibold text-slate-700">
               Category <span className="text-rose-500">*</span>
             </label>
-            <select className={selectClassName} {...form.register("categoryId")} disabled={loadingOptions}>
+            <select className={selectClassName} {...form.register("category")} disabled={loadingOptions}>
               <option value="">Select category</option>
               {categories.map((item) => (
                 <option key={item.id} value={item.id}>
@@ -190,7 +190,7 @@ const RawMaterialPage = () => {
             <label className="block text-sm font-semibold text-slate-700">
               Size <span className="text-rose-500">*</span>
             </label>
-            <select className={selectClassName} {...form.register("sizeId")} disabled={loadingOptions}>
+            <select className={selectClassName} {...form.register("size")} disabled={loadingOptions}>
               <option value="">Select size</option>
               {sizes.map((item) => (
                 <option key={item.id} value={item.id}>
@@ -204,7 +204,7 @@ const RawMaterialPage = () => {
             <label className="block text-sm font-semibold text-slate-700">
               Purchase Unit <span className="text-rose-500">*</span>
             </label>
-            <select className={selectClassName} {...form.register("purchaseUnitId")} disabled={loadingOptions}>
+            <select className={selectClassName} {...form.register("purchase_unit")} disabled={loadingOptions}>
               <option value="">Select purchase unit</option>
               {units.map((item) => (
                 <option key={item.id} value={item.id}>
@@ -218,7 +218,7 @@ const RawMaterialPage = () => {
             <label className="block text-sm font-semibold text-slate-700">
               Selling Unit <span className="text-rose-500">*</span>
             </label>
-            <select className={selectClassName} {...form.register("sellingUnitId")} disabled={loadingOptions}>
+            <select className={selectClassName} {...form.register("selling_unit")} disabled={loadingOptions}>
               <option value="">Select selling unit</option>
               {units.map((item) => (
                 <option key={item.id} value={item.id}>
@@ -228,9 +228,9 @@ const RawMaterialPage = () => {
             </select>
           </div>
 
-          <FormInput label="Quantity" required type="number" step="0.01" error={form.formState.errors.quantity?.message} {...form.register("quantity")} />
-          <FormInput label="Purchase Price" required type="number" step="0.01" error={form.formState.errors.purchasePrice?.message} {...form.register("purchasePrice")} />
-          <FormInput label="Selling Price" required type="number" step="0.01" error={form.formState.errors.sellingPrice?.message} {...form.register("sellingPrice")} />
+          {/* <FormInput label="Quantity" required type="number" step="0.01" error={form.formState.errors.quantity?.message} {...form.register("quantity")} /> */}
+          <FormInput label="Purchase Price" required type="number" step="0.01" error={form.formState.errors.purchase_price?.message} {...form.register("purchase_price")} />
+          <FormInput label="Selling Price" required type="number" step="0.01" error={form.formState.errors.selling_price?.message} {...form.register("selling_price")} />
 
           <div className="flex flex-col gap-3 sm:flex-row xl:col-span-3">
             <Button type="submit" className="w-full sm:w-auto">{editingId ? "Update" : "Create"}</Button>
@@ -273,8 +273,8 @@ const RawMaterialPage = () => {
                     <td className="px-5 py-4 text-slate-600">{row.brand?.name || "-"}</td>
                     <td className="px-5 py-4 text-slate-600">{row.category?.name || "-"}</td>
                     <td className="px-5 py-4 text-slate-600">{formatDecimal(row.quantity)}</td>
-                    <td className="px-5 py-4 text-slate-600">{formatDecimal(row.purchasePrice)}</td>
-                    <td className="px-5 py-4 text-slate-600">{formatDecimal(row.sellingPrice)}</td>
+                    <td className="px-5 py-4 text-slate-600">{formatDecimal(row.purchase_price)}</td>
+                    <td className="px-5 py-4 text-slate-600">{formatDecimal(row.selling_price)}</td>
                     <td className="px-5 py-4 text-right">
                       <button
                         type="button"
@@ -283,14 +283,14 @@ const RawMaterialPage = () => {
                           setEditingId(row.id);
                           form.reset({
                             name: row.name,
-                            brandId: row.brandId,
-                            categoryId: row.categoryId,
-                            sizeId: row.sizeId,
-                            purchaseUnitId: row.purchaseUnitId,
-                            sellingUnitId: row.sellingUnitId,
+                            brand: row.brand?.id || row.brand,
+                            category: row.category?.id || row.category,
+                            size: row.size?.id || row.size,
+                            purchase_unit: row.purchase_unit?.id || row.purchase_unit,
+                            selling_unit: row.selling_unit?.id || row.selling_unit,
                             quantity: Number(row.quantity),
-                            purchasePrice: Number(row.purchasePrice),
-                            sellingPrice: Number(row.sellingPrice),
+                            purchase_price: Number(row.purchase_price),
+                            selling_price: Number(row.selling_price),
                           });
                         }}
                       >

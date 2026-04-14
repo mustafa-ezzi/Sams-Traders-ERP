@@ -33,7 +33,7 @@ const ProductPage = () => {
   const [total, setTotal] = useState(0);
   const [rawMaterialOptions, setRawMaterialOptions] = useState([]);
   const [materialRows, setMaterialRows] = useState([
-    { rawMaterialId: "", quantity: 1, rate: 0 },
+    { raw_material_id: "", quantity: 1, rate: 0 },
   ]);
   const limit = 10;
   const toast = useToast();
@@ -70,17 +70,17 @@ const ProductPage = () => {
   const onSubmit = form.handleSubmit(async (values) => {
     try {
       const sanitizedRows = materialRows
-        .filter((row) => row.rawMaterialId)
+        .filter((row) => row.raw_material_id)
         .map((row) => ({
-          rawMaterialId: row.rawMaterialId,
+          raw_material_id: row.raw_material_id,
           quantity: Number(row.quantity),
           rate: Number(row.rate),
         }));
 
       const payload = {
         name: values.name,
-        productType: values.productType,
-        packagingCost: values.packagingCost,
+        product_type: values.productType,
+        packaging_cost: values.packagingCost,
         materials: values.productType === "MANUFACTURED" ? sanitizedRows : [],
       };
 
@@ -94,7 +94,7 @@ const ProductPage = () => {
 
       setEditingId("");
       form.reset(defaultValues);
-      setMaterialRows([{ rawMaterialId: "", quantity: 1, rate: 0 }]);
+      setMaterialRows([{ raw_material_id: "", quantity: 1, rate: 0 }]);
       await load();
     } catch (submitError) {
       const msg = submitError?.response?.data?.message || submitError.message || "Save failed";
@@ -104,18 +104,16 @@ const ProductPage = () => {
   });
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
-  const selectedMaterialIds = materialRows.map((row) => row.rawMaterialId).filter(Boolean);
+  const selectedMaterialIds = materialRows.map((row) => row.raw_material_id).filter(Boolean);
 
   return (
     <section className="space-y-6">
       <Card className="bg-[linear-gradient(135deg,rgba(255,255,255,0.92),rgba(240,248,255,0.96))]">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            
             <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">
               Products
             </h2>
-           
           </div>
           <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
             <input
@@ -176,7 +174,7 @@ const ProductPage = () => {
                   onClick={() =>
                     setMaterialRows((prev) => [
                       ...prev,
-                      { rawMaterialId: "", quantity: 1, rate: 0 },
+                      { raw_material_id: "", quantity: 1, rate: 0 },
                     ])
                   }
                 >
@@ -191,81 +189,105 @@ const ProductPage = () => {
               </div>
             ) : (
               <div className="space-y-3">
-                {materialRows.map((row, index) => (
-                  <div
-                    key={index}
-                    className="grid gap-3 rounded-2xl border border-white bg-white p-3 shadow-sm md:grid-cols-[1.5fr_1fr_1fr_auto]"
-                  >
-                    <select
-                      className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
-                      value={row.rawMaterialId}
-                      onChange={(event) =>
-                        setMaterialRows((prev) =>
-                          prev.map((item, i) =>
-                            i === index ? { ...item, rawMaterialId: event.target.value } : item
-                          )
-                        )
-                      }
+                {materialRows.map((row, index) => {
+                  const selectedMaterial = rawMaterialOptions.find(m => m.id === row.raw_material_id);
+                  return (
+                    <div
+                      key={index}
+                      className="grid gap-3 rounded-2xl border border-white bg-white p-4 shadow-sm md:grid-cols-[1.5fr_1fr_1fr_auto]"
                     >
-                      <option value="">Select raw material</option>
-                      {rawMaterialOptions.map((option) => (
-                        <option
-                          key={option.id}
-                          value={option.id}
-                          disabled={
-                            selectedMaterialIds.includes(option.id) &&
-                            option.id !== row.rawMaterialId
-                          }
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold text-slate-600">Raw Material</label>
+                        <select
+                          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
+                          value={row.raw_material_id}
+                          onChange={(event) => {
+                            const materialId = event.target.value;
+                            const material = rawMaterialOptions.find(m => m.id === materialId);
+                            setMaterialRows((prev) =>
+                              prev.map((item, i) =>
+                                i === index ? {
+                                  ...item,
+                                  raw_material_id: materialId,
+                                  rate: material ? Number(material.purchase_price) : 0
+                                } : item
+                              )
+                            );
+                          }}
                         >
-                          {option.name}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      type="number"
-                      step="0.01"
-                      className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
-                      placeholder="Quantity"
-                      value={row.quantity}
-                      onChange={(event) =>
-                        setMaterialRows((prev) =>
-                          prev.map((item, i) =>
-                            i === index
-                              ? { ...item, quantity: Number(event.target.value || 0) }
-                              : item
+                          <option value="">Select raw material</option>
+                          {rawMaterialOptions.map((option) => (
+                            <option
+                              key={option.id}
+                              value={option.id}
+                              disabled={
+                                selectedMaterialIds.includes(option.id) &&
+                                option.id !== row.raw_material_id
+                              }
+                            >
+                              {option.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold text-slate-600">Quantity (Units)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
+                          placeholder="0.00"
+                          value={row.quantity}
+                          onChange={(event) =>
+                            setMaterialRows((prev) =>
+                              prev.map((item, i) =>
+                                i === index
+                                  ? { ...item, quantity: Number(event.target.value || 0) }
+                                  : item
+                              )
+                            )
+                          }
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold text-slate-600">Unit Cost</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
+                          placeholder="0.00"
+                          value={row.rate}
+                          onChange={(event) =>
+                            setMaterialRows((prev) =>
+                              prev.map((item, i) =>
+                                i === index ? { ...item, rate: Number(event.target.value || 0) } : item
+                              )
+                            )
+                          }
+                        />
+                        {selectedMaterial && (
+                          <p className="text-xs text-slate-500">Purchase price: {selectedMaterial.purchase_price}</p>
+                        )}
+                      </div>
+                      <Button
+                        type="button"
+                        variant="danger"
+                        className="h-fit md:mt-[34px]"
+                        onClick={() =>
+                          setMaterialRows((prev) =>
+                            prev.length === 1
+                              ? [{ raw_material_id: "", quantity: 1, rate: 0 }]
+                              : prev.filter((_, i) => i !== index)
                           )
-                        )
-                      }
-                    />
-                    <input
-                      type="number"
-                      step="0.01"
-                      className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
-                      placeholder="Rate"
-                      value={row.rate}
-                      onChange={(event) =>
-                        setMaterialRows((prev) =>
-                          prev.map((item, i) =>
-                            i === index ? { ...item, rate: Number(event.target.value || 0) } : item
-                          )
-                        )
-                      }
-                    />
-                    <Button
-                      type="button"
-                      variant="danger"
-                      onClick={() =>
-                        setMaterialRows((prev) =>
-                          prev.length === 1
-                            ? [{ rawMaterialId: "", quantity: 1, rate: 0 }]
-                            : prev.filter((_, i) => i !== index)
-                        )
-                      }
-                    >
-                      Remove
-                    </Button>
-                  </div>
-                ))}
+                        }
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -282,7 +304,7 @@ const ProductPage = () => {
                 onClick={() => {
                   setEditingId("");
                   form.reset(defaultValues);
-                  setMaterialRows([{ rawMaterialId: "", quantity: 1, rate: 0 }]);
+                  setMaterialRows([{ raw_material_id: "", quantity: 1, rate: 0 }]);
                 }}
               >
                 Cancel
@@ -295,75 +317,107 @@ const ProductPage = () => {
       <StateView loading={loading} error={error} isEmpty={!loading && !error && records.length === 0} emptyMessage="No products found">
         <Card className="overflow-hidden p-0">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[860px] text-sm">
-              <thead className="bg-[linear-gradient(180deg,#edf4ff,#e1ebff)] text-left">
+            <table className="w-full min-w-[760px] text-sm">
+              <thead className="border-b border-slate-100 bg-slate-50 text-left">
                 <tr>
-                  <th className="px-5 py-4 font-bold text-slate-700">Name</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Type</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Packaging</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Net Amount</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Lines</th>
-                  <th className="px-5 py-4 text-right font-bold text-slate-700">Actions</th>
+                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Name</th>
+                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Type</th>
+                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Materials</th>
+                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Material Cost</th>
+                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Packaging</th>
+                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Net Amount</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-slate-500">Actions</th>
                 </tr>
               </thead>
-              <tbody>
-                {records.map((row) => (
-                  <tr key={row.id} className="border-t border-slate-100 bg-white/80 transition hover:bg-blue-50/50">
-                    <td className="px-5 py-4 font-semibold text-slate-800">{row.name}</td>
-                    <td className="px-5 py-4 text-slate-600">{row.productType}</td>
-                    <td className="px-5 py-4 text-slate-600">{formatDecimal(row.packagingCost)}</td>
-                    <td className="px-5 py-4 text-slate-600">{formatDecimal(row.netAmount)}</td>
-                    <td className="px-5 py-4 text-slate-600">{row.materials?.length || 0}</td>
-                    <td className="px-5 py-4 text-right">
-                      <button
-                        type="button"
-                        className="mr-3 font-semibold text-blue-600 transition hover:text-blue-800"
-                        onClick={() => {
-                          setEditingId(row.id);
-                          form.reset({
-                            name: row.name,
-                            productType: row.productType,
-                            packagingCost: Number(row.packagingCost),
-                          });
-                          setMaterialRows(
-                            row.materials?.length
-                              ? row.materials.map((m) => ({
-                                  rawMaterialId: m.rawMaterialId,
-                                  quantity: Number(m.quantity),
-                                  rate: Number(m.rate),
-                                }))
-                              : [{ rawMaterialId: "", quantity: 1, rate: 0 }]
-                          );
-                        }}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        className="font-semibold text-rose-600 transition hover:text-rose-800"
-                        onClick={async () => {
-                          if (!window.confirm("Delete this product?")) return;
-                          await productService.remove(row.id);
-                          toast.success("Product deleted");
-                          await load();
-                        }}
-                      >
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+              <tbody className="divide-y divide-slate-100">
+                {records.map((row) => {
+                  const totalMaterialCost = row.materials?.reduce((sum, m) => sum + (Number(m.amount) || 0), 0) || 0;
+                  return (
+                    <tr key={row.id} className="bg-white transition-colors hover:bg-slate-50">
+                      <td className="px-4 py-3 font-medium text-slate-800">{row.name}</td>
+
+                      <td className="px-4 py-3">
+                        <span className={`inline-block rounded-md border px-2 py-0.5 text-xs font-medium ${
+                          row.product_type === "MANUFACTURED"
+                            ? "border-violet-200 bg-violet-50 text-violet-700"
+                            : "border-slate-200 bg-slate-100 text-slate-600"
+                        }`}>
+                          {row.product_type === "MANUFACTURED" ? "Manufactured" : "Ready Made"}
+                        </span>
+                      </td>
+
+                      <td className="px-4 py-3">
+                        {row.materials?.length ? (
+                          <div className="flex flex-wrap gap-1">
+                            {row.materials.map((m, i) => (
+                              <span
+                                key={i}
+                                className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700"
+                              >
+                                {m.raw_material?.name ?? "Unknown"}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
+                      </td>
+
+                      <td className="px-4 py-3 tabular-nums text-slate-700">{formatDecimal(totalMaterialCost)}</td>
+                      <td className="px-4 py-3 tabular-nums text-slate-700">{formatDecimal(row.packaging_cost)}</td>
+                      <td className="px-4 py-3 tabular-nums font-medium text-slate-800">{formatDecimal(row.net_amount)}</td>
+
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          type="button"
+                          className="mr-1 rounded-md px-2.5 py-1 text-xs font-medium text-blue-600 transition hover:bg-blue-50 hover:text-blue-800"
+                          onClick={() => {
+                            setEditingId(row.id);
+                            form.reset({
+                              name: row.name,
+                              productType: row.product_type,
+                              packagingCost: Number(row.packaging_cost),
+                            });
+                            setMaterialRows(
+                              row.materials?.length
+                                ? row.materials.map((m) => ({
+                                    raw_material_id: m.raw_material?.id,
+                                    quantity: Number(m.quantity),
+                                    rate: Number(m.rate),
+                                  }))
+                                : [{ raw_material_id: "", quantity: 1, rate: 0 }]
+                            );
+                          }}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-md px-2.5 py-1 text-xs font-medium text-rose-600 transition hover:bg-rose-50 hover:text-rose-800"
+                          onClick={async () => {
+                            if (!window.confirm("Delete this product?")) return;
+                            await productService.remove(row.id);
+                            toast.success("Product deleted");
+                            await load();
+                          }}
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
 
-          <div className="flex flex-col gap-3 border-t border-slate-100 px-5 py-4 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-            <span className="text-center sm:text-left">{total} total records</span>
+          <div className="flex flex-col gap-3 border-t border-slate-100 px-4 py-3 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+            <span className="text-center text-xs sm:text-left">{total} total records</span>
             <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-end">
               <Button variant="secondary" type="button" disabled={page <= 1} onClick={() => load(page - 1, search)}>
                 Prev
               </Button>
-              <span className="font-semibold text-slate-700">Page {page} / {totalPages}</span>
+              <span className="text-xs font-medium text-slate-700">Page {page} / {totalPages}</span>
               <Button variant="secondary" type="button" disabled={page >= totalPages} onClick={() => load(page + 1, search)}>
                 Next
               </Button>

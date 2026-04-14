@@ -65,24 +65,37 @@ const LoginPage = () => {
     setInfo("");
     try {
       const response = await authService.login(values);
-      const token = response?.token || response?.data?.token;
-      if (!token) {
-        setError("Login response did not include token.");
-        toast.error("Token missing in response");
+
+      // Backend returns: { access, refresh, user: { id, email, tenant_id } }
+      const accessToken = response?.access;
+      const refreshToken = response?.refresh;
+      const user = response?.user;
+
+      if (!accessToken || !user) {
+        setError("Login response is missing token or user data.");
+        toast.error("Invalid response from backend");
         return;
       }
-      login(token, values.tenant_id);
-      toast.success("Login successful");
+
+      // Store tokens in localStorage for persistence
+      localStorage.setItem("token", accessToken);
+      localStorage.setItem("refreshToken", refreshToken);
+      localStorage.setItem("tenantId", user.tenant_id);
+
+      // Login with token and tenant_id from backend response
+      login(accessToken, user.tenant_id);
+
+      toast.success(`Welcome ${user.email}!`);
       navigate("/");
     } catch (apiError) {
-      setError(
-        apiError?.response?.data?.message ||
-        "API login failed. Check backend auth setup."
-      );
-      setInfo(
-        "Ensure backend is running and JWT_SECRET is set. Route used: /api/v1/auth/login"
-      );
-      toast.error("API login failed");
+      // Handle various error response formats from backend
+      const errorMessage = apiError?.response?.data?.message ||
+        apiError?.response?.data?.details?.non_field_errors?.[0] ||
+        apiError?.response?.data?.detail ||
+        "API login failed. Check backend auth setup.";
+      setError(errorMessage);
+      setInfo("Ensure backend is running and user credentials are correct.");
+      toast.error("Login failed");
     }
   });
 
@@ -96,8 +109,8 @@ const LoginPage = () => {
           <p className="mt-2 text-sm text-slate-500">
             Choose API login if your auth route is ready, or paste a JWT manually.
           </p>
-          <div className="mt-6 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1">
-            <Button
+          {/* <div className="mt-6 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1">
+            <Button 
               type="button"
               onClick={() => setTab("api")}
               variant={tab === "api" ? "primary" : "ghost"}
@@ -110,9 +123,9 @@ const LoginPage = () => {
               variant={tab === "manual" ? "primary" : "ghost"}
             >
               Manual Token
-            </Button>
-          </div>
-
+            </Button>         
+          </div> */}        
+    
           <div className="mt-6">
             {tab === "api" ? (
               <form className="space-y-4" onSubmit={onApiSubmit}>
@@ -125,7 +138,7 @@ const LoginPage = () => {
                     <option value="AM_TRADERS">AM Traders</option>
                   </select>
                 </div>
-                <Button className="w-full" type="submit">
+                <Button className="w-full" type="submit">  
                   Login
                 </Button>
               </form>
@@ -150,8 +163,11 @@ const LoginPage = () => {
           {info && <p className="mt-3 text-sm font-medium text-amber-700">{info}</p>}
 
           <div className="mt-5 rounded-[24px] bg-slate-50 p-4 text-xs leading-6 text-slate-600">
-            Dev default API credentials:
-            SAMS: `sams@test.com` / `sams123`, AM: `am@test.com` / `amtraders123`.
+            <strong className="text-slate-900">Dev Test Credentials:</strong>
+            <br />
+            SAMS Traders: <code className="text-slate-700">sams@test.com</code> / <code className="text-slate-700">sams123</code>
+            <br />
+            AM Traders: <code className="text-slate-700">am@test.com</code> / <code className="text-slate-700">amtraders123</code>
           </div>
         </Card>
       </div>
