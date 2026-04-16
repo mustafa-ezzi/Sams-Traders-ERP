@@ -4,24 +4,38 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import productService from "../../api/services/productService";
 import rawMaterialService from "../../api/services/rawMaterialService";
+import categoryService from "../../api/services/categoryService";
+import accountService from "../../api/services/accountService";
 import StateView from "../../components/StateView";
 import { formatDecimal } from "../../utils/format";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import FormInput from "../../components/ui/FormInput";
 import { useToast } from "../../context/ToastContext";
+import { flattenAccountTree, formatAccountLabel } from "../../utils/accounts";
 
 const schema = z.object({
   name: z.string().trim().min(1, "Name is required"),
   productType: z.enum(["READY_MADE", "MANUFACTURED"]),
   packagingCost: z.coerce.number().min(0),
+  category: z.union([z.string().uuid("Category must be a valid UUID"), z.literal("")]),
+  inventory_account: z.union([z.string().uuid("Inventory account must be a valid UUID"), z.literal("")]),
+  cogs_account: z.union([z.string().uuid("COGS account must be a valid UUID"), z.literal("")]),
+  revenue_account: z.union([z.string().uuid("Revenue account must be a valid UUID"), z.literal("")]),
 });
 
 const defaultValues = {
   name: "",
   productType: "READY_MADE",
   packagingCost: 0,
+  category: "",
+  inventory_account: "",
+  cogs_account: "",
+  revenue_account: "",
 };
+
+const selectClassName =
+  "w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100";
 
 const ProductPage = () => {
   const [records, setRecords] = useState([]);
@@ -32,6 +46,10 @@ const ProductPage = () => {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [rawMaterialOptions, setRawMaterialOptions] = useState([]);
+  const [categoryOptions, setCategoryOptions] = useState([]);
+  const [inventoryAccounts, setInventoryAccounts] = useState([]);
+  const [cogsAccounts, setCogsAccounts] = useState([]);
+  const [revenueAccounts, setRevenueAccounts] = useState([]);
   const [materialRows, setMaterialRows] = useState([
     { raw_material_id: "", quantity: 1, rate: 0 },
   ]);
@@ -61,10 +79,26 @@ const ProductPage = () => {
 
   useEffect(() => {
     load(1, "");
-    rawMaterialService
-      .list({ page: 1, limit: 100, search: "" })
-      .then((res) => setRawMaterialOptions(res.data || []))
-      .catch(() => toast.error("Failed to load raw material options"));
+    Promise.all([
+      rawMaterialService.list({ page: 1, limit: 100, search: "" }),
+      categoryService.list({ page: 1, limit: 100, search: "" }),
+      accountService.list(),
+    ])
+      .then(([rawMaterialRes, categoryRes, accountRes]) => {
+        const flatAccounts = flattenAccountTree(accountRes || []);
+        setRawMaterialOptions(rawMaterialRes.data || []);
+        setCategoryOptions(categoryRes.data || []);
+        setInventoryAccounts(
+          flatAccounts.filter((account) => account.account_group === "ASSET" && account.is_postable)
+        );
+        setCogsAccounts(
+          flatAccounts.filter((account) => account.account_group === "COGS" && account.is_postable)
+        );
+        setRevenueAccounts(
+          flatAccounts.filter((account) => account.account_group === "REVENUE" && account.is_postable)
+        );
+      })
+      .catch(() => toast.error("Failed to load product setup options"));
   }, []);
 
   const onSubmit = form.handleSubmit(async (values) => {
@@ -81,6 +115,10 @@ const ProductPage = () => {
         name: values.name,
         product_type: values.productType,
         packaging_cost: values.packagingCost,
+        category: values.category || null,
+        inventory_account: values.inventory_account || null,
+        cogs_account: values.cogs_account || null,
+        revenue_account: values.revenue_account || null,
         materials: values.productType === "MANUFACTURED" ? sanitizedRows : [],
       };
 
@@ -158,6 +196,54 @@ const ProductPage = () => {
             error={form.formState.errors.packagingCost?.message}
             {...form.register("packagingCost")}
           />
+
+          <div className="space-y-2">
+            <label className="block text-sm font-semibold text-slate-700">Category</label>
+            <select className={selectClassName} {...form.register("category")}>
+              <option value="">Select category</option>
+              {categoryOptions.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-2">
+            <label className="block text-sm font-semibold text-slate-700">Inventory Account</label>
+            <select className={selectClassName} {...form.register("inventory_account")}>
+              <option value="">Select inventory account</option>
+              {inventoryAccounts.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {formatAccountLabel(item)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-2">
+            <label className="block text-sm font-semibold text-slate-700">COGS Account</label>
+            <select className={selectClassName} {...form.register("cogs_account")}>
+              <option value="">Select COGS account</option>
+              {cogsAccounts.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {formatAccountLabel(item)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-2">
+            <label className="block text-sm font-semibold text-slate-700">Revenue Account</label>
+            <select className={selectClassName} {...form.register("revenue_account")}>
+              <option value="">Select revenue account</option>
+              {revenueAccounts.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {formatAccountLabel(item)}
+                </option>
+              ))}
+            </select>
+          </div>
 
           <div className="rounded-[26px] border border-slate-200 bg-slate-50/80 p-4 xl:col-span-3">
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -322,7 +408,10 @@ const ProductPage = () => {
                 <tr>
                   <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Name</th>
                   <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Type</th>
+                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Category</th>
+                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Qty</th>
                   <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Materials</th>
+                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Accounts</th>
                   <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Material Cost</th>
                   <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Packaging</th>
                   <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Net Amount</th>
@@ -346,6 +435,11 @@ const ProductPage = () => {
                         </span>
                       </td>
 
+                      <td className="px-4 py-3 text-slate-600">
+                        {categoryOptions.find((category) => category.id === row.category)?.name || "-"}
+                      </td>
+                      <td className="px-4 py-3 tabular-nums text-slate-700">{formatDecimal(row.quantity)}</td>
+
                       <td className="px-4 py-3">
                         {row.materials?.length ? (
                           <div className="flex flex-wrap gap-1">
@@ -354,7 +448,7 @@ const ProductPage = () => {
                                 key={i}
                                 className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700"
                               >
-                                {m.raw_material?.name ?? "Unknown"}
+                                {m.raw_material_name ?? "Unknown"}
                               </span>
                             ))}
                           </div>
@@ -363,6 +457,11 @@ const ProductPage = () => {
                         )}
                       </td>
 
+                      <td className="px-4 py-3 text-xs text-slate-600">
+                        <div>Inv: {inventoryAccounts.find((account) => account.id === row.inventory_account)?.code || "-"}</div>
+                        <div>COGS: {cogsAccounts.find((account) => account.id === row.cogs_account)?.code || "-"}</div>
+                        <div>Rev: {revenueAccounts.find((account) => account.id === row.revenue_account)?.code || "-"}</div>
+                      </td>
                       <td className="px-4 py-3 tabular-nums text-slate-700">{formatDecimal(totalMaterialCost)}</td>
                       <td className="px-4 py-3 tabular-nums text-slate-700">{formatDecimal(row.packaging_cost)}</td>
                       <td className="px-4 py-3 tabular-nums font-medium text-slate-800">{formatDecimal(row.net_amount)}</td>
@@ -377,11 +476,15 @@ const ProductPage = () => {
                               name: row.name,
                               productType: row.product_type,
                               packagingCost: Number(row.packaging_cost),
+                              category: row.category || "",
+                              inventory_account: row.inventory_account || "",
+                              cogs_account: row.cogs_account || "",
+                              revenue_account: row.revenue_account || "",
                             });
                             setMaterialRows(
                               row.materials?.length
                                 ? row.materials.map((m) => ({
-                                    raw_material_id: m.raw_material?.id,
+                                    raw_material_id: m.raw_material_id,
                                     quantity: Number(m.quantity),
                                     rate: Number(m.rate),
                                   }))

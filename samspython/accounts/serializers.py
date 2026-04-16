@@ -8,7 +8,6 @@ VALID_TENANTS = ["SAMS_TRADERS", "AM_TRADERS"]
 class LoginSerializer(serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField()
-    tenant_id = serializers.ChoiceField(choices=VALID_TENANTS)
 
 
 class AccountSerializer(serializers.ModelSerializer):
@@ -31,44 +30,44 @@ class AccountSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["tenant_id", "level"]
 
-    # 🔥 show nested children (optional but ERP vibes)
     def get_children(self, obj):
         queryset = obj.children.filter(deleted_at__isnull=True).order_by("code")
         return AccountSerializer(queryset, many=True, context=self.context).data
 
-    # 🔒 enforce tenant + validation rules
     def validate(self, data):
         request = self.context["request"]
         tenant_id = request.tenant_id
 
+        parent_provided = "parent" in data
         parent = data.get("parent")
+        if not parent_provided and self.instance is not None:
+            parent = self.instance.parent
 
-        # ❌ Cross-tenant parent
         if parent and parent.tenant_id != tenant_id:
             raise serializers.ValidationError("Invalid parent for this tenant.")
 
+        if parent and parent.deleted_at is not None:
+            raise serializers.ValidationError("Parent account cannot be soft deleted.")
+
+        if parent and parent.is_postable:
+            raise serializers.ValidationError("Cannot assign a postable account as parent.")
+
         return data
 
-    # 🔒 enforce leaf/postable rule at API level too
     def validate_is_postable(self, value):
         instance = getattr(self, "instance", None)
 
-        if instance and value:
-            if instance.children.filter(deleted_at__isnull=True).exists():
-                raise serializers.ValidationError(
-                    "Account with children cannot be postable."
-                )
+        if instance and value and instance.children.filter(deleted_at__isnull=True).exists():
+            raise serializers.ValidationError("Account with children cannot be postable.")
 
         return value
 
-    # 🔥 auto attach tenant (never trust payload)
     def create(self, validated_data):
         request = self.context["request"]
         validated_data["tenant_id"] = request.tenant_id
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
-        # ❌ prevent changing code if needed later (safe ERP rule)
         if "code" in validated_data and instance.code != validated_data["code"]:
             raise serializers.ValidationError("Account code cannot be changed.")
 

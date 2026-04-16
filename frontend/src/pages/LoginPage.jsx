@@ -1,7 +1,7 @@
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import authService from "../api/services/authService";
@@ -12,50 +12,34 @@ import { useToast } from "../context/ToastContext";
 
 const schema = z.object({
   token: z.string().min(1, "JWT token is required"),
-  tenant_id: z.enum(["SAMS_TRADERS", "AM_TRADERS"]),
 });
 
 const apiLoginSchema = z.object({
   email: z.string().email("Enter a valid email"),
   password: z.string().min(6, "Password must be at least 6 characters"),
-  tenant_id: z.enum(["SAMS_TRADERS", "AM_TRADERS"]),
 });
-
-const decodeTenantFromJwt = (token) => {
-  try {
-    const payload = JSON.parse(atob(token.split(".")[1]));
-    return payload?.tenant_id || payload?.tenant_id || "";
-  } catch {
-    return "";
-  }
-};
 
 const LoginPage = () => {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [tab, setTab] = useState("api");
+  const [tab] = useState("api");
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const toast = useToast();
 
   const form = useForm({
     resolver: zodResolver(schema),
-    defaultValues: { token: "", tenant_id: "SAMS_TRADERS" },
+    defaultValues: { token: "" },
   });
   const apiForm = useForm({
     resolver: zodResolver(apiLoginSchema),
-    defaultValues: { email: "", password: "", tenant_id: "SAMS_TRADERS" },
+    defaultValues: { email: "", password: "" },
   });
 
   const onSubmit = form.handleSubmit((values) => {
     setError("");
-    const tenantInJwt = decodeTenantFromJwt(values.token);
-    if (tenantInJwt && tenantInJwt !== values.tenant_id) {
-      setError(`Selected tenant does not match token tenant (${tenantInJwt}).`);
-      toast.error("Tenant mismatch in token");
-      return;
-    }
-    login(values.token, values.tenant_id);
+    const activeTenant = localStorage.getItem("tenantId") || "SAMS_TRADERS";
+    login(values.token, activeTenant);
     toast.success("Login successful");
     navigate("/");
   });
@@ -66,7 +50,6 @@ const LoginPage = () => {
     try {
       const response = await authService.login(values);
 
-      // Backend returns: { access, refresh, user: { id, email, tenant_id } }
       const accessToken = response?.access;
       const refreshToken = response?.refresh;
       const user = response?.user;
@@ -77,19 +60,18 @@ const LoginPage = () => {
         return;
       }
 
-      // Store tokens in localStorage for persistence
       localStorage.setItem("token", accessToken);
       localStorage.setItem("refreshToken", refreshToken);
-      localStorage.setItem("tenantId", user.tenant_id);
+      const activeTenant = localStorage.getItem("tenantId") || "SAMS_TRADERS";
+      localStorage.setItem("tenantId", activeTenant);
 
-      // Login with token and tenant_id from backend response
-      login(accessToken, user.tenant_id);
+      login(accessToken, activeTenant);
 
       toast.success(`Welcome ${user.email}!`);
       navigate("/");
     } catch (apiError) {
-      // Handle various error response formats from backend
-      const errorMessage = apiError?.response?.data?.message ||
+      const errorMessage =
+        apiError?.response?.data?.message ||
         apiError?.response?.data?.details?.non_field_errors?.[0] ||
         apiError?.response?.data?.detail ||
         "API login failed. Check backend auth setup.";
@@ -107,51 +89,21 @@ const LoginPage = () => {
         <Card className="w-full max-w-lg bg-white/92 px-4 py-5 sm:px-5 sm:py-6">
           <h2 className="text-2xl font-extrabold tracking-tight text-slate-900">Sign In</h2>
           <p className="mt-2 text-sm text-slate-500">
-            Choose API login if your auth route is ready, or paste a JWT manually.
+            Sign in once, then switch between SAMS and AM from the top bar.
           </p>
-          {/* <div className="mt-6 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1">
-            <Button 
-              type="button"
-              onClick={() => setTab("api")}
-              variant={tab === "api" ? "primary" : "ghost"}
-            >
-              API Login
-            </Button>
-            <Button
-              type="button"
-              onClick={() => setTab("manual")}
-              variant={tab === "manual" ? "primary" : "ghost"}
-            >
-              Manual Token
-            </Button>         
-          </div> */}        
-    
+
           <div className="mt-6">
             {tab === "api" ? (
               <form className="space-y-4" onSubmit={onApiSubmit}>
                 <FormInput label="Email" required error={apiForm.formState.errors.email?.message} {...apiForm.register("email")} />
                 <FormInput label="Password" required type="password" error={apiForm.formState.errors.password?.message} {...apiForm.register("password")} />
-                <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-slate-700">Tenant</label>
-                  <select className="w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100" {...apiForm.register("tenant_id")}>
-                    <option value="SAMS_TRADERS">SAMS Traders</option>
-                    <option value="AM_TRADERS">AM Traders</option>
-                  </select>
-                </div>
-                <Button className="w-full" type="submit">  
+                <Button className="w-full" type="submit">
                   Login
                 </Button>
               </form>
             ) : (
               <form className="space-y-4" onSubmit={onSubmit}>
                 <FormInput label="JWT Token" required as="textarea" rows={5} error={form.formState.errors.token?.message} {...form.register("token")} />
-                <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-slate-700">Tenant</label>
-                  <select className="w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100" {...form.register("tenant_id")}>
-                    <option value="SAMS_TRADERS">SAMS Traders</option>
-                    <option value="AM_TRADERS">AM Traders</option>
-                  </select>
-                </div>
                 <Button className="w-full" type="submit">
                   Continue
                 </Button>
@@ -165,9 +117,9 @@ const LoginPage = () => {
           <div className="mt-5 rounded-[24px] bg-slate-50 p-4 text-xs leading-6 text-slate-600">
             <strong className="text-slate-900">Dev Test Credentials:</strong>
             <br />
-            SAMS Traders: <code className="text-slate-700">sams@test.com</code> / <code className="text-slate-700">sams123</code>
+            Use any valid seeded account, for example <code className="text-slate-700">sams@test.com</code> / <code className="text-slate-700">sams123</code>.
             <br />
-            AM Traders: <code className="text-slate-700">am@test.com</code> / <code className="text-slate-700">amtraders123</code>
+            Switch tenant after login from the navbar.
           </div>
         </Card>
       </div>

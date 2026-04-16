@@ -1,10 +1,11 @@
-from django.urls import path
+from django.urls import path, include
 from .views import AccountViewSet, LoginView
 from rest_framework.routers import DefaultRouter
 
-
 router = DefaultRouter()
-router.register('login', LoginView)
-router.register(r'accounts', AccountViewSet, basename="accounts")
+router.register(r"accounts", AccountViewSet, basename="accounts")
 
-urlpatterns = router.urls
+urlpatterns = [
+    path("login/", LoginView.as_view()),  # ✅ FIX HERE
+    path("", include(router.urls)),
+]

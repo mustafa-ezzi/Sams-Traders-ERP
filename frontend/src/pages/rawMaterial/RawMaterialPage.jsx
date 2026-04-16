@@ -7,12 +7,14 @@ import brandService from "../../api/services/brandService";
 import categoryService from "../../api/services/categoryService";
 import sizeService from "../../api/services/sizeService";
 import unitService from "../../api/services/unitService";
+import accountService from "../../api/services/accountService";
 import StateView from "../../components/StateView";
 import { formatDecimal } from "../../utils/format";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import FormInput from "../../components/ui/FormInput";
 import { useToast } from "../../context/ToastContext";
+import { flattenAccountTree, formatAccountLabel } from "../../utils/accounts";
 
 const schema = z.object({
   name: z.string().trim().min(1, "Name is required"),
@@ -21,7 +23,7 @@ const schema = z.object({
   size: z.string().uuid("sizeId must be a valid UUID"),
   purchase_unit: z.string().uuid("purchase_unit must be a valid UUID"),
   selling_unit: z.string().uuid("selling_unitId must be a valid UUID"),
-  quantity: z.coerce.number().min(0),
+  inventory_account: z.union([z.string().uuid("inventory account must be a valid UUID"), z.literal("")]),
   purchase_price: z.coerce.number().min(0),
   selling_price: z.coerce.number().min(0),
 });
@@ -33,7 +35,7 @@ const defaultValues = {
   size: "",
   purchase_unit: "",
   selling_unit: "",
-  quantity: 0,
+  inventory_account: "",
   purchase_price: 0,
   selling_price: 0,
 };
@@ -53,6 +55,7 @@ const RawMaterialPage = () => {
   const [categories, setCategories] = useState([]);
   const [sizes, setSizes] = useState([]);
   const [units, setUnits] = useState([]);
+  const [inventoryAccounts, setInventoryAccounts] = useState([]);
   const [loadingOptions, setLoadingOptions] = useState(false);
   const limit = 10;
   const toast = useToast();
@@ -80,16 +83,22 @@ const RawMaterialPage = () => {
   const loadOptions = async () => {
     setLoadingOptions(true);
     try {
-      const [brandRes, categoryRes, sizeRes, unitRes] = await Promise.all([
+      const [brandRes, categoryRes, sizeRes, unitRes, accountRes] = await Promise.all([
         brandService.list({ page: 1, limit: 100, search: "" }),
         categoryService.list({ page: 1, limit: 100, search: "" }),
         sizeService.list({ page: 1, limit: 100, search: "" }),
         unitService.list({ page: 1, limit: 100, search: "" }),
+        accountService.list(),
       ]);
       setBrands(brandRes.data || []);
       setCategories(categoryRes.data || []);
       setSizes(sizeRes.data || []);
       setUnits(unitRes.data || []);
+      setInventoryAccounts(
+        flattenAccountTree(accountRes || []).filter(
+          (account) => account.account_group === "ASSET" && account.is_postable
+        )
+      );
     } catch {
       toast.error("Failed to load master dropdown data");
     } finally {
@@ -105,10 +114,16 @@ const RawMaterialPage = () => {
   const onSubmit = form.handleSubmit(async (values) => {
     try {
       if (editingId) {
-        await rawMaterialService.update(editingId, values);
+        await rawMaterialService.update(editingId, {
+          ...values,
+          inventory_account: values.inventory_account || null,
+        });
         toast.success("Raw material updated");
       } else {
-        await rawMaterialService.create(values);
+        await rawMaterialService.create({
+          ...values,
+          inventory_account: values.inventory_account || null,
+        });
         toast.success("Raw material created");
       }
       setEditingId("");
@@ -228,6 +243,24 @@ const RawMaterialPage = () => {
             </select>
           </div>
 
+          <div className="space-y-2">
+            <label className="block text-sm font-semibold text-slate-700">
+              Inventory Account
+            </label>
+            <select
+              className={selectClassName}
+              {...form.register("inventory_account")}
+              disabled={loadingOptions}
+            >
+              <option value="">Select inventory account</option>
+              {inventoryAccounts.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {formatAccountLabel(item)}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {/* <FormInput label="Quantity" required type="number" step="0.01" error={form.formState.errors.quantity?.message} {...form.register("quantity")} /> */}
           <FormInput label="Purchase Price" required type="number" step="0.01" error={form.formState.errors.purchase_price?.message} {...form.register("purchase_price")} />
           <FormInput label="Selling Price" required type="number" step="0.01" error={form.formState.errors.selling_price?.message} {...form.register("selling_price")} />
@@ -260,6 +293,7 @@ const RawMaterialPage = () => {
                   <th className="px-5 py-4 font-bold text-slate-700">Name</th>
                   <th className="px-5 py-4 font-bold text-slate-700">Brand</th>
                   <th className="px-5 py-4 font-bold text-slate-700">Category</th>
+                  <th className="px-5 py-4 font-bold text-slate-700">Inventory Account</th>
                   <th className="px-5 py-4 font-bold text-slate-700">Qty</th>
                   <th className="px-5 py-4 font-bold text-slate-700">Purchase</th>
                   <th className="px-5 py-4 font-bold text-slate-700">Selling</th>
@@ -272,6 +306,13 @@ const RawMaterialPage = () => {
                     <td className="px-5 py-4 font-semibold text-slate-800">{row.name}</td>
                     <td className="px-5 py-4 text-slate-600">{row.brand?.name || "-"}</td>
                     <td className="px-5 py-4 text-slate-600">{row.category?.name || "-"}</td>
+                    <td className="px-5 py-4 text-slate-600">
+                      {inventoryAccounts.find((account) => account.id === row.inventory_account)
+                        ? formatAccountLabel(
+                            inventoryAccounts.find((account) => account.id === row.inventory_account)
+                          ).trim()
+                        : "-"}
+                    </td>
                     <td className="px-5 py-4 text-slate-600">{formatDecimal(row.quantity)}</td>
                     <td className="px-5 py-4 text-slate-600">{formatDecimal(row.purchase_price)}</td>
                     <td className="px-5 py-4 text-slate-600">{formatDecimal(row.selling_price)}</td>
@@ -288,7 +329,7 @@ const RawMaterialPage = () => {
                             size: row.size?.id || row.size,
                             purchase_unit: row.purchase_unit?.id || row.purchase_unit,
                             selling_unit: row.selling_unit?.id || row.selling_unit,
-                            quantity: Number(row.quantity),
+                            inventory_account: row.inventory_account || "",
                             purchase_price: Number(row.purchase_price),
                             selling_price: Number(row.selling_price),
                           });

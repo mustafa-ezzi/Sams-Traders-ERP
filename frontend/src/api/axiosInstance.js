@@ -27,6 +27,7 @@ axiosInstance.interceptors.response.use(
       // Token expired or invalid - clear storage and redirect to login
       console.warn("Token expired or invalid. Logging out...");
       localStorage.removeItem("token");
+      localStorage.removeItem("refreshToken");
       localStorage.removeItem("tenantId");
       // Redirect to login page
       window.location.href = "/login";
@@ -36,4 +37,3 @@ axiosInstance.interceptors.response.use(
 );
 
 export default axiosInstance;
-

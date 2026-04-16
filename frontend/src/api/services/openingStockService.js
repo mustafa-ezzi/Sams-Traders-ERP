@@ -25,9 +25,9 @@ class OpeningStockService {
 
             return {
                 data: transformedData,
-                total: response.data.count || 0,
-                page,
-                limit,
+                total: response.data.total || 0,
+                page: response.data.page || page,
+                limit: response.data.limit || limit,
             };
         } catch (error) {
             throw error;
@@ -130,4 +130,3 @@ class OpeningStockService {
 }
 
 export default new OpeningStockService();
-

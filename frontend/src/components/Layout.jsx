@@ -80,9 +80,29 @@ const icons = {
       <path d="M17 11h6" />
     </Icon>
   ),
+  accounts: (
+    <Icon className="h-[15px] w-[15px]">
+      <path d="M4 6h16" />
+      <path d="M4 12h16" />
+      <path d="M4 18h16" />
+      <circle cx="7" cy="6" r="1.2" />
+      <circle cx="12" cy="12" r="1.2" />
+      <circle cx="17" cy="18" r="1.2" />
+    </Icon>
+  ),
 };
 
 const navigation = [
+  {
+    title: "Masters",
+    id: "masters",
+    items: [
+      { to: "/masters/units", label: "Units", icon: icons.masters },
+      { to: "/masters/sizes", label: "Sizes", icon: icons.masters },
+      { to: "/masters/categories", label: "Categories", icon: icons.masters },
+      { to: "/masters/brands", label: "Brands", icon: icons.masters },
+    ],
+  },
   {
     title: "Inventory",
     id: "inventory",
@@ -91,6 +111,7 @@ const navigation = [
       { to: "/products", label: "Products", icon: icons.products },
       { to: "/warehouses", label: "Warehouses", icon: icons.warehouse },
       { to: "/opening-stock", label: "Opening Stock", icon: icons.stock },
+      { to: "/production", label: "Production", icon: icons.stock },
     ],
   },
   {
@@ -102,14 +123,9 @@ const navigation = [
     ],
   },
   {
-    title: "Masters",
-    id: "masters",
-    items: [
-      { to: "/masters/units", label: "Units", icon: icons.masters },
-      { to: "/masters/sizes", label: "Sizes", icon: icons.masters },
-      { to: "/masters/categories", label: "Categories", icon: icons.masters },
-      { to: "/masters/brands", label: "Brands", icon: icons.masters },
-    ],
+    title: "Accounting",
+    id: "accounting",
+    items: [{ to: "/accounts", label: "COA", icon: icons.accounts }],
   },
 ];
 
@@ -117,8 +133,10 @@ const pageTitles = {
   "/": { title: "Dashboard", eyebrow: "Overview" },
   "/raw-materials": { title: "Raw Materials", eyebrow: "Inventory" },
   "/products": { title: "Products", eyebrow: "Inventory" },
+  "/accounts": { title: "Chart of Accounts", eyebrow: "Accounting" },
   "/warehouses": { title: "Warehouses", eyebrow: "Inventory" },
   "/opening-stock": { title: "Opening Stock", eyebrow: "Inventory" },
+  "/production": { title: "Production", eyebrow: "Inventory" },
   "/customers": { title: "Customers", eyebrow: "Parties" },
   "/suppliers": { title: "Suppliers", eyebrow: "Parties" },
   "/masters/units": { title: "Units", eyebrow: "Masters" },
@@ -320,14 +338,20 @@ const Layout = () => {
             </div>
 
             <div className="flex items-center gap-2">
-              {/* <select
+              <select
                 className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
                 value={tenantId}
-                onChange={(e) => setTenant(e.target.value)}
+                onChange={(e) => {
+  const value = e.target.value;
+  setTenant(value);
+
+  // force full app reload
+  window.location.reload();
+}}
               >
                 <option value="SAMS_TRADERS">SAMS Traders</option>
                 <option value="AM_TRADERS">AM Traders</option>
-              </select> */}
+              </select>
               <Button variant="secondary" onClick={logout}>
                 Logout
               </Button>

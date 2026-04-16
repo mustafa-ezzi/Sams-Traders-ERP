@@ -2,8 +2,8 @@ import axiosInstance from "../axiosInstance";
 
 const authService = {
   /**
-   * Login with email, password, and tenant_id
-   * Backend returns: { access, refresh, user: { id, email, tenant_id } }
+   * Login with email and password.
+   * Active tenant is selected from the navbar after login.
    */
   async login(payload) {
     try {
@@ -25,4 +25,3 @@ const authService = {
 };
 
 export default authService;
-

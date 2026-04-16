@@ -3,15 +3,21 @@ from rest_framework import viewsets, status
 from rest_framework.viewsets import ModelViewSet
 from rest_framework.permissions import IsAuthenticated
 from django.utils.timezone import now
-from django.db.models import Sum, Q
+from decimal import Decimal
+from django.db.models import DecimalField, ExpressionWrapper, F, Q, Sum, Value
+from django.db.models.functions import Coalesce
 from .models import (
     Brand,
     Category,
     Customer,
     OpeningStock,
+    ProductStock,
+    Production,
     Product,
+    ProductMaterial,
     RawMaterial,
     Size,
+    Stock,
     Supplier,
     Unit,
     Warehouse,
@@ -21,6 +27,7 @@ from .serializers import (
     CategorySerializer,
     OpeningStockSerializer,
     PartySerializer,
+    ProductionSerializer,
     ProductSerializer,
     RawMaterialDetailedSerializer,
     RawMaterialSerializer,
@@ -30,8 +37,37 @@ from .serializers import (
 )
 from .pagination import StandardResultsSetPagination
 from rest_framework import filters
-from django.db.models import Q
 from rest_framework.exceptions import ValidationError
+
+
+def get_raw_material_stock_total(tenant_id, raw_material_ids):
+    aggregates = (
+        Stock.objects.filter(
+            tenant_id=tenant_id,
+            raw_material_id__in=raw_material_ids,
+            deleted_at__isnull=True,
+        )
+        .values("raw_material_id")
+        .annotate(total=Sum("quantity"))
+    )
+    return {
+        str(agg["raw_material_id"]): float(agg["total"] or 0) for agg in aggregates
+    }
+
+
+def get_product_stock_total(tenant_id, product_ids):
+    aggregates = (
+        ProductStock.objects.filter(
+            tenant_id=tenant_id,
+            product_id__in=product_ids,
+            deleted_at__isnull=True,
+        )
+        .values("product_id")
+        .annotate(total=Sum("quantity"))
+    )
+    return {
+        str(agg["product_id"]): float(agg["total"] or 0) for agg in aggregates
+    }
 
 
 class BaseTenantViewSet(ModelViewSet):
@@ -89,9 +125,23 @@ class RawMaterialViewSet(ModelViewSet):
         return RawMaterialDetailedSerializer
 
     def get_queryset(self):
+        tenant_id = self.request.user.tenant_id
         qs = RawMaterial.objects.filter(
-            tenant_id=self.request.user.tenant_id, deleted_at__isnull=True
+            tenant_id=tenant_id, deleted_at__isnull=True
         ).select_related("brand", "category", "size", "purchase_unit", "selling_unit")
+        qs = qs.annotate(
+            quantity=Coalesce(
+                Sum(
+                    "stock__quantity",
+                    filter=Q(
+                        stock__tenant_id=tenant_id,
+                        stock__deleted_at__isnull=True,
+                    ),
+                ),
+                Value(0),
+                output_field=DecimalField(max_digits=12, decimal_places=2),
+            )
+        )
 
         # optional filtering by brand/category/size/unit IDs via query params
         brand_id = self.request.query_params.get("brand_id")
@@ -137,12 +187,41 @@ class ProductViewSet(viewsets.ModelViewSet):
         qs = Product.objects.filter(
             tenant_id=self.request.user.tenant_id, deleted_at__isnull=True
         ).prefetch_related("materials")
+        qs = qs.annotate(
+            quantity=Coalesce(
+                Sum(
+                    "productstock__quantity",
+                    filter=Q(
+                        productstock__tenant_id=self.request.user.tenant_id,
+                        productstock__deleted_at__isnull=True,
+                    ),
+                ),
+                Value(0),
+                output_field=DecimalField(max_digits=12, decimal_places=2),
+            )
+        )
         return qs
 
     def perform_create(self, serializer):
         serializer.save()
 
     def perform_destroy(self, instance):
+        production_exists = Production.objects.filter(
+            tenant_id=self.request.user.tenant_id,
+            product_id=instance.id,
+            deleted_at__isnull=True,
+        ).exists()
+        product_stock_exists = ProductStock.objects.filter(
+            tenant_id=self.request.user.tenant_id,
+            product_id=instance.id,
+            deleted_at__isnull=True,
+        ).exists()
+
+        if production_exists or product_stock_exists:
+            raise ValidationError(
+                "Product cannot be deleted because stock records exist."
+            )
+
         instance.deleted_at = now()
         instance.save()
 
@@ -183,53 +262,69 @@ class OpeningStockViewSet(viewsets.ModelViewSet):
         )
 
     def _get_total_quantities_for_raw_materials(self, tenant_id, raw_material_ids):
-        """
-        Calculate total quantities per raw material from all opening stock entries.
-        Returns dict: {raw_material_id: total_quantity}
-        """
-        aggregates = (
-            OpeningStock.objects.filter(
-                tenant_id=tenant_id,
-                raw_material_id__in=raw_material_ids,
-                deleted_at__isnull=True,
-            )
-            .values("raw_material_id")
-            .annotate(total=Sum("purchase_quantity"))
-        )
-
-        return {
-            str(agg["raw_material_id"]): float(agg["total"] or 0) for agg in aggregates
-        }
+        return get_raw_material_stock_total(tenant_id, raw_material_ids)
 
     def _enrich_response_data(self, open_stocks, tenant_id):
-        """Enrich opening stock records with availability calculations"""
         if not open_stocks:
-            return open_stocks
+            return {
+                "open_stocks": [],
+                "total_quantities": {}
+            }
 
         raw_material_ids = [os.raw_material_id for os in open_stocks]
+
         total_quantities = self._get_total_quantities_for_raw_materials(
             tenant_id, raw_material_ids
         )
 
-        return {"open_stocks": open_stocks, "total_quantities": total_quantities}
+        return {
+            "open_stocks": open_stocks,
+            "total_quantities": total_quantities
+        }
 
-    def _sync_raw_material_quantity(self, tenant_id, raw_material_id):
-        """
-        Sync raw material quantity with sum of all opening stock entries.
-        Called whenever opening stock is created, updated, or deleted.
-        """
-        total_quantity = (
+    def _sync_stock_quantity(self, tenant_id, warehouse_id, raw_material_id):
+        """Sync warehouse raw material stock from opening stock minus production consumption."""
+        opening_total = (
             OpeningStock.objects.filter(
+                tenant_id=tenant_id,
+                warehouse_id=warehouse_id,
+                raw_material_id=raw_material_id,
+                deleted_at__isnull=True,
+            ).aggregate(total=Sum("quantity"))["total"]
+            or 0
+        )
+        consumption_total = (
+            ProductMaterial.objects.filter(
                 tenant_id=tenant_id,
                 raw_material_id=raw_material_id,
                 deleted_at__isnull=True,
-            ).aggregate(total=Sum("purchase_quantity"))["total"]
+                product__deleted_at__isnull=True,
+                product__product_type="MANUFACTURED",
+                product__production__tenant_id=tenant_id,
+                product__production__warehouse_id=warehouse_id,
+                product__production__deleted_at__isnull=True,
+            ).aggregate(
+                total=Sum(
+                    ExpressionWrapper(
+                        F("quantity") * F("product__production__quantity"),
+                        output_field=DecimalField(max_digits=18, decimal_places=4),
+                    )
+                )
+            )["total"]
             or 0
         )
+        total_quantity = opening_total - consumption_total
 
-        RawMaterial.objects.filter(id=raw_material_id, tenant_id=tenant_id).update(
-            quantity=total_quantity
+        stock, _ = Stock.objects.get_or_create(
+            tenant_id=tenant_id,
+            warehouse_id=warehouse_id,
+            raw_material_id=raw_material_id,
+            deleted_at__isnull=True,
+            defaults={"quantity": total_quantity},
         )
+        stock.quantity = total_quantity
+        stock.deleted_at = None
+        stock.save(update_fields=["quantity", "deleted_at", "updated_at"])
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
@@ -277,15 +372,16 @@ class OpeningStockViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
     def create(self, request, *args, **kwargs):
-        """Create opening stock and sync raw material quantity"""
+        """Create opening stock and sync warehouse stock quantity"""
         tenant_id = request.user.tenant_id
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         instance = serializer.save()
 
-        # Sync raw material quantity
-        self._sync_raw_material_quantity(tenant_id, instance.raw_material_id)
+        self._sync_stock_quantity(
+            tenant_id, instance.warehouse_id, instance.raw_material_id
+        )
 
         # Check if it was restored (had soft delete before)
         action = "created"
@@ -299,20 +395,25 @@ class OpeningStockViewSet(viewsets.ModelViewSet):
         return Response(response_data, status=status.HTTP_201_CREATED)
 
     def update(self, request, *args, **kwargs):
-        """Update opening stock and sync raw material quantity"""
+        """Update opening stock and sync warehouse stock quantity"""
         partial = kwargs.pop("partial", False)
         instance = self.get_object()
         tenant_id = request.user.tenant_id
+        old_warehouse_id = instance.warehouse_id
         old_raw_material_id = instance.raw_material_id
 
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)
         updated_instance = serializer.save()
 
-        # Sync quantities for both old and new raw materials if changed
-        self._sync_raw_material_quantity(tenant_id, updated_instance.raw_material_id)
-        if old_raw_material_id != updated_instance.raw_material_id:
-            self._sync_raw_material_quantity(tenant_id, old_raw_material_id)
+        self._sync_stock_quantity(
+            tenant_id, updated_instance.warehouse_id, updated_instance.raw_material_id
+        )
+        if (
+            old_raw_material_id != updated_instance.raw_material_id
+            or old_warehouse_id != updated_instance.warehouse_id
+        ):
+            self._sync_stock_quantity(tenant_id, old_warehouse_id, old_raw_material_id)
 
         self._enriched_data = self._enrich_response_data([updated_instance], tenant_id)
         enriched_serializer = self.get_serializer(updated_instance)
@@ -324,18 +425,278 @@ class OpeningStockViewSet(viewsets.ModelViewSet):
         instance.save()
 
     def destroy(self, request, *args, **kwargs):
-        """Delete opening stock and sync raw material quantity"""
+        """Delete opening stock and sync warehouse stock quantity"""
         instance = self.get_object()
         tenant_id = request.user.tenant_id
+        warehouse_id = instance.warehouse_id
         raw_material_id = instance.raw_material_id
 
         self.perform_destroy(instance)
 
-        # Sync raw material quantity after deletion
-        self._sync_raw_material_quantity(tenant_id, raw_material_id)
+        self._sync_stock_quantity(tenant_id, warehouse_id, raw_material_id)
 
         return Response(
             {"data": None, "message": "Opening stock deleted successfully"},
+            status=status.HTTP_200_OK,
+        )
+
+
+class ProductionViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated]
+    serializer_class = ProductionSerializer
+    pagination_class = StandardResultsSetPagination
+    filter_backends = [filters.SearchFilter]
+    search_fields = ["warehouse__name", "product__name"]
+
+    def get_queryset(self):
+        return (
+            Production.objects.filter(
+                tenant_id=self.request.user.tenant_id, deleted_at__isnull=True
+            )
+            .select_related("warehouse", "product")
+            .order_by("-date", "-created_at")
+        )
+
+    def _get_total_quantities_for_products(self, tenant_id, warehouse_product_pairs):
+        if not warehouse_product_pairs:
+            return {}
+
+        warehouse_ids = {warehouse_id for warehouse_id, _product_id in warehouse_product_pairs}
+        product_ids = {product_id for _warehouse_id, product_id in warehouse_product_pairs}
+
+        return get_product_stock_total(tenant_id, product_ids)
+
+    def _enrich_response_data(self, productions, tenant_id):
+        if not productions:
+            return {
+                "productions": [],
+                "total_quantities": {}
+            }
+
+        warehouse_product_pairs = {
+            (entry.warehouse_id, entry.product_id) for entry in productions
+        }
+        stock_rows = ProductStock.objects.filter(
+            tenant_id=tenant_id,
+            warehouse_id__in=[warehouse_id for warehouse_id, _product_id in warehouse_product_pairs],
+            product_id__in=[product_id for _warehouse_id, product_id in warehouse_product_pairs],
+            deleted_at__isnull=True,
+        ).values("warehouse_id", "product_id").annotate(total=Sum("quantity"))
+        total_quantities = {
+            f"{row['warehouse_id']}:{row['product_id']}": float(row["total"] or 0)
+            for row in stock_rows
+        }
+
+        return {
+            "productions": productions,
+            "total_quantities": total_quantities,
+        }
+    def _sync_product_stock_quantity(self, tenant_id, warehouse_id, product_id):
+        total_quantity = (
+            Production.objects.filter(
+                tenant_id=tenant_id,
+                warehouse_id=warehouse_id,
+                product_id=product_id,
+                deleted_at__isnull=True,
+            ).aggregate(total=Sum("quantity"))["total"]
+            or 0
+        )
+
+        stock, _ = ProductStock.objects.get_or_create(
+            tenant_id=tenant_id,
+            warehouse_id=warehouse_id,
+            product_id=product_id,
+            deleted_at__isnull=True,
+            defaults={"quantity": total_quantity},
+        )
+        stock.quantity = total_quantity
+        stock.deleted_at = None
+        stock.save(update_fields=["quantity", "deleted_at", "updated_at"])
+
+    def _get_material_requirements(self, product, quantity):
+        if product.product_type != "MANUFACTURED":
+            return {}
+
+        requirements = {}
+        materials = product.materials.filter(deleted_at__isnull=True).select_related("raw_material")
+        for material in materials:
+            requirements[material.raw_material_id] = material.quantity * quantity
+        return requirements
+
+    def _validate_material_availability(self, tenant_id, warehouse_id, product, quantity, instance=None):
+        if product.product_type != "MANUFACTURED":
+            return
+
+        materials = product.materials.filter(deleted_at__isnull=True)
+        if not materials.exists():
+            raise ValidationError("Manufactured product must have active raw material lines.")
+
+        new_requirements = self._get_material_requirements(product, quantity)
+        old_requirements = {}
+        if instance and instance.warehouse_id == warehouse_id:
+            old_requirements = self._get_material_requirements(instance.product, instance.quantity)
+
+        for raw_material_id, required_qty in new_requirements.items():
+            if required_qty <= 0:
+                continue
+
+            current_stock = (
+                Stock.objects.filter(
+                    tenant_id=tenant_id,
+                    warehouse_id=warehouse_id,
+                    raw_material_id=raw_material_id,
+                    deleted_at__isnull=True,
+                )
+                .values_list("quantity", flat=True)
+                .first()
+                or Decimal("0")
+            )
+            effective_available = Decimal(str(current_stock)) + Decimal(
+                str(old_requirements.get(raw_material_id, 0))
+            )
+
+            if Decimal(str(required_qty)) > effective_available:
+                raw_material_name = (
+                    RawMaterial.objects.filter(id=raw_material_id).values_list("name", flat=True).first()
+                    or "Raw material"
+                )
+                raise ValidationError(
+                    {
+                        "quantity": (
+                            f"Not enough stock for {raw_material_name}. "
+                            f"Required: {required_qty}, available: {effective_available}."
+                        )
+                    }
+                )
+
+    def _sync_related_raw_material_stock(self, tenant_id, warehouse_id, product):
+        if not product or product.product_type != "MANUFACTURED":
+            return
+
+        raw_material_ids = list(
+            product.materials.filter(deleted_at__isnull=True).values_list("raw_material_id", flat=True)
+        )
+        for raw_material_id in raw_material_ids:
+            opening_stock_view = OpeningStockViewSet()
+            opening_stock_view._sync_stock_quantity(tenant_id, warehouse_id, raw_material_id)
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        if hasattr(self, "_enriched_data"):
+            context["total_quantities"] = self._enriched_data.get("total_quantities", {})
+        return context
+
+    def list(self, request, *args, **kwargs):
+        search = request.query_params.get("search", "")
+        tenant_id = request.user.tenant_id
+        qs = self.get_queryset()
+
+        if search:
+            qs = qs.filter(
+                Q(warehouse__name__icontains=search)
+                | Q(product__name__icontains=search)
+            )
+
+        page = self.paginate_queryset(qs)
+        if page is not None:
+            self._enriched_data = self._enrich_response_data(page, tenant_id)
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        self._enriched_data = self._enrich_response_data(list(qs), tenant_id)
+        serializer = self.get_serializer(qs, many=True)
+        return Response(serializer.data)
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        tenant_id = request.user.tenant_id
+        self._enriched_data = self._enrich_response_data([instance], tenant_id)
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
+
+    def create(self, request, *args, **kwargs):
+        tenant_id = request.user.tenant_id
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        product = Product.objects.get(
+            id=serializer.validated_data["product_id"],
+            tenant_id=tenant_id,
+            deleted_at__isnull=True,
+        )
+        warehouse_id = serializer.validated_data["warehouse_id"]
+        quantity = serializer.validated_data["quantity"]
+        self._validate_material_availability(tenant_id, warehouse_id, product, quantity)
+        instance = serializer.save()
+
+        self._sync_product_stock_quantity(tenant_id, instance.warehouse_id, instance.product_id)
+        self._sync_related_raw_material_stock(tenant_id, instance.warehouse_id, instance.product)
+
+        self._enriched_data = self._enrich_response_data([instance], tenant_id)
+        enriched_serializer = self.get_serializer(instance)
+        return Response(
+            {
+                "data": enriched_serializer.data,
+                "message": "Production created successfully",
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop("partial", False)
+        instance = self.get_object()
+        tenant_id = request.user.tenant_id
+        old_warehouse_id = instance.warehouse_id
+        old_product_id = instance.product_id
+        old_product = instance.product
+
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        new_product_id = serializer.validated_data.get("product_id", instance.product_id)
+        new_warehouse_id = serializer.validated_data.get("warehouse_id", instance.warehouse_id)
+        new_quantity = serializer.validated_data.get("quantity", instance.quantity)
+        new_product = Product.objects.get(
+            id=new_product_id,
+            tenant_id=tenant_id,
+            deleted_at__isnull=True,
+        )
+        self._validate_material_availability(
+            tenant_id, new_warehouse_id, new_product, new_quantity, instance=instance
+        )
+        updated_instance = serializer.save()
+
+        self._sync_product_stock_quantity(
+            tenant_id, updated_instance.warehouse_id, updated_instance.product_id
+        )
+        self._sync_related_raw_material_stock(
+            tenant_id, updated_instance.warehouse_id, updated_instance.product
+        )
+        if (
+            old_product_id != updated_instance.product_id
+            or old_warehouse_id != updated_instance.warehouse_id
+        ):
+            self._sync_product_stock_quantity(tenant_id, old_warehouse_id, old_product_id)
+            self._sync_related_raw_material_stock(tenant_id, old_warehouse_id, old_product)
+
+        self._enriched_data = self._enrich_response_data([updated_instance], tenant_id)
+        enriched_serializer = self.get_serializer(updated_instance)
+        return Response(enriched_serializer.data)
+
+    def perform_destroy(self, instance):
+        instance.deleted_at = now()
+        instance.save()
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        tenant_id = request.user.tenant_id
+        warehouse_id = instance.warehouse_id
+        product_id = instance.product_id
+
+        self.perform_destroy(instance)
+        self._sync_product_stock_quantity(tenant_id, warehouse_id, product_id)
+        self._sync_related_raw_material_stock(tenant_id, warehouse_id, instance.product)
+
+        return Response(
+            {"data": None, "message": "Production deleted successfully"},
             status=status.HTTP_200_OK,
         )
 
@@ -412,20 +773,31 @@ class WarehouseViewSet(viewsets.ModelViewSet):
         serializer.save(tenant_id=self.request.user.tenant_id)
 
     def perform_destroy(self, instance):
-        # 🔥 Check opening stock dependency
-        # TODO: Uncomment when OpeningStock model is created
-        # from inventory.models import OpeningStock
-        #
-        # exists = OpeningStock.objects.filter(
-        #     tenant_id=self.request.user.tenant_id,
-        #     warehouse_id=instance.id,
-        #     deleted_at__isnull=True
-        # ).exists()
-        #
-        # if exists:
-        #     raise ValidationError(
-        #         "Warehouse cannot be deleted because opening stock entries exist"
-        #     )
+        opening_stock_exists = OpeningStock.objects.filter(
+            tenant_id=self.request.user.tenant_id,
+            warehouse_id=instance.id,
+            deleted_at__isnull=True,
+        ).exists()
+        production_exists = Production.objects.filter(
+            tenant_id=self.request.user.tenant_id,
+            warehouse_id=instance.id,
+            deleted_at__isnull=True,
+        ).exists()
+        stock_exists = Stock.objects.filter(
+            tenant_id=self.request.user.tenant_id,
+            warehouse_id=instance.id,
+            deleted_at__isnull=True,
+        ).exists()
+        product_stock_exists = ProductStock.objects.filter(
+            tenant_id=self.request.user.tenant_id,
+            warehouse_id=instance.id,
+            deleted_at__isnull=True,
+        ).exists()
+
+        if opening_stock_exists or stock_exists or production_exists or product_stock_exists:
+            raise ValidationError(
+                "Warehouse cannot be deleted because stock records exist."
+            )
 
         instance.deleted_at = now()
         instance.save()

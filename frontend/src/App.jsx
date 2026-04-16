@@ -11,8 +11,10 @@ import RawMaterialPage from "./pages/rawMaterial/RawMaterialPage";
 import ProductPage from "./pages/product/ProductPage";
 import WarehousePage from "./pages/warehouse/WarehousePage";
 import OpeningStockPage from "./pages/inventory/OpeningStockPage";
+import ProductionPage from "./pages/inventory/ProductionPage";
 import CustomersPage from "./pages/parties/CustomersPage";
 import SuppliersPage from "./pages/parties/SuppliersPage";
+import AccountsPage from "./pages/accounts/AccountsPage";
 
 const Protected = ({ children }) => {
   const { token } = useAuth();
@@ -38,8 +40,10 @@ const App = () => (
         <Route path="masters/brands" element={<BrandsPage />} />
         <Route path="raw-materials" element={<RawMaterialPage />} />
         <Route path="products" element={<ProductPage />} />
+        <Route path="accounts" element={<AccountsPage />} />
         <Route path="warehouses" element={<WarehousePage />} />
         <Route path="opening-stock" element={<OpeningStockPage />} />
+        <Route path="production" element={<ProductionPage />} />
         <Route path="customers" element={<CustomersPage />} />
         <Route path="suppliers" element={<SuppliersPage />} />
       </Route>

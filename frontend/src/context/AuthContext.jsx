@@ -2,25 +2,11 @@ import { createContext, useContext, useMemo, useReducer } from "react";
 
 const AuthContext = createContext(null);
 
-const decodeTenantFromToken = (token) => {
-  if (!token) return "";
-
-  try {
-    const payload = JSON.parse(atob(token.split(".")[1]));
-    // Backend injects tenant_id into JWT payload at login
-    return payload?.tenant_id || payload?.tenantId || "";
-  } catch (error) {
-    console.warn("Failed to decode tenant from token:", error);
-    return "";
-  }
-};
-
 const getTokenExpiration = (token) => {
   if (!token) return null;
 
   try {
     const payload = JSON.parse(atob(token.split(".")[1]));
-    // JWT exp is in seconds, convert to milliseconds
     return payload?.exp ? payload.exp * 1000 : null;
   } catch (error) {
     console.warn("Failed to decode expiration from token:", error);
@@ -35,10 +21,7 @@ const isTokenExpired = (token) => {
 };
 
 const storedToken = localStorage.getItem("token") || "";
-const storedTenantId =
-  decodeTenantFromToken(storedToken) ||
-  localStorage.getItem("tenantId") ||
-  "SAMS_TRADERS";
+const storedTenantId = localStorage.getItem("tenantId") || "SAMS_TRADERS";
 
 const initialState = {
   token: storedToken,
@@ -53,6 +36,7 @@ const reducer = (state, action) => {
       return { ...state, ...action.payload };
     case "LOGOUT":
       localStorage.removeItem("token");
+      localStorage.removeItem("refreshToken");
       localStorage.removeItem("tenantId");
       return { ...state, token: "", tenantId: "SAMS_TRADERS" };
     case "SET_TENANT":
@@ -77,13 +61,11 @@ export const AuthProvider = ({ children }) => {
       tenantId: state.tenantId,
       isAuthenticated: !!state.token && !isTokenExpired(state.token),
       login: (token, tenantId) => {
-        // Prefer tenant_id decoded from JWT (backend injects it), fall back to provided tenantId
-        const decodedTenant = decodeTenantFromToken(token);
         dispatch({
           type: "LOGIN",
           payload: {
             token,
-            tenantId: decodedTenant || tenantId,
+            tenantId: tenantId || "SAMS_TRADERS",
           },
         });
       },

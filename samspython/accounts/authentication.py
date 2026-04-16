@@ -13,16 +13,12 @@ class TenantJWTAuthentication(JWTAuthentication):
 
         user, token = result
 
-        tenant_id = token.get("tenant_id")
-        requested_tenant = request.headers.get("x-tenant-id")
+        requested_tenant = request.headers.get("x-tenant-id") or "SAMS_TRADERS"
 
-        if not tenant_id or tenant_id not in VALID_TENANTS:
-            raise AuthenticationFailed("Invalid tenant_id in token")
+        if requested_tenant not in VALID_TENANTS:
+            raise AuthenticationFailed("Invalid tenant selection")
 
-        if requested_tenant and requested_tenant != tenant_id:
-            raise AuthenticationFailed("Tenant mismatch")
-
-        request.tenant_id = tenant_id
-        user.tenant_id = tenant_id  # Attach tenant_id to user object for viewset access
+        request.tenant_id = requested_tenant
+        user.tenant_id = requested_tenant
 
         return (user, token)

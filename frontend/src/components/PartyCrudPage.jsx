@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -8,6 +8,7 @@ import Button from "./ui/Button";
 import FormInput from "./ui/FormInput";
 import ConfirmModal from "./ui/ConfirmModal";
 import { useToast } from "../context/ToastContext";
+import { formatAccountLabel } from "../utils/accounts";
 
 const schema = z.object({
   name: z.string().trim().min(1, "Name is required"),
@@ -15,6 +16,7 @@ const schema = z.object({
   phone_number: z.string().trim().min(1, "Phone number is required"),
   business_name: z.string().trim().min(1, "Business name is required"),
   address: z.string().trim().min(1, "Address is required"),
+  account: z.union([z.string().uuid("Account must be a valid UUID"), z.literal("")]),
 });
 
 const defaultValues = {
@@ -23,9 +25,19 @@ const defaultValues = {
   phone_number: "",
   business_name: "",
   address: "",
+  account: "",
 };
 
-const PartyCrudPage = ({ title, service }) => {
+const selectClassName =
+  "w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100";
+
+const PartyCrudPage = ({
+  title,
+  service,
+  accountLabel = "Control Account",
+  accountOptions = [],
+  loadingAccounts = false,
+}) => {
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -38,6 +50,10 @@ const PartyCrudPage = ({ title, service }) => {
   const toast = useToast();
 
   const singularTitle = title.endsWith("s") ? title.slice(0, -1) : title;
+  const accountMap = useMemo(
+    () => Object.fromEntries(accountOptions.map((account) => [account.id, account])),
+    [accountOptions]
+  );
 
   const form = useForm({
     resolver: zodResolver(schema),
@@ -74,11 +90,16 @@ const PartyCrudPage = ({ title, service }) => {
 
   const onSubmit = form.handleSubmit(async (values) => {
     try {
+      const payload = {
+        ...values,
+        account: values.account || null,
+      };
+
       if (editingId) {
-        await service.update(editingId, values);
+        await service.update(editingId, payload);
         toast.success(`${singularTitle} updated`);
       } else {
-        await service.create(values);
+        await service.create(payload);
         toast.success(`${singularTitle} created`);
       }
       resetForm();
@@ -93,7 +114,7 @@ const PartyCrudPage = ({ title, service }) => {
   const onEdit = async (recordId) => {
     try {
       const response = await service.getById(recordId);
-      const record = response.data;
+      const record = response.data || response;
       setEditingId(record.id);
       form.reset({
         name: record.name || "",
@@ -101,6 +122,7 @@ const PartyCrudPage = ({ title, service }) => {
         phone_number: record.phone_number || "",
         business_name: record.business_name || "",
         address: record.address || "",
+        account: record.account || "",
       });
     } catch (editError) {
       const message = editError?.response?.data?.message || `Failed to load ${singularTitle.toLowerCase()}`;
@@ -140,11 +162,9 @@ const PartyCrudPage = ({ title, service }) => {
       <Card className="bg-[linear-gradient(135deg,rgba(255,255,255,0.92),rgba(224,242,254,0.96))]">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-           
             <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">
               {title}
             </h2>
-           
           </div>
           <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
             <input
@@ -189,6 +209,26 @@ const PartyCrudPage = ({ title, service }) => {
             error={form.formState.errors.phone_number?.message}
             {...form.register("phone_number")}
           />
+          <div className="space-y-2">
+            <label className="block text-sm font-semibold text-slate-700">
+              {accountLabel}
+            </label>
+            <select
+              className={selectClassName}
+              disabled={loadingAccounts}
+              {...form.register("account")}
+            >
+              <option value="">Select account</option>
+              {accountOptions.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {formatAccountLabel(account)}
+                </option>
+              ))}
+            </select>
+            {form.formState.errors.account?.message && (
+              <p className="text-sm text-rose-600">{form.formState.errors.account.message}</p>
+            )}
+          </div>
           <FormInput
             label="Address"
             required
@@ -225,13 +265,14 @@ const PartyCrudPage = ({ title, service }) => {
       >
         <Card className="overflow-hidden p-0">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[920px] text-sm">
+            <table className="w-full min-w-[1080px] text-sm">
               <thead className="bg-[linear-gradient(180deg,#edf4ff,#e1ebff)] text-left">
                 <tr>
                   <th className="px-5 py-4 font-bold text-slate-700">Name</th>
                   <th className="px-5 py-4 font-bold text-slate-700">Business Name</th>
                   <th className="px-5 py-4 font-bold text-slate-700">Email</th>
                   <th className="px-5 py-4 font-bold text-slate-700">Phone</th>
+                  <th className="px-5 py-4 font-bold text-slate-700">Account</th>
                   <th className="px-5 py-4 font-bold text-slate-700">Address</th>
                   <th className="px-5 py-4 text-right font-bold text-slate-700">
                     Actions
@@ -248,6 +289,11 @@ const PartyCrudPage = ({ title, service }) => {
                     <td className="px-5 py-4 text-slate-600">{record.business_name}</td>
                     <td className="px-5 py-4 text-slate-600">{record.email || "-"}</td>
                     <td className="px-5 py-4 text-slate-600">{record.phone_number}</td>
+                    <td className="px-5 py-4 text-slate-600">
+                      {record.account && accountMap[record.account]
+                        ? formatAccountLabel(accountMap[record.account]).trim()
+                        : "-"}
+                    </td>
                     <td className="px-5 py-4 text-slate-600">{record.address}</td>
                     <td className="px-5 py-4 text-right">
                       <button
