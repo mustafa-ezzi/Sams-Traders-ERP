@@ -41,6 +41,8 @@ INSTALLED_APPS = [
     "inventory",
     "common",
     "accounts",
+    "purchase",
+    "sales",
     "corsheaders",
 ]
 

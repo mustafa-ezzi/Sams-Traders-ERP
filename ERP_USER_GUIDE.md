@@ -559,7 +559,7 @@ Use this when a full product family should share one accounting pattern.
 Raw materials can be linked to:
 
 - inventory asset account only
-
+  
 Use this to tell the system which asset account represents the value of that raw material in stock.
 
 ### Product COA Mapping

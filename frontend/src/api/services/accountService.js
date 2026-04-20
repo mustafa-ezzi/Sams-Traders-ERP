@@ -21,6 +21,12 @@ const accountService = {
     const response = await axiosInstance.delete(`/accounts/accounts/${id}/`);
     return response.data;
   },
+  async getLedgerReport(params) {
+    const response = await axiosInstance.get("/accounts/accounts/ledger-report/", {
+      params,
+    });
+    return response.data.data || {};
+  },
 };
 
 export default accountService;

@@ -263,10 +263,13 @@ class PartySerializer(serializers.ModelSerializer):
             "account",
         ]
 
+    def get_model(self):
+        return self.context.get("party_model", self.Meta.model)
+
     def validate_business_name(self, value):
         tenant_id = self.context["request"].user.tenant_id
         instance = getattr(self, "instance", None)
-        model = self.Meta.model
+        model = self.get_model()
 
         qs = model.objects.filter(
             tenant_id=tenant_id, business_name=value, deleted_at__isnull=True

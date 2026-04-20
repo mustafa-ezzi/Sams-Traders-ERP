@@ -90,6 +90,14 @@ const icons = {
       <circle cx="17" cy="18" r="1.2" />
     </Icon>
   ),
+  reports: (
+    <Icon className="h-[15px] w-[15px]">
+      <path d="M5 19V5" />
+      <path d="M10 19V9" />
+      <path d="M15 19v-6" />
+      <path d="M20 19V7" />
+    </Icon>
+  ),
 };
 
 const navigation = [
@@ -115,6 +123,24 @@ const navigation = [
     ],
   },
   {
+    title: "Purchase",
+    id: "purchase",
+    items: [
+      { to: "/purchase-invoices", label: "Purchase Invoices", icon: icons.stock },
+      { to: "/purchase-returns", label: "Purchase Returns", icon: icons.stock },
+      { to: "/purchase-bank-payments", label: "Bank Payments", icon: icons.stock },
+    ],
+  },
+  {
+    title: "Sales",
+    id: "sales",
+    items: [
+      { to: "/sales-invoices", label: "Sales Invoices", icon: icons.stock },
+      { to: "/sales-returns", label: "Sales Returns", icon: icons.stock },
+      { to: "/sales-bank-receipts", label: "Bank Receipts", icon: icons.stock },
+    ],
+  },
+  {
     title: "Parties",
     id: "parties",
     items: [
@@ -127,6 +153,11 @@ const navigation = [
     id: "accounting",
     items: [{ to: "/accounts", label: "COA", icon: icons.accounts }],
   },
+  {
+    title: "Reports",
+    id: "reports",
+    items: [{ to: "/reports/ledger", label: "Ledger Reports", icon: icons.reports }],
+  },
 ];
 
 const pageTitles = {
@@ -134,9 +165,16 @@ const pageTitles = {
   "/raw-materials": { title: "Raw Materials", eyebrow: "Inventory" },
   "/products": { title: "Products", eyebrow: "Inventory" },
   "/accounts": { title: "Chart of Accounts", eyebrow: "Accounting" },
+  "/reports/ledger": { title: "Ledger Reports", eyebrow: "Reports" },
   "/warehouses": { title: "Warehouses", eyebrow: "Inventory" },
   "/opening-stock": { title: "Opening Stock", eyebrow: "Inventory" },
   "/production": { title: "Production", eyebrow: "Inventory" },
+  "/purchase-invoices": { title: "Purchase Invoices", eyebrow: "Purchase" },
+  "/purchase-returns": { title: "Purchase Returns", eyebrow: "Purchase" },
+  "/purchase-bank-payments": { title: "Bank Payments", eyebrow: "Purchase" },
+  "/sales-invoices": { title: "Sales Invoices", eyebrow: "Sales" },
+  "/sales-returns": { title: "Sales Returns", eyebrow: "Sales" },
+  "/sales-bank-receipts": { title: "Bank Receipts", eyebrow: "Sales" },
   "/customers": { title: "Customers", eyebrow: "Parties" },
   "/suppliers": { title: "Suppliers", eyebrow: "Parties" },
   "/masters/units": { title: "Units", eyebrow: "Masters" },

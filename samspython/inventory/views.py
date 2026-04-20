@@ -36,6 +36,7 @@ from .serializers import (
     WarehouseSerializer,
 )
 from .pagination import StandardResultsSetPagination
+from .services import sync_product_stock_quantity
 from rest_framework import filters
 from rest_framework.exceptions import ValidationError
 
@@ -492,26 +493,7 @@ class ProductionViewSet(viewsets.ModelViewSet):
             "total_quantities": total_quantities,
         }
     def _sync_product_stock_quantity(self, tenant_id, warehouse_id, product_id):
-        total_quantity = (
-            Production.objects.filter(
-                tenant_id=tenant_id,
-                warehouse_id=warehouse_id,
-                product_id=product_id,
-                deleted_at__isnull=True,
-            ).aggregate(total=Sum("quantity"))["total"]
-            or 0
-        )
-
-        stock, _ = ProductStock.objects.get_or_create(
-            tenant_id=tenant_id,
-            warehouse_id=warehouse_id,
-            product_id=product_id,
-            deleted_at__isnull=True,
-            defaults={"quantity": total_quantity},
-        )
-        stock.quantity = total_quantity
-        stock.deleted_at = None
-        stock.save(update_fields=["quantity", "deleted_at", "updated_at"])
+        sync_product_stock_quantity(tenant_id, warehouse_id, product_id)
 
     def _get_material_requirements(self, product, quantity):
         if product.product_type != "MANUFACTURED":
@@ -716,13 +698,29 @@ class BasePartyViewSet(viewsets.ModelViewSet):
         )
         return qs
 
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["party_model"] = self.party_model
+        return context
+
     def get_serializer(self, *args, **kwargs):
-        # dynamically assign model to serializer for uniqueness check
         serializer_class = self.get_serializer_class()
         kwargs["context"] = self.get_serializer_context()
+
         serializer = serializer_class(*args, **kwargs)
-        serializer.Meta.model = self.party_model
+
+        if hasattr(serializer, "child"):  # when many=True
+            serializer.child.Meta.model = self.party_model
+        else:
+            serializer.Meta.model = self.party_model
+
         return serializer
+
+    def perform_create(self, serializer):
+        serializer.save(tenant_id=self.request.user.tenant_id)
+
+    def perform_update(self, serializer):
+        serializer.save()
 
     def perform_destroy(self, instance):
         instance.deleted_at = now()
