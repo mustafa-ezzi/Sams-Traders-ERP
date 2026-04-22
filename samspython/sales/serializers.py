@@ -140,6 +140,14 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+        read_only_fields = [
+            "id",
+            "invoice_number",
+            "gross_amount",
+            "net_amount",
+            "created_at",
+            "updated_at",
+        ]
 
     def _get_financials(self, obj):
         return get_sales_invoice_financials(obj)
@@ -152,14 +160,6 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
 
     def get_balance_amount(self, obj):
         return str(self._get_financials(obj)["balance_amount"])
-        read_only_fields = [
-            "id",
-            "invoice_number",
-            "gross_amount",
-            "net_amount",
-            "created_at",
-            "updated_at",
-        ]
 
     def get_fields(self):
         fields = super().get_fields()

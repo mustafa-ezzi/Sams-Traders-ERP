@@ -23,6 +23,7 @@ import SuppliersPage from "./pages/parties/SuppliersPage";
 import AccountsPage from "./pages/accounts/AccountsPage";
 import CoaCompletenessReportPage from "./pages/reports/CoaCompletenessReportPage";
 import LedgerReportsPage from "./pages/reports/LedgerReportsPage";
+import PartyLedgerReportsPage from "./pages/reports/PartyLedgerReportsPage";
 
 const Protected = ({ children }) => {
   const { token } = useAuth();
@@ -50,6 +51,7 @@ const App = () => (
         <Route path="products" element={<ProductPage />} />
         <Route path="accounts" element={<AccountsPage />} />
         <Route path="reports/ledger" element={<LedgerReportsPage />} />
+        <Route path="reports/party-ledger" element={<PartyLedgerReportsPage />} />
         <Route path="reports/coa-completeness" element={<CoaCompletenessReportPage />} />
         <Route path="warehouses" element={<WarehousePage />} />
         <Route path="opening-stock" element={<OpeningStockPage />} />

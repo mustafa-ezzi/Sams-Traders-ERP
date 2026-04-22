@@ -11,7 +11,7 @@ from accounts.journal import (
     sync_sales_invoice_journal,
 )
 from accounts.models import JournalEntry
-from accounts.models import Account, User
+from accounts.models import Account, JournalLine, User
 from accounts.views import AccountViewSet
 from inventory.models import (
     Brand,
@@ -307,6 +307,75 @@ class LedgerReportTests(TestCase):
         self.assertEqual(len(response.data["data"]["rows"]), 1)
         self.assertEqual(response.data["data"]["total_debit"], "500.00")
         self.assertEqual(response.data["data"]["total_credit"], "0.00")
+
+    def test_customer_party_ledger_report_with_open_dates(self):
+        sales_entry = JournalEntry.objects.create(
+            tenant_id=self.tenant_id,
+            date="2026-04-01",
+            reference="SINV-00001",
+            source_type=JournalEntry.SourceType.SALES_INVOICE,
+            source_id="11111111-1111-1111-1111-111111111111",
+            document_type="Sales Invoice",
+            description="Invoice created",
+            people_type="Customer",
+            people_name=self.customer.business_name,
+        )
+        JournalLine.objects.create(
+            tenant_id=self.tenant_id,
+            journal_entry=sales_entry,
+            account=self.customer_account,
+            debit=Decimal("2000.00"),
+            credit=Decimal("0.00"),
+            people_type="Customer",
+            people_name=self.customer.business_name,
+            line_description="Invoice created",
+        )
+
+        receipt_entry = JournalEntry.objects.create(
+            tenant_id=self.tenant_id,
+            date="2026-04-02",
+            reference="SBR-00001",
+            source_type=JournalEntry.SourceType.SALES_BANK_RECEIPT,
+            source_id="22222222-2222-2222-2222-222222222222",
+            document_type="Bank Receipt",
+            description="Receipt posted",
+            people_type="Customer",
+            people_name=self.customer.business_name,
+        )
+        JournalLine.objects.create(
+            tenant_id=self.tenant_id,
+            journal_entry=receipt_entry,
+            account=self.customer_account,
+            debit=Decimal("0.00"),
+            credit=Decimal("500.00"),
+            people_type="Customer",
+            people_name=self.customer.business_name,
+            line_description="Receipt posted",
+        )
+
+        request = self.factory.get(
+            "/api/accounts/accounts/party-ledger-report/",
+            {
+                "partner_type": "customer",
+                "partner_id": str(self.customer.id),
+            },
+        )
+        force_authenticate(request, user=self.user)
+        response = AccountViewSet.as_view({"get": "party_ledger_report"})(request)
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.data["data"]
+        self.assertEqual(payload["from_date"], "")
+        self.assertEqual(payload["to_date"], "")
+        self.assertEqual(len(payload["rows"]), 2)
+        self.assertEqual(payload["rows"][0]["credit"], "2000.00")
+        self.assertEqual(payload["rows"][0]["debit"], "0.00")
+        self.assertEqual(payload["rows"][1]["credit"], "0.00")
+        self.assertEqual(payload["rows"][1]["debit"], "500.00")
+        self.assertEqual(payload["summary"]["grand_total"], "1500.00")
+        totals = {item["label"]: item["amount"] for item in payload["summary"]["document_totals"]}
+        self.assertEqual(totals["Sales Invoice"], "2000.00")
+        self.assertEqual(totals["Bank Receipt"], "500.00")
 
 
 class AccountSoftDeleteProtectionTests(TestCase):

@@ -135,7 +135,8 @@ const navigation = [
     id: "reports",
     items: [
       { to: "/reports/ledger", label: "Ledger Reports", icon: icons.reports },
-      { to: "/reports/coa-completeness", label: "COA Completeness", icon: icons.reports },
+      { to: "/reports/party-ledger", label: "Party Ledger", icon: icons.reports },
+      // { to: "/reports/coa-completeness", label: "COA Completeness", icon: icons.reports },
     ],
   },
   {
@@ -164,6 +165,7 @@ const pageTitles = {
   "/products": { title: "Products", eyebrow: "Inventory" },
   "/accounts": { title: "Chart of Accounts", eyebrow: "Accounting" },
   "/reports/ledger": { title: "Ledger Reports", eyebrow: "Reports" },
+  "/reports/party-ledger": { title: "Party Ledger", eyebrow: "Reports" },
   "/reports/coa-completeness": { title: "COA Completeness", eyebrow: "Reports" },
   "/warehouses": { title: "Warehouses", eyebrow: "Inventory" },
   "/opening-stock": { title: "Opening Stock", eyebrow: "Inventory" },

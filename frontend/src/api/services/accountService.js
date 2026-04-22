@@ -28,6 +28,13 @@ const accountService = {
     });
     return response.data.data || {};
   },
+  async getPartyLedgerReport(params, selectedTenant = "") {
+    const response = await axiosInstance.get("/accounts/accounts/party-ledger-report/", {
+      params,
+      headers: selectedTenant ? { "x-tenant-id": selectedTenant } : {},
+    });
+    return response.data.data || {};
+  },
   async getCoaCompletenessReport(params, selectedTenant = "") {
     const response = await axiosInstance.get("/accounts/accounts/coa-completeness-report/", {
       params,

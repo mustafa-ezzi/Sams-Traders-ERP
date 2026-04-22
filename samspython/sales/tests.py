@@ -4,9 +4,9 @@ from django.test import TestCase
 from rest_framework.test import APIRequestFactory
 
 from accounts.models import Account, User
-from inventory.models import Customer, Product, Warehouse
+from inventory.models import Category, Customer, Product, ProductStock, Warehouse
 from sales.models import SalesBankReceipt, SalesInvoice, SalesReturn
-from sales.serializers import SalesBankReceiptSerializer
+from sales.serializers import SalesBankReceiptSerializer, SalesInvoiceSerializer
 from sales.services import get_sales_invoice_financials
 
 
@@ -158,3 +158,127 @@ class SalesBankReceiptTests(TestCase):
 
         self.assertFalse(serializer.is_valid())
         self.assertIn("bank_account_id", serializer.errors)
+
+
+class SalesInvoiceSerializerTests(TestCase):
+    def setUp(self):
+        self.tenant_id = "SAMS_TRADERS"
+        self.user = User.objects.create_user(
+            username="sales-invoice-user",
+            password="secret",
+            tenant_id=self.tenant_id,
+        )
+        self.factory = APIRequestFactory()
+
+        self.warehouse = Warehouse.objects.create(
+            tenant_id=self.tenant_id,
+            name="Main Warehouse",
+            location="Karachi",
+        )
+        self.receivable_account = Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="1120",
+            name="Customers Receivable",
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.RECEIVABLE,
+            account_nature=Account.AccountNature.DEBIT,
+            level=1,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+        inventory_account = Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="1150",
+            name="Inventory",
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.INVENTORY,
+            account_nature=Account.AccountNature.DEBIT,
+            level=1,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+        cogs_account = Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="5100",
+            name="COGS",
+            account_group=Account.AccountGroup.COGS,
+            account_type=Account.AccountType.COGS,
+            account_nature=Account.AccountNature.DEBIT,
+            level=1,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+        revenue_account = Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="4100",
+            name="Sales Revenue",
+            account_group=Account.AccountGroup.REVENUE,
+            account_type=Account.AccountType.REVENUE,
+            account_nature=Account.AccountNature.CREDIT,
+            level=1,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+        category = Category.objects.create(
+            tenant_id=self.tenant_id,
+            name="Category",
+            inventory_account=inventory_account,
+            cogs_account=cogs_account,
+            revenue_account=revenue_account,
+        )
+        self.product = Product.objects.create(
+            tenant_id=self.tenant_id,
+            name="Sales Product",
+            product_type="READY_MADE",
+            packaging_cost=Decimal("0.00"),
+            net_amount=Decimal("50.00"),
+            category=category,
+            inventory_account=inventory_account,
+            cogs_account=cogs_account,
+            revenue_account=revenue_account,
+        )
+        self.customer = Customer.objects.create(
+            tenant_id=self.tenant_id,
+            name="Customer One",
+            business_name="Customer One",
+            phone_number="123",
+            address="Main road",
+            account=self.receivable_account,
+        )
+        ProductStock.objects.create(
+            tenant_id=self.tenant_id,
+            warehouse=self.warehouse,
+            product=self.product,
+            quantity=Decimal("10.00"),
+        )
+
+    def _get_request(self):
+        request = self.factory.post("/api/sales/sales-invoices/")
+        request.user = self.user
+        return request
+
+    def test_serializer_allows_create_without_invoice_number(self):
+        serializer = SalesInvoiceSerializer(
+            data={
+                "date": "2026-04-22",
+                "customer_id": str(self.customer.id),
+                "warehouse_id": str(self.warehouse.id),
+                "remarks": "Test invoice",
+                "invoice_discount": "0.00",
+                "lines": [
+                    {
+                        "product_id": str(self.product.id),
+                        "quantity": "1.00",
+                        "rate": "100.00",
+                        "discount": "0.00",
+                    }
+                ],
+            },
+            context={"request": self._get_request()},
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)

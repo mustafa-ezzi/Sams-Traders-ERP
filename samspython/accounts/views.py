@@ -733,3 +733,137 @@ class AccountViewSet(ModelViewSet):
             "recent_activity": recent_activity,
         }
         return Response({"data": payload})
+
+    @action(detail=False, methods=["get"], url_path="party-ledger-report")
+    def party_ledger_report(self, request):
+        tenant_id = request.user.tenant_id
+        partner_type = request.query_params.get("partner_type")
+        partner_id = request.query_params.get("partner_id")
+        from_date_raw = request.query_params.get("from_date")
+        to_date_raw = request.query_params.get("to_date")
+
+        if partner_type not in {"customer", "supplier"}:
+            raise ValidationError({"partner_type": "Partner type must be customer or supplier."})
+        if not partner_id:
+            raise ValidationError({"partner_id": "Partner selection is required."})
+
+        if partner_type == "customer":
+            try:
+                partner = Customer.objects.get(
+                    id=partner_id,
+                    tenant_id=tenant_id,
+                    deleted_at__isnull=True,
+                )
+            except Customer.DoesNotExist:
+                raise ValidationError({"partner_id": "Customer not found for this tenant."})
+            people_type = "Customer"
+            summary_labels = [
+                "Sales Invoice",
+                "Sales Return",
+                "Bank Receipt",
+                "Journal Voucher",
+            ]
+        else:
+            try:
+                partner = Supplier.objects.get(
+                    id=partner_id,
+                    tenant_id=tenant_id,
+                    deleted_at__isnull=True,
+                )
+            except Supplier.DoesNotExist:
+                raise ValidationError({"partner_id": "Supplier not found for this tenant."})
+            people_type = "Supplier"
+            summary_labels = [
+                "Purchase Invoice",
+                "Purchase Return",
+                "Bank Payment",
+                "Journal Voucher",
+            ]
+
+        from_date = None
+        to_date = None
+        if from_date_raw:
+            try:
+                from_date = date.fromisoformat(from_date_raw)
+            except ValueError:
+                raise ValidationError({"from_date": "From date must be in YYYY-MM-DD format."})
+        if to_date_raw:
+            try:
+                to_date = date.fromisoformat(to_date_raw)
+            except ValueError:
+                raise ValidationError({"to_date": "To date must be in YYYY-MM-DD format."})
+        if from_date and to_date and from_date > to_date:
+            raise ValidationError({"date": "From date cannot be greater than to date."})
+
+        queryset = JournalLine.objects.filter(
+            tenant_id=tenant_id,
+            deleted_at__isnull=True,
+            journal_entry__deleted_at__isnull=True,
+            people_type=people_type,
+            people_name=partner.business_name,
+        ).select_related("journal_entry", "account")
+
+        if from_date:
+            queryset = queryset.filter(journal_entry__date__gte=from_date)
+        if to_date:
+            queryset = queryset.filter(journal_entry__date__lte=to_date)
+
+        rows = []
+        document_totals = {label: Decimal("0.00") for label in summary_labels}
+        total_debit = Decimal("0.00")
+        total_credit = Decimal("0.00")
+
+        for line in queryset.order_by("journal_entry__date", "journal_entry__reference", "created_at"):
+            entry = line.journal_entry
+
+            # Party ledger is shown from the party statement perspective,
+            # so we invert the control-account journal direction.
+            display_debit = self._money(line.credit)
+            display_credit = self._money(line.debit)
+            document_type = entry.document_type or "Journal Voucher"
+
+            rows.append(
+                {
+                    "id": entry.reference,
+                    "document_type": document_type,
+                    "date": entry.date.isoformat(),
+                    "remarks": line.line_description or entry.description or "",
+                    "debit": str(display_debit),
+                    "credit": str(display_credit),
+                }
+            )
+
+            if document_type in document_totals:
+                document_totals[document_type] += display_debit + display_credit
+
+            total_debit += display_debit
+            total_credit += display_credit
+
+        if partner_type == "customer":
+            grand_total = self._money(total_credit - total_debit)
+        else:
+            grand_total = self._money(total_debit - total_credit)
+
+        summary = {
+            "document_totals": [
+                {"label": label, "amount": str(self._money(document_totals.get(label, Decimal("0.00"))))}
+                for label in summary_labels
+            ],
+            "grand_total": str(grand_total),
+            "total_debit": str(self._money(total_debit)),
+            "total_credit": str(self._money(total_credit)),
+        }
+
+        return Response(
+            {
+                "data": {
+                    "partner_type": partner_type,
+                    "partner_id": str(partner.id),
+                    "partner_name": partner.business_name,
+                    "from_date": from_date.isoformat() if from_date else "",
+                    "to_date": to_date.isoformat() if to_date else "",
+                    "rows": rows,
+                    "summary": summary,
+                }
+            }
+        )
