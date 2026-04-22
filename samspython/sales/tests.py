@@ -25,6 +25,7 @@ class SalesBankReceiptTests(TestCase):
             code="1111",
             name="Main Bank",
             account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.BANK,
             account_nature=Account.AccountNature.DEBIT,
             level=1,
             is_postable=True,
@@ -128,3 +129,32 @@ class SalesBankReceiptTests(TestCase):
 
         self.assertFalse(serializer.is_valid())
         self.assertIn("amount", serializer.errors)
+
+    def test_serializer_requires_bank_account_type_bank(self):
+        cash_account = Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="1113",
+            name="Cash Counter",
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.CASH,
+            account_nature=Account.AccountNature.DEBIT,
+            level=1,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+
+        serializer = SalesBankReceiptSerializer(
+            data={
+                "date": "2026-04-20",
+                "customer_id": str(self.customer.id),
+                "sales_invoice_id": str(self.invoice.id),
+                "bank_account_id": str(cash_account.id),
+                "amount": "500.00",
+                "remarks": "Cash is not valid here",
+            },
+            context={"request": self._get_request()},
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("bank_account_id", serializer.errors)

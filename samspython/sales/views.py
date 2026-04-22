@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from django.db import transaction
 from django.db.models import Prefetch
 from django.utils.timezone import now
 from rest_framework import filters, status, viewsets
@@ -8,6 +9,13 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from accounts.journal import (
+    delete_journal_entry,
+    sync_sales_bank_receipt_journal,
+    sync_sales_invoice_journal,
+    sync_sales_return_journal,
+)
+from accounts.models import JournalEntry
 from inventory.models import Product, ProductStock
 from inventory.pagination import StandardResultsSetPagination
 from inventory.services import sync_product_stock_quantity
@@ -65,10 +73,12 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
             sync_product_stock_quantity(tenant_id, warehouse_id, product_id)
 
     def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        invoice = serializer.save()
-        self._sync_invoice_product_stock(invoice)
+        with transaction.atomic():
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            invoice = serializer.save()
+            self._sync_invoice_product_stock(invoice)
+            sync_sales_invoice_journal(self._get_serializable_invoice(invoice.id))
         response_serializer = self.get_serializer(self._get_serializable_invoice(invoice.id))
         return Response(
             {
@@ -85,11 +95,13 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
         old_product_ids = list(
             instance.lines.filter(deleted_at__isnull=True).values_list("product_id", flat=True)
         )
-        serializer = self.get_serializer(instance, data=request.data, partial=partial)
-        serializer.is_valid(raise_exception=True)
-        invoice = serializer.save()
-        self._sync_invoice_product_stock(invoice)
-        self._sync_product_stock_pairs(instance.tenant_id, old_warehouse_id, old_product_ids)
+        with transaction.atomic():
+            serializer = self.get_serializer(instance, data=request.data, partial=partial)
+            serializer.is_valid(raise_exception=True)
+            invoice = serializer.save()
+            self._sync_invoice_product_stock(invoice)
+            self._sync_product_stock_pairs(instance.tenant_id, old_warehouse_id, old_product_ids)
+            sync_sales_invoice_journal(self._get_serializable_invoice(invoice.id))
         response_serializer = self.get_serializer(self._get_serializable_invoice(invoice.id))
         return Response(response_serializer.data)
 
@@ -105,8 +117,14 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
         product_ids = list(
             instance.lines.filter(deleted_at__isnull=True).values_list("product_id", flat=True)
         )
-        self.perform_destroy(instance)
-        self._sync_product_stock_pairs(tenant_id, warehouse_id, product_ids)
+        with transaction.atomic():
+            self.perform_destroy(instance)
+            self._sync_product_stock_pairs(tenant_id, warehouse_id, product_ids)
+            delete_journal_entry(
+                JournalEntry.SourceType.SALES_INVOICE,
+                instance.id,
+                tenant_id,
+            )
         return Response(
             {"data": None, "message": "Sales invoice deleted successfully"},
             status=status.HTTP_200_OK,
@@ -201,10 +219,12 @@ class SalesReturnViewSet(viewsets.ModelViewSet):
             sync_product_stock_quantity(tenant_id, warehouse_id, product_id)
 
     def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        sales_return = serializer.save()
-        self._sync_sales_return_stock(sales_return)
+        with transaction.atomic():
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            sales_return = serializer.save()
+            self._sync_sales_return_stock(sales_return)
+            sync_sales_return_journal(self._get_serializable_return(sales_return.id))
         response_serializer = self.get_serializer(
             self._get_serializable_return(sales_return.id)
         )
@@ -223,11 +243,13 @@ class SalesReturnViewSet(viewsets.ModelViewSet):
         old_product_ids = list(
             instance.lines.filter(deleted_at__isnull=True).values_list("product_id", flat=True)
         )
-        serializer = self.get_serializer(instance, data=request.data, partial=partial)
-        serializer.is_valid(raise_exception=True)
-        sales_return = serializer.save()
-        self._sync_sales_return_stock(sales_return)
-        self._sync_product_stock_pairs(instance.tenant_id, old_warehouse_id, old_product_ids)
+        with transaction.atomic():
+            serializer = self.get_serializer(instance, data=request.data, partial=partial)
+            serializer.is_valid(raise_exception=True)
+            sales_return = serializer.save()
+            self._sync_sales_return_stock(sales_return)
+            self._sync_product_stock_pairs(instance.tenant_id, old_warehouse_id, old_product_ids)
+            sync_sales_return_journal(self._get_serializable_return(sales_return.id))
         response_serializer = self.get_serializer(
             self._get_serializable_return(sales_return.id)
         )
@@ -245,8 +267,14 @@ class SalesReturnViewSet(viewsets.ModelViewSet):
         product_ids = list(
             instance.lines.filter(deleted_at__isnull=True).values_list("product_id", flat=True)
         )
-        self.perform_destroy(instance)
-        self._sync_product_stock_pairs(tenant_id, warehouse_id, product_ids)
+        with transaction.atomic():
+            self.perform_destroy(instance)
+            self._sync_product_stock_pairs(tenant_id, warehouse_id, product_ids)
+            delete_journal_entry(
+                JournalEntry.SourceType.SALES_RETURN,
+                instance.id,
+                tenant_id,
+            )
         return Response(
             {"data": None, "message": "Sales return deleted successfully"},
             status=status.HTTP_200_OK,
@@ -378,9 +406,11 @@ class SalesBankReceiptViewSet(viewsets.ModelViewSet):
         return self.get_queryset().get(id=receipt_id)
 
     def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        receipt = serializer.save()
+        with transaction.atomic():
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            receipt = serializer.save()
+            sync_sales_bank_receipt_journal(self._get_serializable_receipt(receipt.id))
         response_serializer = self.get_serializer(
             self._get_serializable_receipt(receipt.id)
         )
@@ -395,9 +425,11 @@ class SalesBankReceiptViewSet(viewsets.ModelViewSet):
     def update(self, request, *args, **kwargs):
         partial = kwargs.pop("partial", False)
         instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=partial)
-        serializer.is_valid(raise_exception=True)
-        receipt = serializer.save()
+        with transaction.atomic():
+            serializer = self.get_serializer(instance, data=request.data, partial=partial)
+            serializer.is_valid(raise_exception=True)
+            receipt = serializer.save()
+            sync_sales_bank_receipt_journal(self._get_serializable_receipt(receipt.id))
         response_serializer = self.get_serializer(
             self._get_serializable_receipt(receipt.id)
         )
@@ -409,7 +441,13 @@ class SalesBankReceiptViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
-        self.perform_destroy(instance)
+        with transaction.atomic():
+            self.perform_destroy(instance)
+            delete_journal_entry(
+                JournalEntry.SourceType.SALES_BANK_RECEIPT,
+                instance.id,
+                instance.tenant_id,
+            )
         return Response(
             {"data": None, "message": "Sales bank receipt deleted successfully"},
             status=status.HTTP_200_OK,

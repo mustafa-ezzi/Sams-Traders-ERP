@@ -21,6 +21,7 @@ import SalesBankReceiptPage from "./pages/sales/SalesBankReceiptPage";
 import CustomersPage from "./pages/parties/CustomersPage";
 import SuppliersPage from "./pages/parties/SuppliersPage";
 import AccountsPage from "./pages/accounts/AccountsPage";
+import CoaCompletenessReportPage from "./pages/reports/CoaCompletenessReportPage";
 import LedgerReportsPage from "./pages/reports/LedgerReportsPage";
 
 const Protected = ({ children }) => {
@@ -49,6 +50,7 @@ const App = () => (
         <Route path="products" element={<ProductPage />} />
         <Route path="accounts" element={<AccountsPage />} />
         <Route path="reports/ledger" element={<LedgerReportsPage />} />
+        <Route path="reports/coa-completeness" element={<CoaCompletenessReportPage />} />
         <Route path="warehouses" element={<WarehousePage />} />
         <Route path="opening-stock" element={<OpeningStockPage />} />
         <Route path="production" element={<ProductionPage />} />

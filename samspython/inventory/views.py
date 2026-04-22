@@ -6,6 +6,7 @@ from django.utils.timezone import now
 from decimal import Decimal
 from django.db.models import DecimalField, ExpressionWrapper, F, Q, Sum, Value
 from django.db.models.functions import Coalesce
+from rest_framework.decorators import action
 from .models import (
     Brand,
     Category,
@@ -100,6 +101,43 @@ class BrandViewSet(BaseTenantViewSet):
 class CategoryViewSet(BaseTenantViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
+
+    @action(detail=True, methods=["post"], url_path="apply-coa-defaults")
+    def apply_coa_defaults(self, request, pk=None):
+        category = self.get_object()
+        products = Product.objects.filter(
+            tenant_id=request.user.tenant_id,
+            category=category,
+            deleted_at__isnull=True,
+        )
+
+        updated_products = 0
+        updated_fields = 0
+        fields = ["inventory_account", "cogs_account", "revenue_account"]
+
+        for product in products:
+            changed_fields = []
+            for field_name in fields:
+                category_value = getattr(category, field_name)
+                if category_value and getattr(product, field_name) is None:
+                    setattr(product, field_name, category_value)
+                    changed_fields.append(field_name)
+
+            if changed_fields:
+                product.save(update_fields=[*changed_fields, "updated_at"])
+                updated_products += 1
+                updated_fields += len(changed_fields)
+
+        return Response(
+            {
+                "data": {
+                    "updated_products": updated_products,
+                    "updated_fields": updated_fields,
+                    "matched_products": products.count(),
+                },
+                "message": "Category COAs applied to products with missing mappings.",
+            }
+        )
 
 
 class SizeViewSet(BaseTenantViewSet):

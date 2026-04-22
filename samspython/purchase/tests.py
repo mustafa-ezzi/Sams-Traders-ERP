@@ -25,6 +25,7 @@ class PurchaseBankPaymentTests(TestCase):
             code="1110",
             name="Bank",
             account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.BANK,
             account_nature=Account.AccountNature.DEBIT,
             level=1,
             is_postable=True,
@@ -128,3 +129,32 @@ class PurchaseBankPaymentTests(TestCase):
 
         self.assertFalse(serializer.is_valid())
         self.assertIn("amount", serializer.errors)
+
+    def test_serializer_requires_bank_account_type_bank(self):
+        cash_account = Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="1112",
+            name="Cash In Hand",
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.CASH,
+            account_nature=Account.AccountNature.DEBIT,
+            level=1,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+
+        serializer = PurchaseBankPaymentSerializer(
+            data={
+                "date": "2026-04-20",
+                "supplier_id": str(self.supplier.id),
+                "purchase_invoice_id": str(self.invoice.id),
+                "bank_account_id": str(cash_account.id),
+                "amount": "500.00",
+                "remarks": "Cash is not valid here",
+            },
+            context={"request": self._get_request()},
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("bank_account_id", serializer.errors)

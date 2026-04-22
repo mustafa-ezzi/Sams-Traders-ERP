@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from django.db import transaction
 from django.db.models import Prefetch
 from django.utils.timezone import now
 from rest_framework import filters, status, viewsets
@@ -8,6 +9,13 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from accounts.journal import (
+    delete_journal_entry,
+    sync_purchase_bank_payment_journal,
+    sync_purchase_invoice_journal,
+    sync_purchase_return_journal,
+)
+from accounts.models import JournalEntry
 from inventory.models import Product, ProductStock
 from inventory.pagination import StandardResultsSetPagination
 from inventory.services import sync_product_stock_quantity
@@ -78,10 +86,12 @@ class PurchaseInvoiceViewSet(viewsets.ModelViewSet):
         return super().list(request, *args, **kwargs)
 
     def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        invoice = serializer.save()
-        self._sync_invoice_product_stock(invoice)
+        with transaction.atomic():
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            invoice = serializer.save()
+            self._sync_invoice_product_stock(invoice)
+            sync_purchase_invoice_journal(self._get_serializable_invoice(invoice.id))
         response_serializer = self.get_serializer(
             self._get_serializable_invoice(invoice.id)
         )
@@ -100,11 +110,13 @@ class PurchaseInvoiceViewSet(viewsets.ModelViewSet):
         old_product_ids = list(
             instance.lines.filter(deleted_at__isnull=True).values_list("product_id", flat=True)
         )
-        serializer = self.get_serializer(instance, data=request.data, partial=partial)
-        serializer.is_valid(raise_exception=True)
-        invoice = serializer.save()
-        self._sync_invoice_product_stock(invoice)
-        self._sync_product_stock_pairs(instance.tenant_id, old_warehouse_id, old_product_ids)
+        with transaction.atomic():
+            serializer = self.get_serializer(instance, data=request.data, partial=partial)
+            serializer.is_valid(raise_exception=True)
+            invoice = serializer.save()
+            self._sync_invoice_product_stock(invoice)
+            self._sync_product_stock_pairs(instance.tenant_id, old_warehouse_id, old_product_ids)
+            sync_purchase_invoice_journal(self._get_serializable_invoice(invoice.id))
         response_serializer = self.get_serializer(
             self._get_serializable_invoice(invoice.id)
         )
@@ -122,8 +134,14 @@ class PurchaseInvoiceViewSet(viewsets.ModelViewSet):
         product_ids = list(
             instance.lines.filter(deleted_at__isnull=True).values_list("product_id", flat=True)
         )
-        self.perform_destroy(instance)
-        self._sync_product_stock_pairs(tenant_id, warehouse_id, product_ids)
+        with transaction.atomic():
+            self.perform_destroy(instance)
+            self._sync_product_stock_pairs(tenant_id, warehouse_id, product_ids)
+            delete_journal_entry(
+                JournalEntry.SourceType.PURCHASE_INVOICE,
+                instance.id,
+                tenant_id,
+            )
         return Response(
             {"data": None, "message": "Purchase invoice deleted successfully"},
             status=status.HTTP_200_OK,
@@ -218,10 +236,12 @@ class PurchaseReturnViewSet(viewsets.ModelViewSet):
             sync_product_stock_quantity(tenant_id, warehouse_id, product_id)
 
     def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        purchase_return = serializer.save()
-        self._sync_purchase_return_stock(purchase_return)
+        with transaction.atomic():
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            purchase_return = serializer.save()
+            self._sync_purchase_return_stock(purchase_return)
+            sync_purchase_return_journal(self._get_serializable_return(purchase_return.id))
         response_serializer = self.get_serializer(
             self._get_serializable_return(purchase_return.id)
         )
@@ -240,11 +260,13 @@ class PurchaseReturnViewSet(viewsets.ModelViewSet):
         old_product_ids = list(
             instance.lines.filter(deleted_at__isnull=True).values_list("product_id", flat=True)
         )
-        serializer = self.get_serializer(instance, data=request.data, partial=partial)
-        serializer.is_valid(raise_exception=True)
-        purchase_return = serializer.save()
-        self._sync_purchase_return_stock(purchase_return)
-        self._sync_product_stock_pairs(instance.tenant_id, old_warehouse_id, old_product_ids)
+        with transaction.atomic():
+            serializer = self.get_serializer(instance, data=request.data, partial=partial)
+            serializer.is_valid(raise_exception=True)
+            purchase_return = serializer.save()
+            self._sync_purchase_return_stock(purchase_return)
+            self._sync_product_stock_pairs(instance.tenant_id, old_warehouse_id, old_product_ids)
+            sync_purchase_return_journal(self._get_serializable_return(purchase_return.id))
         response_serializer = self.get_serializer(
             self._get_serializable_return(purchase_return.id)
         )
@@ -262,8 +284,14 @@ class PurchaseReturnViewSet(viewsets.ModelViewSet):
         product_ids = list(
             instance.lines.filter(deleted_at__isnull=True).values_list("product_id", flat=True)
         )
-        self.perform_destroy(instance)
-        self._sync_product_stock_pairs(tenant_id, warehouse_id, product_ids)
+        with transaction.atomic():
+            self.perform_destroy(instance)
+            self._sync_product_stock_pairs(tenant_id, warehouse_id, product_ids)
+            delete_journal_entry(
+                JournalEntry.SourceType.PURCHASE_RETURN,
+                instance.id,
+                tenant_id,
+            )
         return Response(
             {"data": None, "message": "Purchase return deleted successfully"},
             status=status.HTTP_200_OK,
@@ -399,9 +427,11 @@ class PurchaseBankPaymentViewSet(viewsets.ModelViewSet):
         return self.get_queryset().get(id=payment_id)
 
     def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        payment = serializer.save()
+        with transaction.atomic():
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            payment = serializer.save()
+            sync_purchase_bank_payment_journal(self._get_serializable_payment(payment.id))
         response_serializer = self.get_serializer(
             self._get_serializable_payment(payment.id)
         )
@@ -416,9 +446,11 @@ class PurchaseBankPaymentViewSet(viewsets.ModelViewSet):
     def update(self, request, *args, **kwargs):
         partial = kwargs.pop("partial", False)
         instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=partial)
-        serializer.is_valid(raise_exception=True)
-        payment = serializer.save()
+        with transaction.atomic():
+            serializer = self.get_serializer(instance, data=request.data, partial=partial)
+            serializer.is_valid(raise_exception=True)
+            payment = serializer.save()
+            sync_purchase_bank_payment_journal(self._get_serializable_payment(payment.id))
         response_serializer = self.get_serializer(
             self._get_serializable_payment(payment.id)
         )
@@ -430,7 +462,13 @@ class PurchaseBankPaymentViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
-        self.perform_destroy(instance)
+        with transaction.atomic():
+            self.perform_destroy(instance)
+            delete_journal_entry(
+                JournalEntry.SourceType.PURCHASE_BANK_PAYMENT,
+                instance.id,
+                instance.tenant_id,
+            )
         return Response(
             {"data": None, "message": "Purchase bank payment deleted successfully"},
             status=status.HTTP_200_OK,

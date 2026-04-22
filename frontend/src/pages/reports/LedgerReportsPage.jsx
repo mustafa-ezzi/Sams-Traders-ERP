@@ -3,12 +3,12 @@ import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import FormInput from "../../components/ui/FormInput";
 import StateView from "../../components/StateView";
+import axiosInstance from "../../api/axiosInstance";
 import accountService from "../../api/services/accountService";
-import customerService from "../../api/services/customerService";
-import supplierService from "../../api/services/supplierService";
 import { flattenAccountTree, formatAccountLabel } from "../../utils/accounts";
 import { formatDecimal } from "../../utils/format";
 import { useToast } from "../../context/ToastContext";
+import { useAuth } from "../../context/AuthContext";
 
 const selectClassName =
   "w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100";
@@ -46,6 +46,7 @@ const extractErrorMessage = (error) => {
 
 const LedgerReportsPage = () => {
   const toast = useToast();
+  const { tenantId } = useAuth();
   const [accountTree, setAccountTree] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [customers, setCustomers] = useState([]);
@@ -54,6 +55,7 @@ const LedgerReportsPage = () => {
   const [error, setError] = useState("");
   const [report, setReport] = useState(null);
   const [form, setForm] = useState({
+    tenantScope: tenantId,
     headAccountId: "",
     ledgerSelection: "",
     fromDate: new Date().toISOString().slice(0, 10),
@@ -121,18 +123,64 @@ const LedgerReportsPage = () => {
   }, [customers, descendantIds, flatAccounts, form.headAccountId, suppliers]);
 
   useEffect(() => {
+    const fetchWithTenant = async (url, selectedTenant) => {
+      const response = await axiosInstance.get(url, {
+        headers: { "x-tenant-id": selectedTenant },
+      });
+      return response.data;
+    };
+
+    const mergeUniqueParties = (responses) => {
+      const seen = new Set();
+      return responses
+        .flatMap((response) => response.data || [])
+        .filter((party) => {
+          const key = `${party.business_name}|${party.account || ""}`;
+          if (seen.has(key)) {
+            return false;
+          }
+          seen.add(key);
+          return true;
+        });
+    };
+
     const loadSetup = async () => {
       setLoadingSetup(true);
+      setError("");
       try {
-        const [accountsResponse, supplierResponse, customerResponse] = await Promise.all([
-          accountService.list(),
-          supplierService.list({ page: 1, limit: 200, search: "" }),
-          customerService.list({ page: 1, limit: 200, search: "" }),
-        ]);
+        if (form.tenantScope === "BOTH") {
+          const [
+            accountsResponse,
+            samsSuppliers,
+            amSuppliers,
+            samsCustomers,
+            amCustomers,
+          ] = await Promise.all([
+            fetchWithTenant("/accounts/accounts/", tenantId),
+            fetchWithTenant("/inventory/suppliers", "SAMS_TRADERS"),
+            fetchWithTenant("/inventory/suppliers", "AM_TRADERS"),
+            fetchWithTenant("/inventory/customers", "SAMS_TRADERS"),
+            fetchWithTenant("/inventory/customers", "AM_TRADERS"),
+          ]);
 
-        setAccountTree(Array.isArray(accountsResponse) ? accountsResponse : accountsResponse.data || []);
-        setSuppliers(supplierResponse.data || []);
-        setCustomers(customerResponse.data || []);
+          setAccountTree(
+            Array.isArray(accountsResponse) ? accountsResponse : accountsResponse.data || []
+          );
+          setSuppliers(mergeUniqueParties([samsSuppliers, amSuppliers]));
+          setCustomers(mergeUniqueParties([samsCustomers, amCustomers]));
+        } else {
+          const [accountsResponse, supplierResponse, customerResponse] = await Promise.all([
+            fetchWithTenant("/accounts/accounts/", form.tenantScope),
+            fetchWithTenant("/inventory/suppliers", form.tenantScope),
+            fetchWithTenant("/inventory/customers", form.tenantScope),
+          ]);
+
+          setAccountTree(
+            Array.isArray(accountsResponse) ? accountsResponse : accountsResponse.data || []
+          );
+          setSuppliers(supplierResponse.data || []);
+          setCustomers(customerResponse.data || []);
+        }
       } catch (loadError) {
         setError(extractErrorMessage(loadError) || "Failed to load report filters");
       } finally {
@@ -141,7 +189,15 @@ const LedgerReportsPage = () => {
     };
 
     loadSetup();
-  }, []);
+  }, [form.tenantScope, tenantId]);
+
+  useEffect(() => {
+    setForm((current) => ({
+      ...current,
+      headAccountId: "",
+      ledgerSelection: "",
+    }));
+  }, [form.tenantScope]);
 
   useEffect(() => {
     setForm((current) => ({
@@ -179,12 +235,13 @@ const LedgerReportsPage = () => {
     setLoadingReport(true);
     try {
       const response = await accountService.getLedgerReport({
+        tenant_scope: form.tenantScope,
         head_account_id: form.headAccountId,
         ledger_type: ledgerType,
         ledger_id: ledgerId,
         from_date: form.fromDate,
         to_date: form.toDate,
-      });
+      }, form.tenantScope === "BOTH" ? tenantId : form.tenantScope);
       setReport(response);
     } catch (reportError) {
       const message = extractErrorMessage(reportError) || "Failed to generate ledger report";
@@ -207,6 +264,21 @@ const LedgerReportsPage = () => {
 
         <form className="space-y-5" onSubmit={handleGenerate}>
           <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="space-y-1">
+              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Tenant <span className="text-rose-500">*</span>
+              </label>
+              <select
+                className={selectClassName}
+                value={form.tenantScope}
+                onChange={(e) => handleChange("tenantScope", e.target.value)}
+              >
+                <option value="SAMS_TRADERS">SAMS Traders</option>
+                <option value="AM_TRADERS">AM Traders</option>
+                <option value="BOTH">Both Tenants</option>
+              </select>
+            </div>
+
             <div className="space-y-1">
               <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Account Head <span className="text-rose-500">*</span>
@@ -308,6 +380,7 @@ const LedgerReportsPage = () => {
                     <tr>
                       <th className="px-4 py-3">S.No</th>
                       <th className="px-4 py-3">ID</th>
+                      <th className="px-4 py-3">Tenant</th>
                       <th className="px-4 py-3">Date</th>
                       <th className="px-4 py-3">Document Type</th>
                       <th className="px-4 py-3">People Type</th>
@@ -321,6 +394,7 @@ const LedgerReportsPage = () => {
                       <tr key={`${row.id}-${index}`}>
                         <td className="px-4 py-3 text-slate-600">{index + 1}</td>
                         <td className="px-4 py-3 font-semibold text-slate-900">{row.id}</td>
+                        <td className="px-4 py-3 text-slate-600">{row.tenant || "-"}</td>
                         <td className="px-4 py-3 text-slate-600">{row.date}</td>
                         <td className="px-4 py-3 text-slate-600">{row.document_type}</td>
                         <td className="px-4 py-3 text-slate-600">{row.people_type}</td>

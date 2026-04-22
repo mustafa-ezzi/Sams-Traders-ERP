@@ -12,6 +12,16 @@ class User(AbstractUser):
 
 
 class Account(BaseModel):
+    class AccountType(models.TextChoices):
+        GENERAL = "GENERAL", "General"
+        BANK = "BANK", "Bank"
+        CASH = "CASH", "Cash"
+        RECEIVABLE = "RECEIVABLE", "Receivable"
+        PAYABLE = "PAYABLE", "Payable"
+        INVENTORY = "INVENTORY", "Inventory"
+        REVENUE = "REVENUE", "Revenue"
+        COGS = "COGS", "Cost of Goods Sold"
+
     class AccountGroup(models.TextChoices):
         ASSET = "ASSET", "Asset"
         LIABILITY = "LIABILITY", "Liability"
@@ -34,6 +44,11 @@ class Account(BaseModel):
     )
 
     account_group = models.CharField(max_length=20, choices=AccountGroup.choices)
+    account_type = models.CharField(
+        max_length=20,
+        choices=AccountType.choices,
+        default=AccountType.GENERAL,
+    )
 
     account_nature = models.CharField(max_length=10, choices=AccountNature.choices)
 
@@ -94,11 +109,28 @@ class Account(BaseModel):
         if self.level > 3:
             raise ValidationError("Account level cannot be greater than 3.")
 
+        allowed_group_by_type = {
+            self.AccountType.BANK: self.AccountGroup.ASSET,
+            self.AccountType.CASH: self.AccountGroup.ASSET,
+            self.AccountType.RECEIVABLE: self.AccountGroup.ASSET,
+            self.AccountType.INVENTORY: self.AccountGroup.ASSET,
+            self.AccountType.PAYABLE: self.AccountGroup.LIABILITY,
+            self.AccountType.REVENUE: self.AccountGroup.REVENUE,
+            self.AccountType.COGS: self.AccountGroup.COGS,
+        }
+        expected_group = allowed_group_by_type.get(self.account_type)
+        if expected_group and self.account_group != expected_group:
+            raise ValidationError(
+                f"Account type {self.account_type} must belong to account group {expected_group}."
+            )
+
     def validate_can_soft_delete(self):
         if self.children.filter(deleted_at__isnull=True).exists():
             raise ValidationError("Cannot delete account with children.")
 
         from inventory.models import Category, Customer, Product, RawMaterial, Supplier
+        from purchase.models import PurchaseBankPayment
+        from sales.models import SalesBankReceipt
 
         dependencies = [
             Category.objects.filter(
@@ -127,6 +159,14 @@ class Account(BaseModel):
                 deleted_at__isnull=True,
                 account=self,
             ),
+            PurchaseBankPayment.objects.filter(
+                deleted_at__isnull=True,
+                bank_account=self,
+            ),
+            SalesBankReceipt.objects.filter(
+                deleted_at__isnull=True,
+                bank_account=self,
+            ),
         ]
 
         if any(queryset.exists() for queryset in dependencies):
@@ -154,3 +194,59 @@ class Account(BaseModel):
     @property
     def is_leaf(self):
         return not self.children.exists()
+
+
+class JournalEntry(BaseModel):
+    class SourceType(models.TextChoices):
+        PURCHASE_INVOICE = "PURCHASE_INVOICE", "Purchase Invoice"
+        PURCHASE_RETURN = "PURCHASE_RETURN", "Purchase Return"
+        PURCHASE_BANK_PAYMENT = "PURCHASE_BANK_PAYMENT", "Purchase Bank Payment"
+        SALES_INVOICE = "SALES_INVOICE", "Sales Invoice"
+        SALES_RETURN = "SALES_RETURN", "Sales Return"
+        SALES_BANK_RECEIPT = "SALES_BANK_RECEIPT", "Sales Bank Receipt"
+
+    date = models.DateField()
+    reference = models.CharField(max_length=50)
+    source_type = models.CharField(max_length=40, choices=SourceType.choices)
+    source_id = models.UUIDField()
+    document_type = models.CharField(max_length=80)
+    description = models.TextField(blank=True, default="")
+    people_type = models.CharField(max_length=20, blank=True, default="")
+    people_name = models.CharField(max_length=255, blank=True, default="")
+
+    class Meta:
+        ordering = ["date", "reference"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant_id", "source_type", "source_id"],
+                condition=Q(deleted_at__isnull=True),
+                name="unique_active_journal_entry_per_source",
+            )
+        ]
+
+    def __str__(self):
+        return self.reference
+
+
+class JournalLine(BaseModel):
+    journal_entry = models.ForeignKey(
+        JournalEntry,
+        on_delete=models.CASCADE,
+        related_name="lines",
+    )
+    account = models.ForeignKey(
+        Account,
+        on_delete=models.PROTECT,
+        related_name="journal_lines",
+    )
+    debit = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    credit = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    line_description = models.TextField(blank=True, default="")
+    people_type = models.CharField(max_length=20, blank=True, default="")
+    people_name = models.CharField(max_length=255, blank=True, default="")
+
+    class Meta:
+        ordering = ["created_at", "id"]
+
+    def __str__(self):
+        return f"{self.journal_entry.reference} - {self.account.code}"

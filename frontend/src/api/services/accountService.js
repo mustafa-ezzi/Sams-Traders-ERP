@@ -21,9 +21,23 @@ const accountService = {
     const response = await axiosInstance.delete(`/accounts/accounts/${id}/`);
     return response.data;
   },
-  async getLedgerReport(params) {
+  async getLedgerReport(params, selectedTenant = "") {
     const response = await axiosInstance.get("/accounts/accounts/ledger-report/", {
       params,
+      headers: selectedTenant ? { "x-tenant-id": selectedTenant } : {},
+    });
+    return response.data.data || {};
+  },
+  async getCoaCompletenessReport(params, selectedTenant = "") {
+    const response = await axiosInstance.get("/accounts/accounts/coa-completeness-report/", {
+      params,
+      headers: selectedTenant ? { "x-tenant-id": selectedTenant } : {},
+    });
+    return response.data.data || {};
+  },
+  async getDashboardOverview(selectedTenant = "") {
+    const response = await axiosInstance.get("/accounts/accounts/dashboard-overview/", {
+      headers: selectedTenant ? { "x-tenant-id": selectedTenant } : {},
     });
     return response.data.data || {};
   },

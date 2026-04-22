@@ -28,6 +28,16 @@ const schema = z.object({
     "TAX",
     "PURCHASE",
   ]),
+  account_type: z.enum([
+    "GENERAL",
+    "BANK",
+    "CASH",
+    "RECEIVABLE",
+    "PAYABLE",
+    "INVENTORY",
+    "REVENUE",
+    "COGS",
+  ]),
   account_nature: z.enum(["DEBIT", "CREDIT"]),
   is_postable: z.boolean(),
   is_active: z.boolean(),
@@ -39,6 +49,7 @@ const defaultValues = {
   name: "",
   parent: "",
   account_group: "ASSET",
+  account_type: "GENERAL",
   account_nature: "DEBIT",
   is_postable: false,
   is_active: true,
@@ -54,6 +65,7 @@ const AccountsPage = () => {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [groupFilter, setGroupFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
   const [editingId, setEditingId] = useState("");
   const [deleteId, setDeleteId] = useState("");
   const toast = useToast();
@@ -97,9 +109,10 @@ const AccountsPage = () => {
         .toLowerCase()
         .includes(search.toLowerCase());
       const matchesGroup = groupFilter ? account.account_group === groupFilter : true;
-      return matchesSearch && matchesGroup;
+      const matchesType = typeFilter ? account.account_type === typeFilter : true;
+      return matchesSearch && matchesGroup && matchesType;
     });
-  }, [flatAccounts, groupFilter, search]);
+  }, [flatAccounts, groupFilter, search, typeFilter]);
 
 
   const loadAccounts = async () => {
@@ -231,6 +244,21 @@ const AccountsPage = () => {
               <option value="TAX">Tax</option>
               <option value="PURCHASE">Purchase</option>
             </select>
+            <select
+              className={selectClassName}
+              value={typeFilter}
+              onChange={(event) => setTypeFilter(event.target.value)}
+            >
+              <option value="">All types</option>
+              <option value="GENERAL">General</option>
+              <option value="BANK">Bank</option>
+              <option value="CASH">Cash</option>
+              <option value="RECEIVABLE">Receivable</option>
+              <option value="PAYABLE">Payable</option>
+              <option value="INVENTORY">Inventory</option>
+              <option value="REVENUE">Revenue</option>
+              <option value="COGS">COGS</option>
+            </select>
           </div>
         </div>
       </Card>
@@ -285,6 +313,19 @@ const AccountsPage = () => {
             </select>
           </div>
           <div className="space-y-2">
+            <label className="block text-sm font-semibold text-slate-700">Account Type</label>
+            <select className={selectClassName} {...form.register("account_type")}>
+              <option value="GENERAL">General</option>
+              <option value="BANK">Bank</option>
+              <option value="CASH">Cash</option>
+              <option value="RECEIVABLE">Receivable</option>
+              <option value="PAYABLE">Payable</option>
+              <option value="INVENTORY">Inventory</option>
+              <option value="REVENUE">Revenue</option>
+              <option value="COGS">COGS</option>
+            </select>
+          </div>
+          <div className="space-y-2">
             <label className="block text-sm font-semibold text-slate-700">Nature</label>
             <select className={selectClassName} {...form.register("account_nature")}>
               <option value="DEBIT">Debit</option>
@@ -299,6 +340,10 @@ const AccountsPage = () => {
             <input type="checkbox" {...form.register("is_active")} />
             Active account
           </label>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-600 xl:col-span-4">
+            Account type is now explicit. Bank Payments and Bank Receipts only accept COAs marked as
+            `BANK`, so set bank accounts here instead of relying on account names.
+          </div>
 
           <div className="flex flex-col gap-3 sm:flex-row xl:col-span-4">
             <Button type="submit" className="w-full sm:w-auto">
@@ -328,6 +373,7 @@ const AccountsPage = () => {
                   <th className="px-5 py-4 font-bold text-slate-700">Name</th>
                   <th className="px-5 py-4 font-bold text-slate-700">Parent</th>
                   <th className="px-5 py-4 font-bold text-slate-700">Group</th>
+                  <th className="px-5 py-4 font-bold text-slate-700">Type</th>
                   <th className="px-5 py-4 font-bold text-slate-700">Nature</th>
                   <th className="px-5 py-4 font-bold text-slate-700">Level</th>
                   <th className="px-5 py-4 font-bold text-slate-700">Postable</th>
@@ -352,6 +398,7 @@ const AccountsPage = () => {
                         : "-"}
                     </td>
                     <td className="px-5 py-4 text-slate-600">{account.account_group}</td>
+                    <td className="px-5 py-4 text-slate-600">{account.account_type}</td>
                     <td className="px-5 py-4 text-slate-600">{account.account_nature}</td>
                     <td className="px-5 py-4 text-slate-600">{account.level}</td>
                     <td className="px-5 py-4 text-slate-600">{account.is_postable ? "Yes" : "No"}</td>
@@ -366,6 +413,7 @@ const AccountsPage = () => {
                             name: account.name,
                             parent: account.parent || "",
                             account_group: account.account_group,
+                            account_type: account.account_type || "GENERAL",
                             account_nature: account.account_nature,
                             is_postable: account.is_postable,
                             is_active: account.is_active,

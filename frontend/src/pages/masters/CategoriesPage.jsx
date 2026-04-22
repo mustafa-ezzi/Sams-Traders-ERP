@@ -142,6 +142,23 @@ const CategoriesPage = () => {
     }
   };
 
+  const handleApplyCategoryCoas = async (record) => {
+    try {
+      const response = await categoryService.applyCoaDefaults(record.id);
+      const updatedProducts = response?.data?.updated_products || 0;
+      toast.success(
+        updatedProducts > 0
+          ? `Applied category COAs to ${updatedProducts} product${updatedProducts === 1 ? "" : "s"}`
+          : "No products needed COA updates"
+      );
+      await loadRecords(page, search);
+    } catch (applyError) {
+      const msg = applyError?.response?.data?.message || "Failed to apply category COAs";
+      setError(msg);
+      toast.error(msg);
+    }
+  };
+
   const totalPages = Math.max(1, Math.ceil(total / limit));
 
   return (
@@ -233,6 +250,10 @@ const CategoriesPage = () => {
               ))}
             </select>
           </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 xl:col-span-2">
+            Category COAs act as defaults. Products can override them, and the "Apply Category COAs"
+            action fills missing product mappings for this category.
+          </div>
           <div className="flex flex-col gap-3 sm:flex-row xl:col-span-2">
             <Button type="submit" className="w-full sm:w-auto">
               {editingId ? "Update" : "Create"}
@@ -287,6 +308,13 @@ const CategoriesPage = () => {
                         : "-"}
                     </td>
                     <td className="px-5 py-4 text-right">
+                      <button
+                        className="mr-3 font-semibold text-emerald-600 transition hover:text-emerald-800"
+                        onClick={() => handleApplyCategoryCoas(record)}
+                        type="button"
+                      >
+                        Apply Category COAs
+                      </button>
                       <button
                         className="mr-3 font-semibold text-blue-600 transition hover:text-blue-800"
                         onClick={() => {

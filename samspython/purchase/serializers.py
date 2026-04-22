@@ -676,6 +676,9 @@ class PurchaseBankPaymentSerializer(serializers.ModelSerializer):
         if account.account_group != Account.AccountGroup.ASSET:
             raise serializers.ValidationError("Selected bank account must belong to asset group")
 
+        if account.account_type != Account.AccountType.BANK:
+            raise serializers.ValidationError("Selected account must have account type BANK")
+
         return value
 
     def validate_amount(self, value):

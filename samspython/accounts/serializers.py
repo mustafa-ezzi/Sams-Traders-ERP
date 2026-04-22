@@ -21,6 +21,7 @@ class AccountSerializer(serializers.ModelSerializer):
             "name",
             "parent",
             "account_group",
+            "account_type",
             "account_nature",
             "level",
             "is_postable",
@@ -51,6 +52,23 @@ class AccountSerializer(serializers.ModelSerializer):
 
         if parent and parent.is_postable:
             raise serializers.ValidationError("Cannot assign a postable account as parent.")
+
+        account_group = data.get("account_group", getattr(self.instance, "account_group", None))
+        account_type = data.get("account_type", getattr(self.instance, "account_type", None))
+        allowed_group_by_type = {
+            Account.AccountType.BANK: Account.AccountGroup.ASSET,
+            Account.AccountType.CASH: Account.AccountGroup.ASSET,
+            Account.AccountType.RECEIVABLE: Account.AccountGroup.ASSET,
+            Account.AccountType.INVENTORY: Account.AccountGroup.ASSET,
+            Account.AccountType.PAYABLE: Account.AccountGroup.LIABILITY,
+            Account.AccountType.REVENUE: Account.AccountGroup.REVENUE,
+            Account.AccountType.COGS: Account.AccountGroup.COGS,
+        }
+        expected_group = allowed_group_by_type.get(account_type)
+        if expected_group and account_group != expected_group:
+            raise serializers.ValidationError(
+                {"account_type": f"Account type {account_type} requires account group {expected_group}."}
+            )
 
         return data
 

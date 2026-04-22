@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import Button from "./ui/Button";
+// import { useLocation } from "react-router-dom";
 
 const Icon = ({ children, className = "" }) => (
   <svg
@@ -101,62 +102,59 @@ const icons = {
 };
 
 const navigation = [
-  {
-    title: "Masters",
-    id: "masters",
-    items: [
-      { to: "/masters/units", label: "Units", icon: icons.masters },
-      { to: "/masters/sizes", label: "Sizes", icon: icons.masters },
-      { to: "/masters/categories", label: "Categories", icon: icons.masters },
-      { to: "/masters/brands", label: "Brands", icon: icons.masters },
-    ],
-  },
-  {
-    title: "Inventory",
-    id: "inventory",
-    items: [
-      { to: "/raw-materials", label: "Raw Materials", icon: icons.raw },
-      { to: "/products", label: "Products", icon: icons.products },
-      { to: "/warehouses", label: "Warehouses", icon: icons.warehouse },
-      { to: "/opening-stock", label: "Opening Stock", icon: icons.stock },
-      { to: "/production", label: "Production", icon: icons.stock },
-    ],
-  },
+
   {
     title: "Purchase",
     id: "purchase",
     items: [
-      { to: "/purchase-invoices", label: "Purchase Invoices", icon: icons.stock },
-      { to: "/purchase-returns", label: "Purchase Returns", icon: icons.stock },
-      { to: "/purchase-bank-payments", label: "Bank Payments", icon: icons.stock },
+      { to: "/purchase-invoices", label: "Invoices", icon: icons.stock },
+      { to: "/purchase-returns", label: "Returns", icon: icons.stock },
+      { to: "/opening-stock", label: "Opening Stock", icon: icons.stock },
     ],
   },
   {
     title: "Sales",
     id: "sales",
     items: [
-      { to: "/sales-invoices", label: "Sales Invoices", icon: icons.stock },
-      { to: "/sales-returns", label: "Sales Returns", icon: icons.stock },
-      { to: "/sales-bank-receipts", label: "Bank Receipts", icon: icons.stock },
+      { to: "/sales-invoices", label: "Invoices", icon: icons.stock },
+      { to: "/sales-returns", label: "Returns", icon: icons.stock },
     ],
   },
   {
-    title: "Parties",
-    id: "parties",
+    title: "Bank Transactions",
+    id: "bank",
     items: [
-      { to: "/customers", label: "Customers", icon: icons.parties },
-      { to: "/suppliers", label: "Suppliers", icon: icons.parties },
+      { to: "/purchase-bank-payments", label: "Bank Payments", icon: icons.stock },
+      { to: "/sales-bank-receipts", label: "Bank Receipts", icon: icons.stock },
+      // future ready 🔮
+      // { to: "/expenses", label: "Expenses", icon: icons.stock },
     ],
-  },
-  {
-    title: "Accounting",
-    id: "accounting",
-    items: [{ to: "/accounts", label: "COA", icon: icons.accounts }],
   },
   {
     title: "Reports",
     id: "reports",
-    items: [{ to: "/reports/ledger", label: "Ledger Reports", icon: icons.reports }],
+    items: [
+      { to: "/reports/ledger", label: "Ledger Reports", icon: icons.reports },
+      { to: "/reports/coa-completeness", label: "COA Completeness", icon: icons.reports },
+    ],
+  },
+  {
+    title: "Administrator",
+    id: "administrator",
+    items: [
+      { to: "/masters/sizes", label: "Sizes", icon: icons.masters },
+      { to: "/masters/units", label: "Units", icon: icons.masters },
+      { to: "/masters/brands", label: "Brands", icon: icons.masters },
+      { to: "/masters/categories", label: "Categories", icon: icons.masters },
+      { to: "/customers", label: "Customers", icon: icons.parties },
+      { to: "/suppliers", label: "Suppliers", icon: icons.parties },
+      { to: "/warehouses", label: "Warehouses", icon: icons.warehouse },
+      { to: "/raw-materials", label: "Raw Materials", icon: icons.raw },
+      { to: "/products", label: "Products", icon: icons.products },
+      // { to: "/production", label: "production", icon: icons.products },
+
+      { to: "/accounts", label: "Chart Of Accounts", icon: icons.accounts },
+    ],
   },
 ];
 
@@ -166,6 +164,7 @@ const pageTitles = {
   "/products": { title: "Products", eyebrow: "Inventory" },
   "/accounts": { title: "Chart of Accounts", eyebrow: "Accounting" },
   "/reports/ledger": { title: "Ledger Reports", eyebrow: "Reports" },
+  "/reports/coa-completeness": { title: "COA Completeness", eyebrow: "Reports" },
   "/warehouses": { title: "Warehouses", eyebrow: "Inventory" },
   "/opening-stock": { title: "Opening Stock", eyebrow: "Inventory" },
   "/production": { title: "Production", eyebrow: "Inventory" },
@@ -189,7 +188,13 @@ const tenantLabels = {
 };
 
 const NavSection = ({ section, onNavigate }) => {
-  const [open, setOpen] = useState(false); // collapsed by default
+  const { pathname } = useLocation();
+
+  const isActiveSection = section.items.some(item =>
+    pathname.startsWith(item.to)
+  );
+
+  const [open, setOpen] = useState(isActiveSection);
 
   return (
     <div>
@@ -202,16 +207,17 @@ const NavSection = ({ section, onNavigate }) => {
           {section.title}
         </span>
         <ChevronRight
-          className={`h-3 w-3 text-slate-600 transition-all duration-200 group-hover:text-slate-400 ${
-            open ? "rotate-90" : ""
-          }`}
+          className={`h-3 w-3 text-slate-600 transition-all duration-200 group-hover:text-slate-400 ${open ? "rotate-90" : ""
+            }`}
         />
       </button>
 
       <div
-        className={`overflow-hidden transition-all duration-200 ease-in-out ${
-          open ? "max-h-80 opacity-100" : "max-h-0 opacity-0"
-        }`}
+        className={`overflow-hidden transition-all duration-300 ${open ? "opacity-100" : "opacity-0"
+          }`}
+        style={{
+          maxHeight: open ? "500px" : "0px", // can also calculate dynamically
+        }}
       >
         <div className="mt-0.5 space-y-px pb-1">
           {section.items.map((item) => (
@@ -220,21 +226,19 @@ const NavSection = ({ section, onNavigate }) => {
               to={item.to}
               onClick={onNavigate}
               className={({ isActive }) =>
-                `group flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all ${
-                  isActive
-                    ? "bg-white/[0.1] text-white"
-                    : "text-slate-400 hover:bg-white/[0.05] hover:text-slate-200"
+                `group flex items-center gap-3 rounded-lg px-1 py-1 text-sm transition-all ${isActive
+                  ? "bg-white/[0.1] text-white"
+                  : "text-slate-400 hover:bg-white/[0.05] hover:text-slate-200"
                 }`
               }
             >
               {({ isActive }) => (
                 <>
                   <span
-                    className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md transition-colors ${
-                      isActive
-                        ? "bg-blue-500/20 text-blue-300"
-                        : "text-slate-500 group-hover:text-slate-300"
-                    }`}
+                    className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md transition-colors ${isActive
+                      ? "bg-blue-500/20 text-blue-300"
+                      : "text-slate-500 group-hover:text-slate-300"
+                      }`}
                   >
                     {item.icon}
                   </span>
@@ -279,19 +283,17 @@ const Layout = () => {
           end
           onClick={() => setMobileOpen(false)}
           className={({ isActive }) =>
-            `group flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all ${
-              isActive
-                ? "bg-white/[0.1] text-white"
-                : "text-slate-400 hover:bg-white/[0.05] hover:text-slate-200"
+            `group flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all ${isActive
+              ? "bg-white/[0.1] text-white"
+              : "text-slate-400 hover:bg-white/[0.05] hover:text-slate-200"
             }`
           }
         >
           {({ isActive }) => (
             <>
               <span
-                className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md transition-colors ${
-                  isActive ? "bg-blue-500/20 text-blue-300" : "text-slate-500 group-hover:text-slate-300"
-                }`}
+                className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md transition-colors ${isActive ? "bg-blue-500/20 text-blue-300" : "text-slate-500 group-hover:text-slate-300"
+                  }`}
               >
                 {icons.dashboard}
               </span>
@@ -319,9 +321,8 @@ const Layout = () => {
     <div className="min-h-screen bg-slate-50">
       {/* Sidebar */}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 w-[240px] transform border-r border-white/[0.06] bg-[#0d1424] px-3 py-5 transition duration-300 lg:translate-x-0 ${
-          mobileOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
+        className={`fixed inset-y-0 left-0 z-40 w-[240px] transform border-r border-white/[0.06] bg-[#0d1424] px-3 py-5 transition duration-300 lg:translate-x-0 ${mobileOpen ? "translate-x-0" : "-translate-x-full"
+          }`}
       >
         <div className="mb-4 flex items-center justify-between px-3">
           {/* Logo slot — drop your SVG/wordmark here */}
@@ -380,12 +381,12 @@ const Layout = () => {
                 className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
                 value={tenantId}
                 onChange={(e) => {
-  const value = e.target.value;
-  setTenant(value);
+                  const value = e.target.value;
+                  setTenant(value);
 
-  // force full app reload
-  window.location.reload();
-}}
+                  // force full app reload
+                  window.location.reload();
+                }}
               >
                 <option value="SAMS_TRADERS">SAMS Traders</option>
                 <option value="AM_TRADERS">AM Traders</option>

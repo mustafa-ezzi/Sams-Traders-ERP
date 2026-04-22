@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import productService from "../../api/services/productService";
@@ -37,6 +37,12 @@ const defaultValues = {
 const selectClassName =
   "w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100";
 
+const coaFields = [
+  { key: "inventory_account", label: "Inventory" },
+  { key: "cogs_account", label: "COGS" },
+  { key: "revenue_account", label: "Revenue" },
+];
+
 const ProductPage = () => {
   const [records, setRecords] = useState([]);
   const [editingId, setEditingId] = useState("");
@@ -57,6 +63,74 @@ const ProductPage = () => {
   const toast = useToast();
   const form = useForm({ resolver: zodResolver(schema), defaultValues });
   const productType = form.watch("productType");
+  const selectedCategoryId = form.watch("category");
+  const selectedInventoryAccount = form.watch("inventory_account");
+  const selectedCogsAccount = form.watch("cogs_account");
+  const selectedRevenueAccount = form.watch("revenue_account");
+
+  const accountMap = useMemo(() => {
+    const allAccounts = [...inventoryAccounts, ...cogsAccounts, ...revenueAccounts];
+    return Object.fromEntries(allAccounts.map((account) => [account.id, account]));
+  }, [inventoryAccounts, cogsAccounts, revenueAccounts]);
+
+  const selectedCategory = useMemo(
+    () => categoryOptions.find((item) => item.id === selectedCategoryId) || null,
+    [categoryOptions, selectedCategoryId]
+  );
+
+  const categoryMismatchWarnings = useMemo(() => {
+    if (!selectedCategory) {
+      return [];
+    }
+
+    const selectedValues = {
+      inventory_account: selectedInventoryAccount,
+      cogs_account: selectedCogsAccount,
+      revenue_account: selectedRevenueAccount,
+    };
+
+    return coaFields
+      .filter(({ key }) => {
+        const categoryValue = selectedCategory[key];
+        const selectedValue = selectedValues[key];
+        return categoryValue && selectedValue && categoryValue !== selectedValue;
+      })
+      .map(({ key, label }) => {
+        const categoryAccount = accountMap[selectedCategory[key]];
+        return `${label} account differs from category default${categoryAccount ? ` (${formatAccountLabel(categoryAccount)})` : ""}.`;
+      });
+  }, [
+    accountMap,
+    selectedCategory,
+    selectedInventoryAccount,
+    selectedCogsAccount,
+    selectedRevenueAccount,
+  ]);
+
+  const categoryDefaultHints = useMemo(() => {
+    if (!selectedCategory) {
+      return [];
+    }
+
+    const selectedValues = {
+      inventory_account: selectedInventoryAccount,
+      cogs_account: selectedCogsAccount,
+      revenue_account: selectedRevenueAccount,
+    };
+
+    return coaFields
+      .filter(({ key }) => selectedCategory[key] && !selectedValues[key])
+      .map(({ key, label }) => {
+        const categoryAccount = accountMap[selectedCategory[key]];
+        return `${label} will inherit from category on save${categoryAccount ? ` (${formatAccountLabel(categoryAccount)})` : ""}.`;
+      });
+  }, [
+    accountMap,
+    selectedCategory,
+    selectedInventoryAccount,
+    selectedCogsAccount,
+    selectedRevenueAccount,
+  ]);
 
   const load = async (nextPage = page, nextSearch = search) => {
     setLoading(true);
@@ -144,6 +218,16 @@ const ProductPage = () => {
   const totalPages = Math.max(1, Math.ceil(total / limit));
   const selectedMaterialIds = materialRows.map((row) => row.raw_material_id).filter(Boolean);
 
+  const applyCategoryCoasToForm = () => {
+    if (!selectedCategory) {
+      return;
+    }
+
+    form.setValue("inventory_account", selectedCategory.inventory_account || "");
+    form.setValue("cogs_account", selectedCategory.cogs_account || "");
+    form.setValue("revenue_account", selectedCategory.revenue_account || "");
+  };
+
   return (
     <section className="space-y-6">
       <Card className="bg-[linear-gradient(135deg,rgba(255,255,255,0.92),rgba(240,248,255,0.96))]">
@@ -207,6 +291,23 @@ const ProductPage = () => {
                 </option>
               ))}
             </select>
+            {selectedCategory && (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="space-y-1">
+                    {categoryDefaultHints.length > 0 ? (
+                      categoryDefaultHints.map((message) => <p key={message}>{message}</p>)
+                    ) : (
+                      <p>Use category COAs as defaults, or keep product-level overrides if needed.</p>
+                    )}
+                    {categoryMismatchWarnings.map((message) => <p key={message}>{message}</p>)}
+                  </div>
+                  <Button type="button" variant="secondary" onClick={applyCategoryCoasToForm}>
+                    Apply Category COAs
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="space-y-2">

@@ -112,13 +112,14 @@ const SalesBankReceiptPage = () => {
       const flatAccounts = flattenAccountTree(
         Array.isArray(accountsResponse) ? accountsResponse : accountsResponse.data || []
       );
-      const postableAssets = flatAccounts.filter(
-        (account) => account.is_postable && account.account_group === "ASSET" && account.is_active
+      const bankTypeAccounts = flatAccounts.filter(
+        (account) =>
+          account.is_postable &&
+          account.account_group === "ASSET" &&
+          account.is_active &&
+          account.account_type === "BANK"
       );
-      const bankNamedAccounts = postableAssets.filter((account) =>
-        `${account.code} ${account.name}`.toLowerCase().includes("bank")
-      );
-      setBankAccounts(bankNamedAccounts.length > 0 ? bankNamedAccounts : postableAssets);
+      setBankAccounts(bankTypeAccounts);
     } catch {
       toast.error("Failed to load customer and bank account options");
     }
@@ -280,6 +281,9 @@ const SalesBankReceiptPage = () => {
             </h2>
             <p className="mt-1 text-sm text-slate-500">
               Receive payment from a customer against a sales invoice and reduce the outstanding invoice balance.
+            </p>
+            <p className="mt-1 text-xs text-slate-400">
+              Only COAs marked with account type `BANK` appear here.
             </p>
           </div>
           {editingId ? (

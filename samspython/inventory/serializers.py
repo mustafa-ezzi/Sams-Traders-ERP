@@ -45,6 +45,21 @@ def validate_account_mapping(account, tenant_id, field_name, allowed_groups):
         )
 
 
+def resolve_product_coa_defaults(category, attrs, instance=None):
+    if not category:
+        return attrs
+
+    for field_name in ["inventory_account", "cogs_account", "revenue_account"]:
+        incoming_value = attrs.get(field_name)
+        current_value = getattr(instance, field_name, None) if instance else None
+        category_value = getattr(category, field_name, None)
+
+        if incoming_value is None and current_value is None and category_value is not None:
+            attrs[field_name] = category_value
+
+    return attrs
+
+
 class BrandSerializer(serializers.ModelSerializer):
     class Meta:
         model = Brand
@@ -144,6 +159,7 @@ class ProductSerializer(serializers.ModelSerializer):
         tenant_id = self.context["request"].user.tenant_id
         product_type = data.get("product_type")
         materials = data.get("materials", [])
+        category = data.get("category", getattr(self.instance, "category", None))
 
         if product_type == "READY_MADE" and materials:
             raise serializers.ValidationError(
@@ -162,6 +178,8 @@ class ProductSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     "Raw materials must belong to the current tenant."
                 )
+
+        data = resolve_product_coa_defaults(category, data, instance=self.instance)
 
         validate_account_mapping(
             data.get("inventory_account"),
