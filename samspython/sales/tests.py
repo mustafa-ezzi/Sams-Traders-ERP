@@ -1,12 +1,13 @@
 from decimal import Decimal
 
 from django.test import TestCase
-from rest_framework.test import APIRequestFactory
+from rest_framework.test import APIRequestFactory, force_authenticate
 
 from accounts.models import Account, User
-from inventory.models import Category, Customer, Product, ProductStock, Warehouse
+from inventory.models import Category, Customer, Product, ProductStock, Unit, Warehouse
 from sales.models import SalesBankReceipt, SalesInvoice, SalesReturn
 from sales.serializers import SalesBankReceiptSerializer, SalesInvoiceSerializer
+from sales.views import SalesInvoiceViewSet
 from sales.services import get_sales_invoice_financials
 
 
@@ -230,6 +231,7 @@ class SalesInvoiceSerializerTests(TestCase):
             cogs_account=cogs_account,
             revenue_account=revenue_account,
         )
+        self.unit = Unit.objects.create(tenant_id=self.tenant_id, name="Piece")
         self.product = Product.objects.create(
             tenant_id=self.tenant_id,
             name="Sales Product",
@@ -237,6 +239,7 @@ class SalesInvoiceSerializerTests(TestCase):
             packaging_cost=Decimal("0.00"),
             net_amount=Decimal("50.00"),
             category=category,
+            unit=self.unit,
             inventory_account=inventory_account,
             cogs_account=cogs_account,
             revenue_account=revenue_account,
@@ -282,3 +285,15 @@ class SalesInvoiceSerializerTests(TestCase):
         )
 
         self.assertTrue(serializer.is_valid(), serializer.errors)
+
+    def test_product_options_include_product_unit(self):
+        request = self.factory.get(
+            "/api/sales/sales-invoices/product-options/",
+            {"warehouse_id": str(self.warehouse.id)},
+        )
+        force_authenticate(request, user=self.user)
+
+        response = SalesInvoiceViewSet.as_view({"get": "product_options"})(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["data"][0]["unit"], "Piece")

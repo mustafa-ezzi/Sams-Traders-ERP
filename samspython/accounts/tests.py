@@ -5,14 +5,15 @@ from django.test import TestCase
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from accounts.journal import (
+    sync_expense_journal,
     sync_purchase_bank_payment_journal,
     sync_purchase_invoice_journal,
     sync_sales_bank_receipt_journal,
     sync_sales_invoice_journal,
 )
 from accounts.models import JournalEntry
-from accounts.models import Account, JournalLine, User
-from accounts.views import AccountViewSet
+from accounts.models import Account, Dimension, Expense, JournalLine, User
+from accounts.views import AccountViewSet, DimensionViewSet, ExpenseViewSet
 from inventory.models import (
     Brand,
     Category,
@@ -377,6 +378,88 @@ class LedgerReportTests(TestCase):
         self.assertEqual(totals["Sales Invoice"], "2000.00")
         self.assertEqual(totals["Bank Receipt"], "500.00")
 
+    def test_customer_party_ledger_report_uses_invoice_return_receipt_formula(self):
+        sales_entry = JournalEntry.objects.create(
+            tenant_id=self.tenant_id,
+            date="2026-04-01",
+            reference="SINV-00002",
+            source_type=JournalEntry.SourceType.SALES_INVOICE,
+            source_id="33333333-3333-3333-3333-333333333333",
+            document_type="Sales Invoice",
+            description="Invoice created",
+            people_type="Customer",
+            people_name=self.customer.business_name,
+        )
+        JournalLine.objects.create(
+            tenant_id=self.tenant_id,
+            journal_entry=sales_entry,
+            account=self.customer_account,
+            debit=Decimal("2000.00"),
+            credit=Decimal("0.00"),
+            people_type="Customer",
+            people_name=self.customer.business_name,
+        )
+
+        return_entry = JournalEntry.objects.create(
+            tenant_id=self.tenant_id,
+            date="2026-04-03",
+            reference="SRET-00001",
+            source_type=JournalEntry.SourceType.SALES_RETURN,
+            source_id="44444444-4444-4444-4444-444444444444",
+            document_type="Sales Return",
+            description="Goods returned",
+            people_type="Customer",
+            people_name=self.customer.business_name,
+        )
+        JournalLine.objects.create(
+            tenant_id=self.tenant_id,
+            journal_entry=return_entry,
+            account=self.customer_account,
+            debit=Decimal("0.00"),
+            credit=Decimal("300.00"),
+            people_type="Customer",
+            people_name=self.customer.business_name,
+        )
+
+        receipt_entry = JournalEntry.objects.create(
+            tenant_id=self.tenant_id,
+            date="2026-04-04",
+            reference="SBR-00002",
+            source_type=JournalEntry.SourceType.SALES_BANK_RECEIPT,
+            source_id="55555555-5555-5555-5555-555555555555",
+            document_type="Bank Receipt",
+            description="Amount received",
+            people_type="Customer",
+            people_name=self.customer.business_name,
+        )
+        JournalLine.objects.create(
+            tenant_id=self.tenant_id,
+            journal_entry=receipt_entry,
+            account=self.customer_account,
+            debit=Decimal("0.00"),
+            credit=Decimal("700.00"),
+            people_type="Customer",
+            people_name=self.customer.business_name,
+        )
+
+        request = self.factory.get(
+            "/api/accounts/accounts/party-ledger-report/",
+            {
+                "partner_type": "customer",
+                "partner_id": str(self.customer.id),
+            },
+        )
+        force_authenticate(request, user=self.user)
+        response = AccountViewSet.as_view({"get": "party_ledger_report"})(request)
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.data["data"]
+        totals = {item["label"]: item["amount"] for item in payload["summary"]["document_totals"]}
+        self.assertEqual(totals["Sales Invoice"], "2000.00")
+        self.assertEqual(totals["Sales Return"], "300.00")
+        self.assertEqual(totals["Bank Receipt"], "700.00")
+        self.assertEqual(payload["summary"]["grand_total"], "1000.00")
+
 
 class AccountSoftDeleteProtectionTests(TestCase):
     def setUp(self):
@@ -514,6 +597,247 @@ class AccountSoftDeleteProtectionTests(TestCase):
 
         with self.assertRaises(ValidationError):
             self.bank.delete()
+
+
+class OpeningAccountsStructureTests(TestCase):
+    def setUp(self):
+        self.tenant_id = "SAMS_TRADERS"
+        self.user = User.objects.create_user(
+            username="opening-accounts-user",
+            password="secret",
+            tenant_id=self.tenant_id,
+        )
+        self.factory = APIRequestFactory()
+
+        self.assets = Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="1000",
+            name="Assets",
+            account_group=Account.AccountGroup.ASSET,
+            account_nature=Account.AccountNature.DEBIT,
+            level=1,
+            is_postable=False,
+            is_active=True,
+            sort_order=0,
+        )
+        self.current_asset = Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="1100",
+            name="Current Asset",
+            parent=self.assets,
+            account_group=Account.AccountGroup.ASSET,
+            account_nature=Account.AccountNature.DEBIT,
+            level=2,
+            is_postable=False,
+            is_active=True,
+            sort_order=0,
+        )
+        self.bank_root = Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="1110",
+            name="Bank",
+            parent=self.current_asset,
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.BANK,
+            account_nature=Account.AccountNature.DEBIT,
+            level=3,
+            is_postable=False,
+            is_active=True,
+            sort_order=0,
+        )
+
+    def _build_request(self, method, path, data=None):
+        request_factory = getattr(self.factory, method)
+        request = request_factory(path, data=data or {}, format="json")
+        force_authenticate(request, user=self.user)
+        request.tenant_id = self.tenant_id
+        return request
+
+    def test_can_create_opening_bank_under_1110(self):
+        request = self._build_request(
+            "post",
+            "/accounts/accounts/opening-banks/",
+            {"name": "Bank Alfalah", "is_active": True},
+        )
+
+        response = AccountViewSet.as_view({"post": "create_opening_bank"})(request)
+
+        self.assertEqual(response.status_code, 201)
+        created = Account.objects.get(name="Bank Alfalah")
+        self.assertEqual(created.code, "1111")
+        self.assertEqual(created.parent_id, self.bank_root.id)
+        self.assertFalse(created.is_postable)
+        self.assertEqual(created.account_type, Account.AccountType.BANK)
+        self.assertEqual(created.level, 4)
+
+    def test_create_opening_bank_normalizes_postable_1110_root(self):
+        self.bank_root.is_postable = True
+        self.bank_root.save()
+
+        request = self._build_request(
+            "post",
+            "/accounts/accounts/opening-banks/",
+            {"name": "Bank Al Habib", "is_active": True},
+        )
+
+        response = AccountViewSet.as_view({"post": "create_opening_bank"})(request)
+
+        self.assertEqual(response.status_code, 201)
+        self.bank_root.refresh_from_db()
+        self.assertFalse(self.bank_root.is_postable)
+        created = Account.objects.get(name="Bank Al Habib")
+        self.assertEqual(created.code, "1111")
+
+    def test_can_create_opening_account_under_opening_bank(self):
+        bank = Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="1111",
+            name="Bank Alfalah",
+            parent=self.bank_root,
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.BANK,
+            account_nature=Account.AccountNature.DEBIT,
+            level=3,
+            is_postable=False,
+            is_active=True,
+            sort_order=0,
+        )
+
+        request = self._build_request(
+            "post",
+            "/accounts/accounts/opening-account-items/",
+            {"bank_id": str(bank.id), "name": "Current Account", "is_active": True},
+        )
+
+        response = AccountViewSet.as_view({"post": "create_opening_account_item"})(request)
+
+        self.assertEqual(response.status_code, 201)
+        created = Account.objects.get(name="Current Account")
+        self.assertEqual(created.code, "11111")
+        self.assertEqual(created.parent_id, bank.id)
+        self.assertTrue(created.is_postable)
+        self.assertEqual(created.level, 5)
+
+    def test_opening_accounts_endpoint_returns_banks_with_children(self):
+        bank = Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="1111",
+            name="Bank Alfalah",
+            parent=self.bank_root,
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.BANK,
+            account_nature=Account.AccountNature.DEBIT,
+            level=3,
+            is_postable=False,
+            is_active=True,
+            sort_order=0,
+        )
+        Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="11111",
+            name="Current Account",
+            parent=bank,
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.BANK,
+            account_nature=Account.AccountNature.DEBIT,
+            level=4,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+
+        request = self._build_request("get", "/accounts/accounts/opening-accounts/")
+        response = AccountViewSet.as_view({"get": "opening_accounts"})(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["data"]["root"]["code"], "1110")
+        self.assertEqual(response.data["data"]["banks"][0]["code"], "1111")
+        self.assertEqual(response.data["data"]["banks"][0]["children"][0]["code"], "11111")
+
+
+class DimensionManagementTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="dimension-admin",
+            email="dimension-admin@test.com",
+            password="secret123",
+            tenant_id="SAMS_TRADERS",
+        )
+        self.factory = APIRequestFactory()
+
+    def test_can_create_dimension_and_seed_default_coa(self):
+        request = self.factory.post(
+            "/api/accounts/dimensions/",
+            {"name": "North Division", "code": "NORTH_DIVISION", "is_active": True},
+            format="json",
+        )
+        force_authenticate(request, user=self.user)
+
+        response = DimensionViewSet.as_view({"post": "create"})(request)
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(
+            Dimension.objects.filter(code="NORTH_DIVISION", name="North Division", is_active=True).exists()
+        )
+        self.assertTrue(
+            Account.objects.filter(tenant_id="NORTH_DIVISION", code="1000", deleted_at__isnull=True).exists()
+        )
+        self.assertTrue(
+            Account.objects.filter(tenant_id="NORTH_DIVISION", code="1110", deleted_at__isnull=True).exists()
+        )
+
+    def test_dimension_code_can_be_generated_from_name(self):
+        request = self.factory.post(
+            "/api/accounts/dimensions/",
+            {"name": "South Zone", "code": "", "is_active": True},
+            format="json",
+        )
+        force_authenticate(request, user=self.user)
+
+        response = DimensionViewSet.as_view({"post": "create"})(request)
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(Dimension.objects.filter(code="SOUTH_ZONE").exists())
+
+    def test_can_delete_unused_dimension_and_seeded_accounts(self):
+        dimension = Dimension.objects.create(code="TEMP_DIM", name="Temp Dimension", is_active=True)
+        Account.objects.create(
+            tenant_id="TEMP_DIM",
+            code="1000",
+            name="Asset",
+            account_group=Account.AccountGroup.ASSET,
+            account_nature=Account.AccountNature.DEBIT,
+            level=1,
+            is_postable=False,
+            is_active=True,
+            sort_order=0,
+        )
+
+        request = self.factory.delete(f"/api/accounts/dimensions/{dimension.id}/")
+        force_authenticate(request, user=self.user)
+
+        response = DimensionViewSet.as_view({"delete": "destroy"})(request, pk=dimension.id)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Dimension.objects.filter(id=dimension.id).exists())
+        self.assertFalse(Account.objects.filter(tenant_id="TEMP_DIM").exists())
+
+    def test_cannot_delete_dimension_with_active_users(self):
+        dimension = Dimension.objects.create(code="LOCKED_DIM", name="Locked Dimension", is_active=True)
+        User.objects.create_user(
+            username="locked-user",
+            email="locked@test.com",
+            password="secret123",
+            tenant_id="LOCKED_DIM",
+        )
+
+        request = self.factory.delete(f"/api/accounts/dimensions/{dimension.id}/")
+        force_authenticate(request, user=self.user)
+
+        response = DimensionViewSet.as_view({"delete": "destroy"})(request, pk=dimension.id)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(Dimension.objects.filter(id=dimension.id).exists())
 
 
 class CoaCompletenessReportTests(TestCase):
@@ -1117,3 +1441,121 @@ class DashboardOverviewTests(TestCase):
         self.assertEqual(data["counts"]["raw_materials"], 1)
         self.assertEqual(data["counts"]["customers"], 1)
         self.assertEqual(data["counts"]["suppliers"], 1)
+
+
+class ExpenseTests(TestCase):
+    def setUp(self):
+        self.tenant_id = "SAMS_TRADERS"
+        self.user = User.objects.create_user(
+            username="expense-user",
+            password="secret",
+            tenant_id=self.tenant_id,
+        )
+        self.factory = APIRequestFactory()
+
+        self.assets = Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="1000",
+            name="Assets",
+            account_group=Account.AccountGroup.ASSET,
+            account_nature=Account.AccountNature.DEBIT,
+            level=1,
+            is_postable=False,
+            is_active=True,
+            sort_order=0,
+        )
+        self.bank = Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="1110",
+            name="Main Bank",
+            parent=self.assets,
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.BANK,
+            account_nature=Account.AccountNature.DEBIT,
+            level=2,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+        self.expense_root = Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="6000",
+            name="Expenses",
+            account_group=Account.AccountGroup.EXPENSE,
+            account_nature=Account.AccountNature.DEBIT,
+            level=1,
+            is_postable=False,
+            is_active=True,
+            sort_order=0,
+        )
+        self.expense_account = Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="6100",
+            name="Utilities Expense",
+            parent=self.expense_root,
+            account_group=Account.AccountGroup.EXPENSE,
+            account_type=Account.AccountType.GENERAL,
+            account_nature=Account.AccountNature.DEBIT,
+            level=2,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+
+    def test_expense_viewset_creates_and_posts_journal(self):
+        request = self.factory.post(
+            "/api/accounts/expenses/",
+            {
+                "date": "2026-04-22",
+                "bank_account_id": str(self.bank.id),
+                "expense_account_id": str(self.expense_account.id),
+                "amount": "1500.00",
+                "remarks": "Electricity bill",
+            },
+            format="json",
+        )
+        force_authenticate(request, user=self.user)
+        response = ExpenseViewSet.as_view({"post": "create"})(request)
+
+        self.assertEqual(response.status_code, 201)
+        expense = Expense.objects.get(
+            tenant_id=self.tenant_id,
+            deleted_at__isnull=True,
+        )
+        self.assertEqual(expense.amount, Decimal("1500.00"))
+        self.assertEqual(expense.bank_account_id, self.bank.id)
+        self.assertEqual(expense.expense_account_id, self.expense_account.id)
+        self.assertTrue(
+            JournalEntry.objects.filter(
+                tenant_id=self.tenant_id,
+                source_type=JournalEntry.SourceType.EXPENSE,
+                source_id=expense.id,
+                deleted_at__isnull=True,
+            ).exists()
+        )
+
+    def test_expense_journal_posts_debit_expense_credit_bank(self):
+        expense = Expense.objects.create(
+            tenant_id=self.tenant_id,
+            expense_number="EXP-00001",
+            date="2026-04-22",
+            bank_account=self.bank,
+            expense_account=self.expense_account,
+            amount=Decimal("1500.00"),
+            remarks="Electricity bill",
+        )
+
+        sync_expense_journal(expense)
+
+        entry = JournalEntry.objects.get(
+            tenant_id=self.tenant_id,
+            source_type=JournalEntry.SourceType.EXPENSE,
+            source_id=expense.id,
+            deleted_at__isnull=True,
+        )
+        lines = list(entry.lines.filter(deleted_at__isnull=True).order_by("created_at"))
+        self.assertEqual(len(lines), 2)
+        self.assertEqual(lines[0].account_id, self.expense_account.id)
+        self.assertEqual(lines[0].debit, Decimal("1500.00"))
+        self.assertEqual(lines[1].account_id, self.bank.id)
+        self.assertEqual(lines[1].credit, Decimal("1500.00"))

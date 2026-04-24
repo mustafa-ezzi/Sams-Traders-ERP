@@ -21,6 +21,8 @@ import SalesBankReceiptPage from "./pages/sales/SalesBankReceiptPage";
 import CustomersPage from "./pages/parties/CustomersPage";
 import SuppliersPage from "./pages/parties/SuppliersPage";
 import AccountsPage from "./pages/accounts/AccountsPage";
+import ExpensePage from "./pages/accounts/ExpensePage";
+import DimensionsPage from "./pages/users/DimensionsPage";
 import CoaCompletenessReportPage from "./pages/reports/CoaCompletenessReportPage";
 import LedgerReportsPage from "./pages/reports/LedgerReportsPage";
 import PartyLedgerReportsPage from "./pages/reports/PartyLedgerReportsPage";
@@ -50,6 +52,8 @@ const App = () => (
         <Route path="raw-materials" element={<RawMaterialPage />} />
         <Route path="products" element={<ProductPage />} />
         <Route path="accounts" element={<AccountsPage />} />
+        <Route path="users/dimensions" element={<DimensionsPage />} />
+        <Route path="expenses" element={<ExpensePage />} />
         <Route path="reports/ledger" element={<LedgerReportsPage />} />
         <Route path="reports/party-ledger" element={<PartyLedgerReportsPage />} />
         <Route path="reports/coa-completeness" element={<CoaCompletenessReportPage />} />

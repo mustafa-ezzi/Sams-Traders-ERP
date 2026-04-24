@@ -9,6 +9,18 @@ const accountService = {
     const response = await axiosInstance.get(`/accounts/accounts/${id}/`);
     return response.data;
   },
+  async listOpeningAccounts() {
+    const response = await axiosInstance.get("/accounts/accounts/opening-accounts/");
+    return response.data.data || { root: null, banks: [] };
+  },
+  async createOpeningBank(payload) {
+    const response = await axiosInstance.post("/accounts/accounts/opening-banks/", payload);
+    return response.data;
+  },
+  async createOpeningAccountItem(payload) {
+    const response = await axiosInstance.post("/accounts/accounts/opening-account-items/", payload);
+    return response.data;
+  },
   async create(payload) {
     const response = await axiosInstance.post("/accounts/accounts/", payload);
     return response.data;

@@ -3,7 +3,7 @@ import axiosInstance from "../axiosInstance";
 const authService = {
   /**
    * Login with email and password.
-   * Active tenant is selected from the navbar after login.
+   * Active dimension is selected from the navbar after login.
    */
   async login(payload) {
     try {

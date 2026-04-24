@@ -135,6 +135,7 @@ PRODUCT_TYPE_CHOICES = [
 class Product(BaseModel):
     name = models.CharField(max_length=255)
     product_type = models.CharField(max_length=20, choices=PRODUCT_TYPE_CHOICES)
+    unit = models.ForeignKey(Unit, on_delete=models.PROTECT, null=True, blank=True)
 
     packaging_cost = models.DecimalField(max_digits=12, decimal_places=2)
     net_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)

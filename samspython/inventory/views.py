@@ -225,7 +225,7 @@ class ProductViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = Product.objects.filter(
             tenant_id=self.request.user.tenant_id, deleted_at__isnull=True
-        ).prefetch_related("materials")
+        ).select_related("unit").prefetch_related("materials")
         qs = qs.annotate(
             quantity=Coalesce(
                 Sum(

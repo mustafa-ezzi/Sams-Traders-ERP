@@ -1,12 +1,13 @@
 from decimal import Decimal
 
 from django.test import TestCase
-from rest_framework.test import APIRequestFactory
+from rest_framework.test import APIRequestFactory, force_authenticate
 
 from accounts.models import Account, User
-from inventory.models import Product, Supplier, Warehouse
+from inventory.models import Product, Supplier, Unit, Warehouse
 from purchase.models import PurchaseBankPayment, PurchaseInvoice, PurchaseReturn
 from purchase.serializers import PurchaseBankPaymentSerializer
+from purchase.views import PurchaseInvoiceViewSet
 from purchase.services import get_purchase_invoice_financials
 
 
@@ -56,12 +57,14 @@ class PurchaseBankPaymentTests(TestCase):
             name="Main Warehouse",
             location="Karachi",
         )
+        self.unit = Unit.objects.create(tenant_id=self.tenant_id, name="Carton")
         self.product = Product.objects.create(
             tenant_id=self.tenant_id,
             name="Test Product",
             product_type="READY_MADE",
             packaging_cost=Decimal("0.00"),
             net_amount=Decimal("0.00"),
+            unit=self.unit,
         )
         self.invoice = PurchaseInvoice.objects.create(
             tenant_id=self.tenant_id,
@@ -158,3 +161,15 @@ class PurchaseBankPaymentTests(TestCase):
 
         self.assertFalse(serializer.is_valid())
         self.assertIn("bank_account_id", serializer.errors)
+
+    def test_product_options_include_product_unit(self):
+        request = self.factory.get(
+            "/api/purchase/purchase-invoices/product-options/",
+            {"warehouse_id": str(self.warehouse.id)},
+        )
+        force_authenticate(request, user=self.user)
+
+        response = PurchaseInvoiceViewSet.as_view({"get": "product_options"})(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["data"][0]["unit"], "Carton")

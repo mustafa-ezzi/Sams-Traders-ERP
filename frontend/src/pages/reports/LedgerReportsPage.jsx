@@ -5,6 +5,7 @@ import FormInput from "../../components/ui/FormInput";
 import StateView from "../../components/StateView";
 import axiosInstance from "../../api/axiosInstance";
 import accountService from "../../api/services/accountService";
+import dimensionService from "../../api/services/dimensionService";
 import { flattenAccountTree, formatAccountLabel } from "../../utils/accounts";
 import { formatDecimal } from "../../utils/format";
 import { useToast } from "../../context/ToastContext";
@@ -50,6 +51,7 @@ const LedgerReportsPage = () => {
   const [accountTree, setAccountTree] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [customers, setCustomers] = useState([]);
+  const [dimensions, setDimensions] = useState([]);
   const [loadingSetup, setLoadingSetup] = useState(false);
   const [loadingReport, setLoadingReport] = useState(false);
   const [error, setError] = useState("");
@@ -123,6 +125,10 @@ const LedgerReportsPage = () => {
   }, [customers, descendantIds, flatAccounts, form.headAccountId, suppliers]);
 
   useEffect(() => {
+    dimensionService.list().then((items) => setDimensions(items || [])).catch(() => setDimensions([]));
+  }, []);
+
+  useEffect(() => {
     const fetchWithTenant = async (url, selectedTenant) => {
       const response = await axiosInstance.get(url, {
         headers: { "x-tenant-id": selectedTenant },
@@ -149,25 +155,23 @@ const LedgerReportsPage = () => {
       setError("");
       try {
         if (form.tenantScope === "BOTH") {
-          const [
-            accountsResponse,
-            samsSuppliers,
-            amSuppliers,
-            samsCustomers,
-            amCustomers,
-          ] = await Promise.all([
+          const activeDimensionCodes = dimensions.map((item) => item.code);
+          const [accountsResponse, ...dimensionResponses] = await Promise.all([
             fetchWithTenant("/accounts/accounts/", tenantId),
-            fetchWithTenant("/inventory/suppliers", "SAMS_TRADERS"),
-            fetchWithTenant("/inventory/suppliers", "AM_TRADERS"),
-            fetchWithTenant("/inventory/customers", "SAMS_TRADERS"),
-            fetchWithTenant("/inventory/customers", "AM_TRADERS"),
+            ...activeDimensionCodes.flatMap((dimensionCode) => [
+              fetchWithTenant("/inventory/suppliers", dimensionCode),
+              fetchWithTenant("/inventory/customers", dimensionCode),
+            ]),
           ]);
+
+          const supplierResponses = dimensionResponses.filter((_, index) => index % 2 === 0);
+          const customerResponses = dimensionResponses.filter((_, index) => index % 2 === 1);
 
           setAccountTree(
             Array.isArray(accountsResponse) ? accountsResponse : accountsResponse.data || []
           );
-          setSuppliers(mergeUniqueParties([samsSuppliers, amSuppliers]));
-          setCustomers(mergeUniqueParties([samsCustomers, amCustomers]));
+          setSuppliers(mergeUniqueParties(supplierResponses));
+          setCustomers(mergeUniqueParties(customerResponses));
         } else {
           const [accountsResponse, supplierResponse, customerResponse] = await Promise.all([
             fetchWithTenant("/accounts/accounts/", form.tenantScope),
@@ -189,7 +193,7 @@ const LedgerReportsPage = () => {
     };
 
     loadSetup();
-  }, [form.tenantScope, tenantId]);
+  }, [dimensions, form.tenantScope, tenantId]);
 
   useEffect(() => {
     setForm((current) => ({
@@ -266,16 +270,19 @@ const LedgerReportsPage = () => {
           <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
             <div className="space-y-1">
               <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Tenant <span className="text-rose-500">*</span>
+                Dimension <span className="text-rose-500">*</span>
               </label>
               <select
                 className={selectClassName}
                 value={form.tenantScope}
                 onChange={(e) => handleChange("tenantScope", e.target.value)}
               >
-                <option value="SAMS_TRADERS">SAMS Traders</option>
-                <option value="AM_TRADERS">AM Traders</option>
-                <option value="BOTH">Both Tenants</option>
+                {dimensions.map((dimension) => (
+                  <option key={dimension.code} value={dimension.code}>
+                    {dimension.name}
+                  </option>
+                ))}
+                <option value="BOTH">All Dimensions</option>
               </select>
             </div>
 
@@ -380,7 +387,7 @@ const LedgerReportsPage = () => {
                     <tr>
                       <th className="px-4 py-3">S.No</th>
                       <th className="px-4 py-3">ID</th>
-                      <th className="px-4 py-3">Tenant</th>
+                      <th className="px-4 py-3">Dimension</th>
                       <th className="px-4 py-3">Date</th>
                       <th className="px-4 py-3">Document Type</th>
                       <th className="px-4 py-3">People Type</th>

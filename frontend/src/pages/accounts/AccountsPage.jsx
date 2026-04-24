@@ -10,6 +10,7 @@ import StateView from "../../components/StateView";
 import ConfirmModal from "../../components/ui/ConfirmModal";
 import { useToast } from "../../context/ToastContext";
 import { flattenAccountTree, formatAccountLabel } from "../../utils/accounts";
+import OpeningAccountsTab from "./OpeningAccountsTab";
 
 const schema = z.object({
   code: z
@@ -60,6 +61,7 @@ const selectClassName =
   "w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100";
 
 const AccountsPage = () => {
+  const [activeTab, setActiveTab] = useState("coa");
   const [accountTree, setAccountTree] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -200,6 +202,37 @@ const AccountsPage = () => {
 
   return (
     <section className="space-y-6">
+      <Card className="bg-[linear-gradient(135deg,rgba(255,255,255,0.92),rgba(237,247,255,0.98))]">
+        <div className="flex flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={() => setActiveTab("coa")}
+            className={`rounded-2xl px-5 py-3 text-sm font-semibold transition ${
+              activeTab === "coa"
+                ? "bg-slate-900 text-white shadow-lg shadow-slate-900/10"
+                : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
+            }`}
+          >
+            Chart Of Accounts
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("opening")}
+            className={`rounded-2xl px-5 py-3 text-sm font-semibold transition ${
+              activeTab === "opening"
+                ? "bg-slate-900 text-white shadow-lg shadow-slate-900/10"
+                : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
+            }`}
+          >
+            Opening Accounts
+          </button>
+        </div>
+      </Card>
+
+      {activeTab === "opening" ? <OpeningAccountsTab /> : null}
+
+      {activeTab === "coa" ? (
+        <>
       <ConfirmModal
         open={Boolean(deleteId)}
         title="Delete Account"
@@ -219,7 +252,7 @@ const AccountsPage = () => {
               Chart of Accounts
             </h2>
             <p className="mt-2 max-w-2xl text-sm text-slate-500">
-              Manage the tenant chart with hierarchy, posting rules, and group-based account behavior.
+              Manage the dimension chart with hierarchy, posting rules, and group-based account behavior.
             </p>
           </div>
           <div className="grid w-full gap-2 sm:grid-cols-2 lg:w-auto">
@@ -438,6 +471,8 @@ const AccountsPage = () => {
           </div>
         </Card>
       </StateView>
+        </>
+      ) : null}
     </section>
   );
 };

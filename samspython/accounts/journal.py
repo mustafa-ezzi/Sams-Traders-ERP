@@ -4,7 +4,7 @@ from django.db import transaction
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
-from accounts.models import Account, JournalEntry, JournalLine
+from accounts.models import Account, Expense, JournalEntry, JournalLine
 from purchase.models import PurchaseBankPayment, PurchaseInvoice, PurchaseReturn
 from sales.models import SalesBankReceipt, SalesInvoice, SalesReturn
 
@@ -424,6 +424,23 @@ def _build_sales_bank_receipt_lines(receipt):
     ]
 
 
+def _build_expense_lines(expense):
+    return [
+        {
+            "account": expense.expense_account,
+            "debit": expense.amount,
+            "credit": Decimal("0.00"),
+            "line_description": "Expense",
+        },
+        {
+            "account": expense.bank_account,
+            "debit": Decimal("0.00"),
+            "credit": expense.amount,
+            "line_description": "Expense Payment",
+        },
+    ]
+
+
 @transaction.atomic
 def sync_purchase_invoice_journal(invoice):
     return _upsert_journal_entry(
@@ -521,6 +538,22 @@ def sync_sales_bank_receipt_journal(receipt):
 
 
 @transaction.atomic
+def sync_expense_journal(expense):
+    return _upsert_journal_entry(
+        tenant_id=expense.tenant_id,
+        source_type=JournalEntry.SourceType.EXPENSE,
+        source_id=expense.id,
+        date=expense.date,
+        reference=expense.expense_number,
+        document_type="Expense",
+        description=expense.remarks,
+        people_type="",
+        people_name="",
+        lines=_build_expense_lines(expense),
+    )
+
+
+@transaction.atomic
 def sync_all_journals():
     for invoice in PurchaseInvoice.objects.filter(deleted_at__isnull=True).select_related("supplier"):
         sync_purchase_invoice_journal(invoice)
@@ -534,3 +567,5 @@ def sync_all_journals():
         sync_sales_return_journal(sales_return)
     for receipt in SalesBankReceipt.objects.filter(deleted_at__isnull=True).select_related("customer", "bank_account"):
         sync_sales_bank_receipt_journal(receipt)
+    for expense in Expense.objects.filter(deleted_at__isnull=True).select_related("bank_account", "expense_account"):
+        sync_expense_journal(expense)

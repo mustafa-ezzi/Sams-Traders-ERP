@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import StateView from "../../components/StateView";
 import accountService from "../../api/services/accountService";
+import dimensionService from "../../api/services/dimensionService";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 
@@ -36,10 +37,15 @@ const renderMissingFields = (fields = []) => (fields.length ? fields.join(", ") 
 const CoaCompletenessReportPage = () => {
   const toast = useToast();
   const { tenantId } = useAuth();
+  const [dimensions, setDimensions] = useState([]);
   const [tenantScope, setTenantScope] = useState(tenantId);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [report, setReport] = useState(null);
+
+  useEffect(() => {
+    dimensionService.list().then((items) => setDimensions(items || [])).catch(() => setDimensions([]));
+  }, []);
 
   const handleGenerate = async () => {
     setLoading(true);
@@ -72,16 +78,19 @@ const CoaCompletenessReportPage = () => {
         <div className="grid gap-3 grid-cols-1 sm:grid-cols-[minmax(0,280px)_auto] sm:items-end">
           <div className="space-y-1">
             <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Tenant
+              Dimension
             </label>
             <select
               className={selectClassName}
               value={tenantScope}
               onChange={(event) => setTenantScope(event.target.value)}
             >
-              <option value="SAMS_TRADERS">SAMS Traders</option>
-              <option value="AM_TRADERS">AM Traders</option>
-              <option value="BOTH">Both Tenants</option>
+              {dimensions.map((dimension) => (
+                <option key={dimension.code} value={dimension.code}>
+                  {dimension.name}
+                </option>
+              ))}
+              <option value="BOTH">All Dimensions</option>
             </select>
           </div>
           <div className="flex justify-start sm:justify-end">
@@ -96,7 +105,7 @@ const CoaCompletenessReportPage = () => {
         loading={loading}
         error={error}
         isEmpty={!loading && !error && Boolean(report) && !Object.values(report.summary || {}).some(Boolean)}
-        emptyMessage="No COA completeness issues found for the selected tenant scope."
+        emptyMessage="No COA completeness issues found for the selected dimension scope."
       >
         {report ? (
           <div className="space-y-6">
@@ -133,7 +142,7 @@ const CoaCompletenessReportPage = () => {
                 <table className="min-w-full divide-y divide-slate-200 text-sm">
                   <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
                     <tr>
-                      <th className="px-4 py-3">Tenant</th>
+                      <th className="px-4 py-3">Dimension</th>
                       <th className="px-4 py-3">Category</th>
                       <th className="px-4 py-3">Missing Fields</th>
                     </tr>
@@ -157,7 +166,7 @@ const CoaCompletenessReportPage = () => {
                 <table className="min-w-full divide-y divide-slate-200 text-sm">
                   <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
                     <tr>
-                      <th className="px-4 py-3">Tenant</th>
+                      <th className="px-4 py-3">Dimension</th>
                       <th className="px-4 py-3">Raw Material</th>
                       <th className="px-4 py-3">Category</th>
                       <th className="px-4 py-3">Category Inventory COA</th>
@@ -183,7 +192,7 @@ const CoaCompletenessReportPage = () => {
                 <table className="min-w-full divide-y divide-slate-200 text-sm">
                   <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
                     <tr>
-                      <th className="px-4 py-3">Tenant</th>
+                      <th className="px-4 py-3">Dimension</th>
                       <th className="px-4 py-3">Product</th>
                       <th className="px-4 py-3">Category</th>
                       <th className="px-4 py-3">Missing Fields</th>
@@ -209,7 +218,7 @@ const CoaCompletenessReportPage = () => {
                 <table className="min-w-full divide-y divide-slate-200 text-sm">
                   <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
                     <tr>
-                      <th className="px-4 py-3">Tenant</th>
+                      <th className="px-4 py-3">Dimension</th>
                       <th className="px-4 py-3">Product</th>
                       <th className="px-4 py-3">Category</th>
                       <th className="px-4 py-3">Field</th>

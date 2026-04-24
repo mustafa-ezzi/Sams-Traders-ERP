@@ -139,7 +139,7 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
         queryset = Product.objects.filter(
             tenant_id=tenant_id,
             deleted_at__isnull=True,
-        ).order_by("name")
+        ).select_related("unit").order_by("name")
 
         if search:
             queryset = queryset.filter(name__icontains=search)
@@ -160,6 +160,7 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
                     "id": str(product.id),
                     "name": product.name,
                     "quantity": str(quantity),
+                    "unit": product.unit.name if product.unit else None,
                     "product_type": product.product_type,
                     "net_amount": str(product.net_amount),
                 }

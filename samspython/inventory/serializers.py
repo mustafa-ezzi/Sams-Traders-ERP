@@ -148,6 +148,7 @@ class ProductSerializer(serializers.ModelSerializer):
             "packaging_cost",
             "net_amount",
             "category",
+            "unit",
             "inventory_account",
             "cogs_account",
             "revenue_account",
@@ -160,6 +161,7 @@ class ProductSerializer(serializers.ModelSerializer):
         product_type = data.get("product_type")
         materials = data.get("materials", [])
         category = data.get("category", getattr(self.instance, "category", None))
+        unit = data.get("unit", getattr(self.instance, "unit", None))
 
         if product_type == "READY_MADE" and materials:
             raise serializers.ValidationError(
@@ -178,6 +180,11 @@ class ProductSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     "Raw materials must belong to the current tenant."
                 )
+
+        if unit and (unit.tenant_id != tenant_id or unit.deleted_at is not None):
+            raise serializers.ValidationError(
+                {"unit": "Selected unit is not available for this tenant."}
+            )
 
         data = resolve_product_coa_defaults(category, data, instance=self.instance)
 
@@ -242,6 +249,7 @@ class ProductSerializer(serializers.ModelSerializer):
             "packaging_cost", instance.packaging_cost
         )
         instance.category = validated_data.get("category", instance.category)
+        instance.unit = validated_data.get("unit", instance.unit)
         instance.inventory_account = validated_data.get(
             "inventory_account", instance.inventory_account
         )
@@ -553,6 +561,12 @@ class OpeningStockSerializer(serializers.ModelSerializer):
 class ProductDetailedSerializer(serializers.Serializer):
     id = serializers.UUIDField()
     name = serializers.CharField()
+    unit = serializers.SerializerMethodField()
+
+    def get_unit(self, obj):
+        if getattr(obj, "unit", None) is None:
+            return None
+        return obj.unit.name
 
 
 class ProductionSerializer(serializers.ModelSerializer):

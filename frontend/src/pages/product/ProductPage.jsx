@@ -6,6 +6,7 @@ import productService from "../../api/services/productService";
 import rawMaterialService from "../../api/services/rawMaterialService";
 import categoryService from "../../api/services/categoryService";
 import accountService from "../../api/services/accountService";
+import unitService from "../../api/services/unitService";
 import StateView from "../../components/StateView";
 import { formatDecimal } from "../../utils/format";
 import Card from "../../components/ui/Card";
@@ -19,6 +20,7 @@ const schema = z.object({
   productType: z.enum(["READY_MADE", "MANUFACTURED"]),
   packagingCost: z.coerce.number().min(0),
   category: z.union([z.string().uuid("Category must be a valid UUID"), z.literal("")]),
+  unit: z.union([z.string().uuid("Unit must be a valid UUID"), z.literal("")]),
   inventory_account: z.union([z.string().uuid("Inventory account must be a valid UUID"), z.literal("")]),
   cogs_account: z.union([z.string().uuid("COGS account must be a valid UUID"), z.literal("")]),
   revenue_account: z.union([z.string().uuid("Revenue account must be a valid UUID"), z.literal("")]),
@@ -29,6 +31,7 @@ const defaultValues = {
   productType: "READY_MADE",
   packagingCost: 0,
   category: "",
+  unit: "",
   inventory_account: "",
   cogs_account: "",
   revenue_account: "",
@@ -53,6 +56,7 @@ const ProductPage = () => {
   const [total, setTotal] = useState(0);
   const [rawMaterialOptions, setRawMaterialOptions] = useState([]);
   const [categoryOptions, setCategoryOptions] = useState([]);
+  const [unitOptions, setUnitOptions] = useState([]);
   const [inventoryAccounts, setInventoryAccounts] = useState([]);
   const [cogsAccounts, setCogsAccounts] = useState([]);
   const [revenueAccounts, setRevenueAccounts] = useState([]);
@@ -156,12 +160,14 @@ const ProductPage = () => {
     Promise.all([
       rawMaterialService.list({ page: 1, limit: 100, search: "" }),
       categoryService.list({ page: 1, limit: 100, search: "" }),
+      unitService.list({ page: 1, limit: 100, search: "" }),
       accountService.list(),
     ])
-      .then(([rawMaterialRes, categoryRes, accountRes]) => {
+      .then(([rawMaterialRes, categoryRes, unitRes, accountRes]) => {
         const flatAccounts = flattenAccountTree(accountRes || []);
         setRawMaterialOptions(rawMaterialRes.data || []);
         setCategoryOptions(categoryRes.data || []);
+        setUnitOptions(unitRes.data || []);
         setInventoryAccounts(
           flatAccounts.filter((account) => account.account_group === "ASSET" && account.is_postable)
         );
@@ -190,6 +196,7 @@ const ProductPage = () => {
         product_type: values.productType,
         packaging_cost: values.packagingCost,
         category: values.category || null,
+        unit: values.unit || null,
         inventory_account: values.inventory_account || null,
         cogs_account: values.cogs_account || null,
         revenue_account: values.revenue_account || null,
@@ -308,6 +315,21 @@ const ProductPage = () => {
                 </div>
               </div>
             )}
+          </div>
+
+          <div className="space-y-2">
+            <label className="block text-sm font-semibold text-slate-700">Unit</label>
+            <select className={selectClassName} {...form.register("unit")}>
+              <option value="">Select unit</option>
+              {unitOptions.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+            {form.formState.errors.unit?.message ? (
+              <p className="text-sm text-rose-500">{form.formState.errors.unit.message}</p>
+            ) : null}
           </div>
 
           <div className="space-y-2">
@@ -510,6 +532,7 @@ const ProductPage = () => {
                   <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Name</th>
                   <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Type</th>
                   <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Category</th>
+                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Unit</th>
                   <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Qty</th>
                   <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Materials</th>
                   <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Accounts</th>
@@ -538,6 +561,9 @@ const ProductPage = () => {
 
                       <td className="px-4 py-3 text-slate-600">
                         {categoryOptions.find((category) => category.id === row.category)?.name || "-"}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {unitOptions.find((unit) => unit.id === row.unit)?.name || "-"}
                       </td>
                       <td className="px-4 py-3 tabular-nums text-slate-700">{formatDecimal(row.quantity)}</td>
 
@@ -578,6 +604,7 @@ const ProductPage = () => {
                               productType: row.product_type,
                               packagingCost: Number(row.packaging_cost),
                               category: row.category || "",
+                              unit: row.unit || "",
                               inventory_account: row.inventory_account || "",
                               cogs_account: row.cogs_account || "",
                               revenue_account: row.revenue_account || "",

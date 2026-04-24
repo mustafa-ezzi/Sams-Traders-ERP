@@ -3,7 +3,7 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 from types import SimpleNamespace
 
 from accounts.models import Account, User
-from inventory.models import Category, Product
+from inventory.models import Category, Product, Unit
 from inventory.serializers import ProductSerializer
 from inventory.views import CategoryViewSet
 
@@ -97,6 +97,7 @@ class ProductCoaDefaultsTests(TestCase):
             cogs_account=self.cogs_account,
             revenue_account=self.revenue_account,
         )
+        self.unit = Unit.objects.create(tenant_id=self.tenant_id, name="Pair")
 
     def test_product_inherits_missing_coas_from_category(self):
         serializer = ProductSerializer(
@@ -105,6 +106,7 @@ class ProductCoaDefaultsTests(TestCase):
                 "product_type": "READY_MADE",
                 "packaging_cost": "15.00",
                 "category": self.category.id,
+                "unit": self.unit.id,
                 "inventory_account": None,
                 "cogs_account": None,
                 "revenue_account": None,
@@ -118,6 +120,39 @@ class ProductCoaDefaultsTests(TestCase):
         self.assertEqual(product.inventory_account_id, self.inventory_account.id)
         self.assertEqual(product.cogs_account_id, self.cogs_account.id)
         self.assertEqual(product.revenue_account_id, self.revenue_account.id)
+        self.assertEqual(product.unit_id, self.unit.id)
+
+    def test_product_update_persists_unit(self):
+        product = Product.objects.create(
+            tenant_id=self.tenant_id,
+            name="Boot",
+            product_type="READY_MADE",
+            packaging_cost="10.00",
+            net_amount="10.00",
+            category=self.category,
+        )
+
+        updated_unit = Unit.objects.create(tenant_id=self.tenant_id, name="Box")
+        serializer = ProductSerializer(
+            product,
+            data={
+                "name": product.name,
+                "product_type": product.product_type,
+                "packaging_cost": "10.00",
+                "category": self.category.id,
+                "unit": updated_unit.id,
+                "inventory_account": None,
+                "cogs_account": None,
+                "revenue_account": None,
+                "materials": [],
+            },
+            context={"request": SimpleNamespace(user=self.user)},
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        updated_product = serializer.save()
+
+        self.assertEqual(updated_product.unit_id, updated_unit.id)
 
     def test_apply_category_coa_defaults_only_fills_missing_product_fields(self):
         custom_revenue = Account.objects.create(

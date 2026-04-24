@@ -2,31 +2,64 @@
 
 ## Purpose
 
-This file explains how your ERP is organized, how to use each module, and how the Chart of Accounts (COA) connects with masters, inventory, products, parties, and stock.
+This guide explains the current ERP structure, the modules that are now available in the system, and how the main inventory, sales, purchase, banking, and accounting flows work together.
 
-The guide is written for the current application structure in this repository.
+It has been updated to reflect the latest ERP functions currently present in this repository.
+
+## Latest ERP Updates
+
+The ERP is no longer limited to masters, inventory, parties, and basic COA setup. It now also includes:
+
+- purchase invoices
+- purchase returns
+- sales invoices
+- sales returns
+- purchase bank payments
+- sales bank receipts
+- expense entries
+- opening bank and opening account management
+- ledger reports
+- party ledger reports
+- journal-backed accounting sync for major commercial transactions
+- richer dashboard/business summary data
+- dimension management for tenant-based working
+
+This means the ERP now supports a much more complete day-to-day business flow from stock setup to buying, selling, collecting, paying, expense booking, and reporting.
 
 ## What This ERP Does
 
-This ERP is built around these major areas:
+This ERP is currently built around these major areas:
 
-- Masters
+- Dashboard
+- Administrator Setup
 - Inventory
-- Parties
+- Purchase
+- Sales
+- Bank Transactions
 - Accounting
+- Reports
+- Users / Dimensions
 
 The current system is designed to help you:
 
 - maintain item master data
 - manage raw materials and finished products
-- assign accounting mappings from the COA
-- track opening stock by warehouse
-- maintain customer and supplier control accounts
-- switch between `SAMS_TRADERS` and `AM_TRADERS` from the navbar
+- define warehouses and opening stock
+- configure products with account mappings
+- manage customers and suppliers
+- record purchases and purchase returns
+- record sales and sales returns
+- receive customer payments through bank receipts
+- record supplier payments through bank payments
+- book direct business expenses from bank accounts
+- manage chart of accounts with hierarchy and posting rules
+- create opening banks and opening bank accounts under the COA
+- view ledger and party-ledger reports
+- work dimension-wise through tenant switching
 
-## Tenant Switching
+## Tenant / Dimension Switching
 
-The ERP supports two working dimensions:
+The ERP supports dimension-based working. At the moment, your setup includes:
 
 - `SAMS_TRADERS`
 - `AM_TRADERS`
@@ -34,43 +67,54 @@ The ERP supports two working dimensions:
 How it works:
 
 - You log in once.
-- After login, the tenant switcher in the top navbar controls which tenant you are currently viewing and editing.
-- When you switch tenant, the app loads data for that selected tenant only.
-- COA, masters, inventory, products, customers, suppliers, warehouses, and opening stock all work within the selected tenant.
+- After login, the dimension switcher in the top navbar controls which tenant you are currently viewing and editing.
+- When you switch dimension, the app loads data for that selected tenant only.
+- Accounts, masters, inventory, parties, purchases, sales, banks, expenses, and reports all work inside the selected dimension.
 
 Important:
 
-- Always confirm which tenant is selected before creating or editing records.
-- Data belongs to the active tenant context.
+- Always confirm which dimension is selected before creating or editing records.
+- Data belongs to the active dimension context.
 
 ## Main Navigation
 
-The current app pages are:
+The current app navigation includes:
 
 - Dashboard
-- Masters
-  - Units
+- Purchase
+  - Invoices
+  - Returns
+  - Opening Stock
+- Sales
+  - Invoices
+  - Returns
+- Bank Transactions
+  - Bank Payments
+  - Bank Receipts
+  - Expenses
+- Reports
+  - Ledger Reports
+  - Party Ledger
+- Administrator
   - Sizes
-  - Categories
+  - Units
   - Brands
-- Inventory
-  - Raw Materials
-  - Products
-- Warehouses
-- Opening Stock
-- Production
-- Parties
+  - Categories
   - Customers
   - Suppliers
-- Accounting
-  - COA
+  - Warehouses
+  - Raw Materials
+  - Products
+  - Chart of Accounts
+- Users
+  - Dimensions
 
 ## Recommended Usage Order
 
-The cleanest way to use the ERP is this:
+The cleanest setup and usage flow is:
 
-1. Select the correct tenant from the navbar.
-2. Set up the COA if it has not already been seeded.
+1. Select the correct dimension.
+2. Confirm the Chart of Accounts is seeded and organized correctly.
 3. Create master data:
    - Units
    - Sizes
@@ -80,32 +124,38 @@ The cleanest way to use the ERP is this:
 5. Create Raw Materials.
 6. Create Products.
 7. Create Customers and Suppliers.
-8. Enter Opening Stock.
-9. Use Production entries to increase or decrease finished product stock.
+8. Create opening banks and opening bank accounts if bank transactions will be used.
+9. Enter Opening Stock.
+10. Start purchase entries.
+11. Start sales entries.
+12. Record bank receipts, bank payments, and expenses.
+13. Review ledger and party-ledger reports.
 
 Why this order matters:
 
-- Categories can carry COA mappings.
-- Raw Materials depend on masters and can also have their own inventory account.
-- Products depend on categories, raw materials, and product-level COA mappings.
-- Opening stock depends on warehouses and raw materials.
-- Customers and suppliers can be linked to control accounts from the COA.
+- Categories and products depend on the COA.
+- Inventory setup should be completed before commercial transactions begin.
+- Customers and suppliers should be ready before sales and purchase entries.
+- Bank transactions require valid postable bank accounts.
+- Reports become more useful once transactions are flowing through journals.
 
 ## Dashboard
 
-The dashboard is a quick landing page.
+The dashboard is now more than a simple landing page.
 
-Use it to:
+It is used to:
 
-- confirm the active tenant
-- understand the high-level ERP structure
-- move quickly into the relevant module
+- confirm the active dimension
+- review business KPIs
+- monitor sales, purchases, receipts, payments, and stock values
+- view recent accounting activity
+- understand current business movement from one screen
 
-## Masters
+## Administrator Setup
 
 ### Units
 
-Use Units to define measurement units for inventory items.
+Use Units to define measurement units for items.
 
 Examples:
 
@@ -114,14 +164,9 @@ Examples:
 - LTR
 - BOX
 
-These are used in raw materials as:
-
-- Purchase Unit
-- Selling Unit
-
 ### Sizes
 
-Use Sizes to classify raw materials by size or variant.
+Use Sizes to classify item variants or packing sizes.
 
 Examples:
 
@@ -135,148 +180,77 @@ Examples:
 
 Use Brands to classify materials and products by brand identity.
 
-Examples:
-
-- Local Brand
-- Imported Brand
-- In-house Brand
-
 ### Categories
 
-Categories are very important because they can also hold default accounting mappings.
-
-Each category can be linked to:
+Categories can carry default accounting mappings:
 
 - `inventory_account`
 - `cogs_account`
 - `revenue_account`
 
-Practical meaning:
+This helps keep accounting assignments consistent across product families.
 
-- If you want a product family to follow a common accounting structure, assign those accounts at category level.
-- This helps keep product accounting organized.
+### Customers
 
-Recommended use:
+Customers represent receivable parties.
 
-- Create categories such as:
-  - Chemicals
-  - Packaging
-  - Ready Products
-  - Manufactured Products
-  - Accessories
+Each customer can be linked to a control account, usually a receivable account such as:
 
-## Inventory
+- `1140 - A/c Receivables`
+
+### Suppliers
+
+Suppliers represent payable parties.
+
+Each supplier can be linked to a control account, usually a payable account such as:
+
+- `2130 - A/c Payables`
+
+### Warehouses
+
+Warehouses represent physical stock locations.
+
+Use warehouses when:
+
+- stock is stored in different places
+- purchases are received in a specific warehouse
+- sales stock is controlled warehouse-wise
+- opening stock must be loaded location-wise
 
 ### Raw Materials
 
-Raw Materials are the basic stock items used in manufacturing or item management.
+Raw Materials are base stock items.
 
-Each raw material currently supports:
+They support:
 
-- name
-- brand
-- category
-- size
-- purchase unit
-- selling unit
-- purchase price
-- selling price
-- inventory account
-
-What the inventory account means here:
-
-- This is the asset account that represents the raw material in stock.
-- Usually this should be an inventory-related asset account from the COA.
-
-Recommended practice:
-
-- Use an asset postable account such as `1150 - Inventory` or another approved inventory asset account for raw materials.
-
-Raw material quantity:
-
-- Quantity shown in the system is derived from opening stock records.
-- Opening stock drives available stock figures.
+- item master setup
+- unit/size/brand/category mapping
+- purchase and selling prices
+- inventory account mapping
+- stock quantity tracking through opening stock and related stock tables
 
 ### Products
 
 Products represent finished or sellable items.
 
-There are two product types:
+The ERP supports:
 
-- `READY_MADE`
-- `MANUFACTURED`
+- `READY_MADE` products
+- `MANUFACTURED` products
 
-Each product supports:
+Products can contain:
 
-- name
-- product type
 - packaging cost
-- category
-- inventory account
-- cogs account
-- revenue account
-- material lines for manufactured products
+- inventory, COGS, and revenue accounts
+- raw material lines for manufactured items
 
-#### READY_MADE products
+Net amount is derived from product costing logic already built into the system.
 
-Use this when the product is already finished and does not need a BOM in the system.
-
-Behavior:
-
-- no raw material lines are required
-
-#### MANUFACTURED products
-
-Use this when the product is made from raw materials.
-
-Behavior:
-
-- at least one raw material line is required
-- duplicate raw materials in the same product are not allowed
-- net amount is calculated from:
-  - raw material amounts
-  - packaging cost
-
-#### Product COA mapping
-
-Each product can be linked to:
-
-- `inventory_account`
-- `cogs_account`
-- `revenue_account`
-
-Practical meaning:
-
-- `inventory_account`: where finished stock sits as an asset
-- `cogs_account`: where product cost moves when goods are sold
-- `revenue_account`: where sales income for that product is recognized
-
-Recommended use:
-
-- assign these directly if a product needs its own accounting identity
-- otherwise keep category-level logic disciplined and choose the same pattern consistently
-
-### Warehouses
-
-Warehouses represent storage locations.
-
-Each warehouse supports:
-
-- name
-- location
-
-Use warehouses when:
-
-- stock is held in more than one place
-- opening stock needs to be entered separately per location
-
-Important:
-
-- warehouse deletion is restricted when stock records exist
+## Inventory
 
 ### Opening Stock
 
-Opening Stock is used to load the initial quantity of a raw material into a warehouse.
+Opening Stock is used to load initial stock balances, especially for inventory startup.
 
 Each opening stock entry supports:
 
@@ -285,526 +259,283 @@ Each opening stock entry supports:
 - raw material
 - quantity
 
-Rules:
-
-- one active opening stock record is allowed per:
-  - tenant
-  - date
-  - warehouse
-  - raw material
-
 What it affects:
 
-- raw material availability display
-- stock quantity per warehouse and raw material
+- raw material stock totals
+- warehouse-wise stock position
+- downstream inventory visibility
 
-Practical use:
+### Product Stock Movement
 
-- after you create warehouses and raw materials, enter opening stock to establish starting balances
+The current ERP also updates product stock through commercial flows:
 
-### Production
+- purchase invoices increase product stock
+- purchase returns decrease product stock
+- sales invoices decrease product stock
+- sales returns increase product stock
 
-Production is used to adjust finished product stock in a warehouse.
+This means stock is now linked more closely to actual business transactions rather than setup-only records.
 
-Each production entry supports:
+## Purchase Module
 
-- date
-- warehouse
-- product
-- quantity
+### Purchase Invoices
 
-How quantity works:
+Purchase Invoices are used to record buying goods from suppliers.
 
-- positive quantity increases finished stock
-- negative quantity decreases finished stock
+Current behavior:
 
-Use this page when:
+- supplier-wise invoice creation
+- warehouse-wise stock impact
+- product line entry
+- journal sync for accounting impact
+- financial calculations for invoice balances
 
-- you manufacture finished goods and want to stock them into a warehouse
-- you need to reduce finished stock through manual adjustment
-- you want a transaction-style history for product quantity changes
+Use purchase invoices when:
 
-Result:
+- stock is received from a supplier
+- purchase value must flow into stock/accounting
+- payable balances need to be tracked
 
-- product quantity is updated from production entries
-- stock is maintained per warehouse/product combination
+### Purchase Returns
 
-## Parties
+Purchase Returns are used when items are returned against a purchase invoice.
 
-### Customers
+Current behavior:
 
-Customers represent receivable parties.
+- linked to supplier and original purchase invoice
+- line-wise return control
+- validation against returnable quantity
+- stock reversal
+- journal sync
 
-Each customer supports:
+### Purchase Bank Payments
 
-- name
-- business name
-- email
-- phone number
-- address
-- account
+Purchase Bank Payments are used to record supplier payments through a selected bank account.
 
-What the account means:
+Current behavior:
 
-- this is the customer control account
-- it should usually be an asset-side receivable account
+- linked to supplier
+- linked to purchase invoice
+- shows outstanding invoice balance logic
+- creates accounting journal effect
+- reduces supplier payable exposure in reporting flow
 
-Recommended COA use:
+## Sales Module
 
-- use `1140 - A/c Receivables` or another approved receivable account
+### Sales Invoices
 
-### Suppliers
+Sales Invoices are used to record sales to customers.
 
-Suppliers represent payable parties.
+Current behavior:
 
-Each supplier supports:
+- customer-wise invoice creation
+- warehouse-wise stock deduction
+- product line entry
+- journal sync for accounting impact
+- receivable balance tracking
 
-- name
-- business name
-- email
-- phone number
-- address
-- account
+Use sales invoices when:
 
-What the account means:
+- goods are sold to a customer
+- stock should reduce
+- revenue and receivable effect should be recorded
 
-- this is the supplier control account
-- it should usually be a liability-side payable account
+### Sales Returns
 
-Recommended COA use:
+Sales Returns are used to reverse returned sold items.
 
-- use `2130 - A/c Payables` or another approved payable account
+Current behavior:
 
-## Accounting: Chart of Accounts (COA)
+- linked to customer and original sales invoice
+- line-wise return quantity control
+- stock is added back
+- journal entries are updated
 
-## What COA Means
+### Sales Bank Receipts
 
-COA stands for Chart of Accounts.
+Sales Bank Receipts are used to record customer collections through bank accounts.
 
-It is the accounting backbone of the ERP.
+Current behavior:
 
-The COA defines:
+- linked to customer
+- linked to sales invoice
+- balance-aware invoice selection
+- journal sync
+- improves receivable tracking and reporting
 
-- what type of account a record belongs to
-- whether the balance is debit-nature or credit-nature
-- whether an account is a header or a postable account
-- how inventory, cost, revenue, receivables, and payables are classified
+## Bank Transactions
 
-In your ERP, COA is not just for reporting. It is also used as the mapping source for:
+### Opening Banks and Opening Accounts
 
-- categories
-- raw materials
-- products
-- customers
-- suppliers
-
-## COA Structure
-
-The current COA is seeded as a 3-level hierarchy:
-
-- Level 1: major class
-- Level 2: subgroup
-- Level 3: postable account
-
-General rule:
-
-- non-postable accounts are headers or grouping nodes
-- postable accounts are the accounts you should select in forms
-
-## Seeded COA in This ERP
-
-### Assets
-
-- `1000` Asset
-- `1100` Current Asset
-- `1110` Bank
-- `1120` Cash
-- `1130` Petty Cash
-- `1140` A/c Receivables
-- `1150` Inventory
-- `1200` Fixed Asset
-- `1210` Furniture & Fixture
-- `1220` Machinery
-
-Use cases:
-
-- `1110`, `1120`, `1130` for cash/bank balances
-- `1140` for customer receivables
-- `1150` for raw material or product stock
-- `1210`, `1220` for fixed assets
-
-### Liabilities
-
-- `2000` Liabilities
-- `2100` Current Liabilites
-- `2110` Loan
-- `2120` Bank Overdraft
-- `2130` A/c Payables
-
-Use cases:
-
-- `2130` for supplier balances
-- `2110` for loans
-- `2120` for overdraft arrangements
-
-### Equity
-
-- `3000` Equity
-- `3100` Owners Equity
-- `3200` Retained Earning
-
-Use cases:
-
-- capital introduction
-- retained profit balances
-
-### Cost of Goods Sold
-
-- `4000` Cost of Good Sales
-- `4100` Product xxx
-- `4200` Product yyy
-- `4300` Product zzz
-
-Use cases:
-
-- product-level or family-level cost recognition
-- finished goods cost movement at sale time
-
-### Revenue
-
-- `5000` Revenue
-- `5100` Sales - Parent Co
-- `5200` Sales - Sistet Concern
-- `5300` Sales Return
-- `5400` Sales Discounts
-- `5500` Other Income
-
-Use cases:
-
-- product sales
-- related-party sales segmentation
-- returns and discounts tracking
-- other income
-
-### Expenses
-
-- `6000` Expenses
-- `6100` Fixed Expenses
-- `6200` Var. Expenses
-- `6300` Var. Fixed Expenses
-
-Use cases:
-
-- overheads
-- recurring operating expenses
-- variable operating costs
-
-### Taxation
-
-- `7000` Taxation
-- `7100` VAT/Sales Tax
-- `7200` Adv. Taxation
-
-Use cases:
-
-- tax receivable or tax expense handling
-
-### Purchases
-
-- `8000` Purchases
-- `8100` Products
-- `8200` Purchase Returns
-- `8300` Purchase Discounts
-
-Use cases:
-
-- purchase-related accounting
-- purchase return tracking
-- discount tracking on purchases
-
-## Account Nature
-
-Each account has a nature:
-
-- `DEBIT`
-- `CREDIT`
-
-Typical meaning in your ERP:
-
-- Assets: Debit nature
-- Liabilities: Credit nature
-- Equity: Credit nature
-- Revenue: Credit nature
-- COGS: Debit nature
-- Expenses: Debit nature
-- Tax: Debit nature
-- Purchase: Debit nature
-
-This matters because the nature determines the accounting behavior of the account.
-
-## What COA Is Used For in Forms
-
-### Category COA Mapping
-
-Categories can be linked to:
-
-- Asset account for inventory
-- COGS account
-- Revenue account
-
-Use this when a full product family should share one accounting pattern.
-
-### Raw Material COA Mapping
-
-Raw materials can be linked to:
-
-- inventory asset account only
-  
-Use this to tell the system which asset account represents the value of that raw material in stock.
-
-### Product COA Mapping
-
-Products can be linked to:
-
-- inventory account
-- cogs account
-- revenue account
-
-Use this when finished goods need a dedicated accounting mapping.
-
-### Customer COA Mapping
-
-Customers can be linked to:
-
-- receivable account
-
-Use an asset-side postable account such as:
-
-- `1140 - A/c Receivables`
-
-### Supplier COA Mapping
-
-Suppliers can be linked to:
-
-- payable account
-
-Use a liability-side postable account such as:
-
-- `2130 - A/c Payables`
-
-## COA Selection Rules in the ERP
-
-The system validates account selection by group.
+The ERP now supports structured opening bank setup inside the COA.
 
 Current logic:
 
-- Category inventory account must be an `ASSET` account
-- Category COGS account must be a `COGS` account
-- Category revenue account must be a `REVENUE` account
-- Raw material inventory account must be an `ASSET` account
-- Product inventory account must be an `ASSET` account
-- Product COGS account must be a `COGS` account
-- Product revenue account must be a `REVENUE` account
-- Customer account must be an `ASSET` account
-- Supplier account must be a `LIABILITY` account
+- opening banks are created under account code `1110`
+- opening account items are created under the selected bank
+- bank transaction modules use valid postable bank accounts
 
-Also:
+This gives a cleaner bank-account structure for:
 
-- selected accounts must belong to the active tenant
-- selected accounts must be active
-- selected accounts must be postable
-- soft-deleted accounts cannot be used
+- receipts
+- payments
+- expenses
+- future reconciliation workflows
 
-## Practical COA Recommendations
+### Expenses
 
-If you want a simple and clean setup, use these defaults:
+Expenses are now part of the ERP.
 
-- Raw Materials Inventory: `1150 - Inventory`
-- Product Inventory: `1150 - Inventory` or a more specific inventory asset account if you later expand the COA
-- Customer Control Account: `1140 - A/c Receivables`
-- Supplier Control Account: `2130 - A/c Payables`
-- Product Revenue: choose from `5100`, `5200`, `5500` depending on business type
-- Product COGS: choose from `4100`, `4200`, `4300` depending on product family
+Expense entries support:
 
-## How to Use the ERP in Real Life
+- date
+- bank account
+- expense account
+- amount
+- remarks/description flow
+- automatic journal sync
 
-## Scenario 1: Add a new raw material
+Use expenses when:
 
-1. Select the correct tenant in the navbar.
-2. Create Units if not already available.
-3. Create Size, Brand, and Category if needed.
-4. Go to Raw Materials.
-5. Enter:
-   - name
-   - brand
-   - category
-   - size
-   - purchase unit
-   - selling unit
-   - prices
-   - inventory account
-6. Save.
-7. Go to Opening Stock and load starting quantity into a warehouse.
+- business spending is paid directly from a bank account
+- operating costs need to hit the books immediately
 
-## Scenario 2: Add a manufactured product
+## Accounting
 
-1. Make sure required raw materials already exist.
-2. Go to Products.
-3. Select `MANUFACTURED`.
-4. Fill in:
-   - name
-   - category
-   - packaging cost
-   - inventory account
-   - cogs account
-   - revenue account
-5. Add raw material lines.
-6. Save.
+### Chart of Accounts (COA)
 
-Result:
+The COA remains the accounting backbone of the ERP.
 
-- the ERP calculates total material amount
-- packaging cost is added into net amount
+It defines:
 
-## Scenario 3: Add a customer
+- account hierarchy
+- posting vs header accounts
+- account group and type
+- account nature
+- valid mappings for categories, products, customers, and suppliers
 
-1. Go to Customers.
-2. Enter party details.
-3. Select a receivable account such as `1140 - A/c Receivables`.
-4. Save.
+It is also used by newer ERP functions such as:
 
-## Scenario 4: Add a supplier
+- purchase journals
+- sales journals
+- bank receipts
+- bank payments
+- expenses
+- ledger reporting
 
-1. Go to Suppliers.
-2. Enter party details.
-3. Select a payable account such as `2130 - A/c Payables`.
-4. Save.
+### Journal-backed Posting
 
-## Scenario 5: Load stock into a warehouse
+A major improvement in the latest ERP updates is that important transactions now sync with journals automatically.
 
-1. Create a warehouse first.
-2. Make sure the raw material exists.
-3. Go to Opening Stock.
-4. Enter:
-   - date
-   - warehouse
-   - raw material
-   - quantity
-5. Save.
+This applies to:
 
-Result:
+- purchase invoices
+- purchase returns
+- purchase bank payments
+- sales invoices
+- sales returns
+- sales bank receipts
+- expenses
 
-- stock quantity becomes available for that warehouse/raw material combination
-- raw material availability displays update accordingly
+This creates a much stronger accounting foundation for reports and future financial statements.
 
-## Scenario 6: Increase finished goods after production
+## Reports
 
-1. Make sure the product already exists.
-2. Make sure the warehouse already exists.
-3. Go to Production.
-4. Enter:
-   - date
-   - warehouse
-   - product
-   - positive quantity
-5. Save.
+### Ledger Reports
 
-Result:
+Ledger Reports are now available in the ERP.
 
-- finished product stock increases in that warehouse
-- product quantity shown in the product list updates
+They support:
 
-## Scenario 7: Decrease finished goods manually
+- account-head based filtering
+- COA-level ledger view
+- supplier ledger selection
+- customer ledger selection
+- date range filtering
+- dimension scope logic
 
-1. Go to Production.
-2. Select the warehouse and product.
-3. Enter a negative quantity.
-4. Save.
+### Party Ledger
 
-Result:
+Party Ledger reports are also available for:
 
-- finished product stock decreases in that warehouse
+- customers
+- suppliers
+
+These reports help review:
+
+- invoice movement
+- return movement
+- bank receipt/payment movement
+- running commercial exposure by party
 
 ## Key Business Rules
 
-- All records are tenant-aware.
-- Active tenant is selected from the navbar.
+- All records are dimension-aware.
+- Active dimension is selected from the navbar.
 - Most deletions are soft deletes.
-- Accounts cannot be deleted if active business records depend on them.
-- Accounts cannot be their own parent.
-- Circular account hierarchy is not allowed.
-- Only postable accounts should be used in mappings.
-- Products of type `MANUFACTURED` must contain at least one raw material line.
-- Products of type `READY_MADE` must not contain raw material lines.
-- Duplicate raw materials are not allowed in one manufactured product.
-- Opening stock is unique per date, warehouse, and raw material.
-
-## Tips for Smooth Use
-
-- Keep naming consistent across both tenants.
-- Decide whether COA mapping will be controlled mainly at category level or product level.
-- Use the same control account for all customers unless you truly need separate receivable segmentation.
-- Use the same control account for all suppliers unless you truly need separate payable segmentation.
-- Enter opening stock only after warehouses and raw materials are finalized.
-- Do not assign header accounts to forms. Always choose postable accounts.
+- Stock and journal-related transactions update dependent values after create, update, and delete.
+- Selected accounts must belong to the active dimension.
+- Selected accounts must be active and postable where posting is required.
+- Products, customers, suppliers, and categories must use proper COA group rules.
+- Purchase and sales returns are controlled against the original invoice lines.
+- Bank receipts and bank payments are balance-aware against invoices.
+- Opening stock remains unique by date, warehouse, and raw material.
 
 ## Current Scope of the ERP
 
 At the current stage, the ERP covers:
 
-- COA management
+- dimension management
+- dashboard business summaries
+- chart of accounts management
+- opening banks and opening account setup
 - master setup
-- raw material setup
-- product setup with BOM
 - customer and supplier setup
+- raw material setup
+- product setup
 - warehouse setup
-- opening stock loading
-- production-based finished stock movement
-- tenant switching
+- opening stock
+- purchase invoices
+- purchase returns
+- sales invoices
+- sales returns
+- bank payments
+- bank receipts
+- expense entry
+- ledger reports
+- party ledger reports
+- automatic journal synchronization for major transactions
 
-It does not yet fully implement:
+## Future Updates
 
-- sales vouchers
-- purchase vouchers
-- journal entries
-- ledger posting screens
-- financial reports
+This ERP will continue to expand. Many more updates are planned in future versions, including:
 
-The COA and mappings are already prepared so those areas can be added later in a structured way.
-
-## Suggested Future Enhancements
-
-If you expand the ERP later, the next useful steps would be:
-
-- purchase entry linked with suppliers and purchase accounts
-- sales entry linked with customers and revenue accounts
-- inventory movement vouchers
-- journal and ledger posting
-- trial balance
-- profit and loss
 - balance sheet
-- stock valuation
-- receivable and payable aging
+- profit and loss improvements
+- full account reports
+- trial balance enhancements
+- salesman commissions
+- sales receipt printing
+- purchase receipt printing
+- printed reports
+- stock and financial report exports
+- more voucher/reporting screens
+- journal/accounting enhancements
+- richer management reporting
+- many more business features as the ERP grows
 
 ## Final Summary
 
-Your ERP is currently a tenant-based operational system for:
+Your ERP has now moved beyond setup-only operations and supports a practical commercial and accounting workflow.
 
-- setting up business masters
-- managing inventory structure
-- defining products and raw material relationships
-- assigning accounting behavior through the COA
-- managing customer and supplier control accounts
-- loading initial stock by warehouse
+It currently helps you:
 
-The COA is the accounting spine of the system.
+- set up inventory and parties
+- manage purchases and sales
+- receive and pay through banks
+- book expenses
+- maintain COA discipline
+- keep journals in sync
+- review ledger-based reports by account and party
 
-Use it carefully because it controls how:
-
-- stock is classified
-- product cost is classified
-- revenue is classified
-- customer balances are classified
-- supplier balances are classified
-
-If you follow the setup order and keep account mappings consistent, the ERP will stay clean and much easier to scale into full accounting and reporting later.
+The latest updates have made the system much closer to a complete ERP foundation, and future updates are expected to add even more features such as balance sheet reporting, salesman commissions, account reports, and printable sales, purchase, and reporting documents.

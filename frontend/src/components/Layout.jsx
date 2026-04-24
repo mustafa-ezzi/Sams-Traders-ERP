@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import Button from "./ui/Button";
+import dimensionService from "../api/services/dimensionService";
 // import { useLocation } from "react-router-dom";
 
 const Icon = ({ children, className = "" }) => (
@@ -99,6 +100,14 @@ const icons = {
       <path d="M20 19V7" />
     </Icon>
   ),
+  users: (
+    <Icon className="h-[15px] w-[15px]">
+      <path d="M16 20v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+      <circle cx="10" cy="7" r="4" />
+      <path d="M20 8v6" />
+      <path d="M17 11h6" />
+    </Icon>
+  ),
 };
 
 const navigation = [
@@ -126,8 +135,7 @@ const navigation = [
     items: [
       { to: "/purchase-bank-payments", label: "Bank Payments", icon: icons.stock },
       { to: "/sales-bank-receipts", label: "Bank Receipts", icon: icons.stock },
-      // future ready 🔮
-      // { to: "/expenses", label: "Expenses", icon: icons.stock },
+      { to: "/expenses", label: "Expenses", icon: icons.stock },
     ],
   },
   {
@@ -157,6 +165,13 @@ const navigation = [
       { to: "/accounts", label: "Chart Of Accounts", icon: icons.accounts },
     ],
   },
+  {
+    title: "Users",
+    id: "users",
+    items: [
+      { to: "/users/dimensions", label: "Dimensions", icon: icons.users },
+    ],
+  },
 ];
 
 const pageTitles = {
@@ -164,6 +179,7 @@ const pageTitles = {
   "/raw-materials": { title: "Raw Materials", eyebrow: "Inventory" },
   "/products": { title: "Products", eyebrow: "Inventory" },
   "/accounts": { title: "Chart of Accounts", eyebrow: "Accounting" },
+  "/users/dimensions": { title: "Dimensions", eyebrow: "Users" },
   "/reports/ledger": { title: "Ledger Reports", eyebrow: "Reports" },
   "/reports/party-ledger": { title: "Party Ledger", eyebrow: "Reports" },
   "/reports/coa-completeness": { title: "COA Completeness", eyebrow: "Reports" },
@@ -173,6 +189,7 @@ const pageTitles = {
   "/purchase-invoices": { title: "Purchase Invoices", eyebrow: "Purchase" },
   "/purchase-returns": { title: "Purchase Returns", eyebrow: "Purchase" },
   "/purchase-bank-payments": { title: "Bank Payments", eyebrow: "Purchase" },
+  "/expenses": { title: "Expenses", eyebrow: "Accounting" },
   "/sales-invoices": { title: "Sales Invoices", eyebrow: "Sales" },
   "/sales-returns": { title: "Sales Returns", eyebrow: "Sales" },
   "/sales-bank-receipts": { title: "Bank Receipts", eyebrow: "Sales" },
@@ -182,11 +199,6 @@ const pageTitles = {
   "/masters/sizes": { title: "Sizes", eyebrow: "Masters" },
   "/masters/categories": { title: "Categories", eyebrow: "Masters" },
   "/masters/brands": { title: "Brands", eyebrow: "Masters" },
-};
-
-const tenantLabels = {
-  SAMS_TRADERS: "SAMS Traders",
-  AM_TRADERS: "AM Traders",
 };
 
 const NavSection = ({ section, onNavigate }) => {
@@ -262,17 +274,31 @@ const Layout = () => {
   const { pathname } = useLocation();
   const { tenantId, setTenant, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [dimensions, setDimensions] = useState([]);
 
   const pageMeta = useMemo(
     () => pageTitles[pathname] || { title: "Workspace", eyebrow: "ERP" },
     [pathname]
   );
 
+  useEffect(() => {
+    if (!localStorage.getItem("token")) {
+      return;
+    }
+
+    dimensionService
+      .list()
+      .then((items) => setDimensions(items || []))
+      .catch(() => setDimensions([]));
+  }, []);
+
+  const activeDimension = dimensions.find((item) => item.code === tenantId);
+
   const SidebarContent = () => (
     <div className="flex h-full flex-col">
-      {/* Brand / Tenant */}
+      {/* Brand / Dimension */}
       <div className="px-3 pb-5">
-        <p className="text-[26px] font-semibold text-white/90">{tenantLabels[tenantId]}</p>
+        <p className="text-[26px] font-semibold text-white/90">{activeDimension?.name || tenantId}</p>
         <p className="mt-0.5 text-[14px] text-slate-500">ERP Workspace</p>
       </div>
 
@@ -390,8 +416,11 @@ const Layout = () => {
                   window.location.reload();
                 }}
               >
-                <option value="SAMS_TRADERS">SAMS Traders</option>
-                <option value="AM_TRADERS">AM Traders</option>
+                {(dimensions.length ? dimensions : [{ code: tenantId, name: tenantId }]).map((dimension) => (
+                  <option key={dimension.code} value={dimension.code}>
+                    {dimension.name}
+                  </option>
+                ))}
               </select>
               <Button variant="secondary" onClick={logout}>
                 Logout

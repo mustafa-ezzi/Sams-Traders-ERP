@@ -11,6 +11,20 @@ class User(AbstractUser):
     tenant_id = models.CharField(max_length=50)
 
 
+class Dimension(models.Model):
+    code = models.CharField(max_length=50, unique=True)
+    name = models.CharField(max_length=255, unique=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
 class Account(BaseModel):
     class AccountType(models.TextChoices):
         GENERAL = "GENERAL", "General"
@@ -106,8 +120,8 @@ class Account(BaseModel):
         if self.pk and self.is_postable and self.children.filter(deleted_at__isnull=True).exists():
             raise ValidationError("Postable account cannot have children.")
 
-        if self.level > 3:
-            raise ValidationError("Account level cannot be greater than 3.")
+        if self.level > 5:
+            raise ValidationError("Account level cannot be greater than 5.")
 
         allowed_group_by_type = {
             self.AccountType.BANK: self.AccountGroup.ASSET,
@@ -167,6 +181,11 @@ class Account(BaseModel):
                 deleted_at__isnull=True,
                 bank_account=self,
             ),
+            Expense.objects.filter(
+                deleted_at__isnull=True,
+            ).filter(
+                Q(bank_account=self) | Q(expense_account=self)
+            ),
         ]
 
         if any(queryset.exists() for queryset in dependencies):
@@ -204,6 +223,7 @@ class JournalEntry(BaseModel):
         SALES_INVOICE = "SALES_INVOICE", "Sales Invoice"
         SALES_RETURN = "SALES_RETURN", "Sales Return"
         SALES_BANK_RECEIPT = "SALES_BANK_RECEIPT", "Sales Bank Receipt"
+        EXPENSE = "EXPENSE", "Expense"
 
     date = models.DateField()
     reference = models.CharField(max_length=50)
@@ -250,3 +270,33 @@ class JournalLine(BaseModel):
 
     def __str__(self):
         return f"{self.journal_entry.reference} - {self.account.code}"
+
+
+class Expense(BaseModel):
+    expense_number = models.CharField(max_length=50)
+    date = models.DateField()
+    bank_account = models.ForeignKey(
+        Account,
+        on_delete=models.PROTECT,
+        related_name="expense_bank_entries",
+    )
+    expense_account = models.ForeignKey(
+        Account,
+        on_delete=models.PROTECT,
+        related_name="expense_entries",
+    )
+    amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    remarks = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["-date", "-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant_id", "expense_number"],
+                condition=Q(deleted_at__isnull=True),
+                name="unique_active_expense_number_per_tenant",
+            )
+        ]
+
+    def __str__(self):
+        return self.expense_number

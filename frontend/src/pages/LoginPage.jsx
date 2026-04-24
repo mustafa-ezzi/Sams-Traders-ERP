@@ -89,7 +89,7 @@ const LoginPage = () => {
         <Card className="w-full max-w-lg bg-white/92 px-4 py-5 sm:px-5 sm:py-6">
           <h2 className="text-2xl font-extrabold tracking-tight text-slate-900">Sign In</h2>
           <p className="mt-2 text-sm text-slate-500">
-            Sign in once, then switch between SAMS and AM from the top bar.
+            Sign in once, then switch dimensions from the top bar.
           </p>
 
           <div className="mt-6">
@@ -119,7 +119,7 @@ const LoginPage = () => {
             <br />
             Use any valid seeded account, for example <code className="text-slate-700">sams@test.com</code> / <code className="text-slate-700">sams123</code>.
             <br />
-            Switch tenant after login from the navbar.
+            Switch dimension after login from the navbar.
           </div>
         </Card>
       </div>

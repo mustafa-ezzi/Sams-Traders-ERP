@@ -2,8 +2,10 @@ from datetime import date
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
 from django.db.models import Count, Sum
 from django.db.models.functions import Coalesce, TruncMonth
+from django.utils.timezone import now
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
@@ -13,6 +15,7 @@ from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 
 from accounts.models import Account
+from accounts.dimensions import get_active_dimension_codes, seed_default_coa_for_dimension
 from accounts.reporting import build_ledger_report
 from inventory.models import (
     Category,
@@ -20,19 +23,22 @@ from inventory.models import (
     OpeningStock,
     Product,
     ProductStock,
+    Production,
     RawMaterial,
     Stock,
     Supplier,
     Warehouse,
 )
-from purchase.models import PurchaseBankPayment, PurchaseInvoice
+from purchase.models import PurchaseBankPayment, PurchaseInvoice, PurchaseInvoiceLine, PurchaseReturn, PurchaseReturnLine
 from purchase.services import get_purchase_invoice_financials
-from sales.models import SalesBankReceipt, SalesInvoice
+from sales.models import SalesBankReceipt, SalesInvoice, SalesInvoiceLine, SalesReturn, SalesReturnLine
 from sales.services import get_sales_invoice_financials
 
-from .serializers import AccountSerializer, LoginSerializer
+from .serializers import AccountSerializer, DimensionSerializer, ExpenseSerializer, LoginSerializer
 from .services import login_service
-from .models import JournalEntry, JournalLine
+from .models import Dimension, Expense, JournalEntry, JournalLine, User
+from .journal import delete_journal_entry, sync_expense_journal
+from inventory.pagination import StandardResultsSetPagination
 
 
 class LoginView(APIView):
@@ -71,6 +77,7 @@ class LoginView(APIView):
 class AccountViewSet(ModelViewSet):
     serializer_class = AccountSerializer
     permission_classes = [IsAuthenticated]
+    OPENING_BANK_ROOT_CODE = "1110"
 
     def get_queryset(self):
         queryset = (
@@ -80,7 +87,7 @@ class AccountViewSet(ModelViewSet):
             )
             .select_related("parent")
             .prefetch_related("children")
-            .order_by("code")
+            .order_by("code")   
         )
 
         if self.action == "list":
@@ -114,15 +121,183 @@ class AccountViewSet(ModelViewSet):
         return codes
 
     def _resolve_tenant_ids(self, tenant_scope):
-        valid_tenants = ["SAMS_TRADERS", "AM_TRADERS"]
+        valid_tenants = get_active_dimension_codes()
         if tenant_scope == "BOTH":
             return valid_tenants
         if tenant_scope in valid_tenants:
             return [tenant_scope]
-        raise ValidationError({"tenant_scope": "Valid tenant scope is required."})
+        raise ValidationError({"tenant_scope": "Valid dimension scope is required."})
 
     def _money(self, value):
         return Decimal(value or 0).quantize(Decimal("0.01"))
+
+    def _get_opening_bank_root(self, tenant_id):
+        try:
+            bank_root = Account.objects.get(
+                tenant_id=tenant_id,
+                code=self.OPENING_BANK_ROOT_CODE,
+                deleted_at__isnull=True,
+            )
+        except Account.DoesNotExist:
+            raise ValidationError(
+                {"detail": "Bank root account 1110 was not found in the chart of accounts."}
+            )
+
+        # Older seeded data may still have 1110 marked as postable.
+        # Opening banks must sit under 1110, so normalize it to a header account.
+        if bank_root.is_postable:
+            bank_root.is_postable = False
+            bank_root.save(update_fields=["is_postable", "updated_at"])
+
+        return bank_root
+
+    def _get_next_opening_bank_code(self, bank_root):
+        existing_codes = (
+            Account.objects.filter(
+                tenant_id=bank_root.tenant_id,
+                parent=bank_root,
+                deleted_at__isnull=True,
+            )
+            .values_list("code", flat=True)
+        )
+        suffixes = [
+            int(code[-1])
+            for code in existing_codes
+            if len(code) == 4 and code[:-1] == bank_root.code[:-1] and code[-1].isdigit()
+        ]
+        next_suffix = (max(suffixes) if suffixes else 0) + 1
+        if next_suffix > 9:
+            raise ValidationError(
+                {"detail": "Only 9 opening banks can be created under 1110 with the current code format."}
+            )
+        return f"{bank_root.code[:-1]}{next_suffix}"
+
+    def _get_next_opening_account_code(self, bank_account):
+        existing_codes = (
+            Account.objects.filter(
+                tenant_id=bank_account.tenant_id,
+                parent=bank_account,
+                deleted_at__isnull=True,
+            )
+            .values_list("code", flat=True)
+        )
+        suffixes = [
+            int(code[-1])
+            for code in existing_codes
+            if len(code) == 5 and code.startswith(bank_account.code) and code[-1].isdigit()
+        ]
+        next_suffix = (max(suffixes) if suffixes else 0) + 1
+        if next_suffix > 9:
+            raise ValidationError(
+                {
+                    "detail": (
+                        f"Only 9 opening accounts can be created under bank {bank_account.code} "
+                        "with the current code format."
+                    )
+                }
+            )
+        return f"{bank_account.code}{next_suffix}"
+
+    def _serialize_opening_banks(self, tenant_id):
+        bank_root = self._get_opening_bank_root(tenant_id)
+        queryset = (
+            Account.objects.filter(
+                tenant_id=tenant_id,
+                parent=bank_root,
+                deleted_at__isnull=True,
+            )
+            .prefetch_related("children")
+            .order_by("code")
+        )
+        return {
+            "root": {
+                "id": str(bank_root.id),
+                "code": bank_root.code,
+                "name": bank_root.name,
+            },
+            "banks": AccountSerializer(queryset, many=True, context=self.get_serializer_context()).data,
+        }
+
+    @action(detail=False, methods=["get"], url_path="opening-accounts")
+    def opening_accounts(self, request):
+        return Response({"data": self._serialize_opening_banks(request.tenant_id)})
+
+    @action(detail=False, methods=["post"], url_path="opening-banks")
+    def create_opening_bank(self, request):
+        tenant_id = request.tenant_id
+        bank_name = (request.data.get("name") or "").strip()
+
+        if not bank_name:
+            raise ValidationError({"name": "Bank name is required."})
+
+        bank_root = self._get_opening_bank_root(tenant_id)
+        code = self._get_next_opening_bank_code(bank_root)
+
+        account = Account.objects.create(
+            tenant_id=tenant_id,
+            code=code,
+            name=bank_name,
+            parent=bank_root,
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.BANK,
+            account_nature=Account.AccountNature.DEBIT,
+            is_postable=False,
+            is_active=bool(request.data.get("is_active", True)),
+            sort_order=int(request.data.get("sort_order", 0) or 0),
+        )
+
+        return Response(
+            {
+                "data": AccountSerializer(account, context=self.get_serializer_context()).data,
+                "message": "Opening bank created successfully.",
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=False, methods=["post"], url_path="opening-account-items")
+    def create_opening_account_item(self, request):
+        tenant_id = request.tenant_id
+        bank_id = request.data.get("bank_id")
+        account_name = (request.data.get("name") or "").strip()
+
+        if not bank_id:
+            raise ValidationError({"bank_id": "Bank selection is required."})
+        if not account_name:
+            raise ValidationError({"name": "Opening account name is required."})
+
+        bank_root = self._get_opening_bank_root(tenant_id)
+        try:
+            bank_account = Account.objects.get(
+                id=bank_id,
+                tenant_id=tenant_id,
+                parent=bank_root,
+                deleted_at__isnull=True,
+            )
+        except Account.DoesNotExist:
+            raise ValidationError({"bank_id": "Selected bank was not found under 1110."})
+
+        code = self._get_next_opening_account_code(bank_account)
+
+        account = Account.objects.create(
+            tenant_id=tenant_id,
+            code=code,
+            name=account_name,
+            parent=bank_account,
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.BANK,
+            account_nature=Account.AccountNature.DEBIT,
+            is_postable=True,
+            is_active=bool(request.data.get("is_active", True)),
+            sort_order=int(request.data.get("sort_order", 0) or 0),
+        )
+
+        return Response(
+            {
+                "data": AccountSerializer(account, context=self.get_serializer_context()).data,
+                "message": "Opening account created successfully.",
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
     @action(detail=False, methods=["get"], url_path="ledger-report")
     def ledger_report(self, request):
@@ -840,9 +1015,17 @@ class AccountViewSet(ModelViewSet):
             total_credit += display_credit
 
         if partner_type == "customer":
-            grand_total = self._money(total_credit - total_debit)
+            grand_total = self._money(
+                document_totals.get("Sales Invoice", Decimal("0.00"))
+                - document_totals.get("Sales Return", Decimal("0.00"))
+                - document_totals.get("Bank Receipt", Decimal("0.00"))
+            )
         else:
-            grand_total = self._money(total_debit - total_credit)
+            grand_total = self._money(
+                document_totals.get("Purchase Invoice", Decimal("0.00"))
+                - document_totals.get("Purchase Return", Decimal("0.00"))
+                - document_totals.get("Bank Payment", Decimal("0.00"))
+            )
 
         summary = {
             "document_totals": [
@@ -866,4 +1049,140 @@ class AccountViewSet(ModelViewSet):
                     "summary": summary,
                 }
             }
+        )
+
+
+class ExpenseViewSet(ModelViewSet):
+    serializer_class = ExpenseSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+
+    def get_queryset(self):
+        return (
+            Expense.objects.filter(
+                tenant_id=self.request.user.tenant_id,
+                deleted_at__isnull=True,
+            )
+            .select_related("bank_account", "expense_account")
+            .order_by("-date", "-created_at")
+        )
+
+    def _get_serializable_expense(self, expense_id):
+        return self.get_queryset().get(id=expense_id)
+
+    def create(self, request, *args, **kwargs):
+        with transaction.atomic():
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            expense = serializer.save()
+            sync_expense_journal(self._get_serializable_expense(expense.id))
+        response_serializer = self.get_serializer(self._get_serializable_expense(expense.id))
+        return Response(
+            {
+                "data": response_serializer.data,
+                "message": "Expense created successfully",
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop("partial", False)
+        instance = self.get_object()
+        with transaction.atomic():
+            serializer = self.get_serializer(instance, data=request.data, partial=partial)
+            serializer.is_valid(raise_exception=True)
+            expense = serializer.save()
+            sync_expense_journal(self._get_serializable_expense(expense.id))
+        response_serializer = self.get_serializer(self._get_serializable_expense(expense.id))
+        return Response(response_serializer.data)
+
+    def perform_destroy(self, instance):
+        instance.deleted_at = now()
+        instance.save(update_fields=["deleted_at", "updated_at"])
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        with transaction.atomic():
+            self.perform_destroy(instance)
+            delete_journal_entry(
+                JournalEntry.SourceType.EXPENSE,
+                instance.id,
+                instance.tenant_id,
+            )
+        return Response(
+            {"data": None, "message": "Expense deleted successfully"},
+            status=status.HTTP_200_OK,
+        )
+
+
+class DimensionViewSet(ModelViewSet):
+    serializer_class = DimensionSerializer
+    permission_classes = [IsAuthenticated]
+    queryset = Dimension.objects.all().order_by("name")
+
+    def _has_dimension_dependencies(self, dimension_code):
+        dependency_checks = [
+            User.objects.filter(tenant_id=dimension_code),
+            Category.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
+            RawMaterial.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
+            Product.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
+            Customer.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
+            Supplier.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
+            Warehouse.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
+            OpeningStock.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
+            Stock.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
+            ProductStock.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
+            Production.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
+            PurchaseInvoice.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
+            PurchaseInvoiceLine.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
+            PurchaseReturn.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
+            PurchaseReturnLine.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
+            PurchaseBankPayment.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
+            SalesInvoice.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
+            SalesInvoiceLine.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
+            SalesReturn.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
+            SalesReturnLine.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
+            SalesBankReceipt.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
+            JournalEntry.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
+            JournalLine.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
+            Expense.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
+        ]
+        return any(queryset.exists() for queryset in dependency_checks)
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        dimension = serializer.save()
+        seed_default_coa_for_dimension(dimension.code)
+        return Response(
+            {
+                "data": self.get_serializer(dimension).data,
+                "message": "Dimension created successfully",
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+
+        if request.user.tenant_id == instance.code:
+            return Response(
+                {"detail": "You cannot delete the currently active dimension."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if self._has_dimension_dependencies(instance.code):
+            return Response(
+                {"detail": "Cannot delete dimension because active users or business records exist."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        with transaction.atomic():
+            for account in Account.objects.filter(tenant_id=instance.code).order_by("-level", "-code"):
+                Account.objects.filter(pk=account.pk).delete()
+            instance.delete()
+
+        return Response(
+            {"data": None, "message": "Dimension deleted successfully"},
+            status=status.HTTP_200_OK,
         )

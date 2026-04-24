@@ -495,8 +495,8 @@ const DashboardPage = () => {
               </Card>
             </div>
 
-            <div className="grid gap-6 xl:grid-cols-4">
-              <Card className="space-y-5">
+            <div className="grid gap-6 xl:grid-cols-4 items-stretch">
+              <Card className="space-y-5 h-full flex flex-col">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-400">
                     Customer Ranking
@@ -506,7 +506,7 @@ const DashboardPage = () => {
                 <ProgressList items={dashboard.top_customers || []} accent="linear-gradient(90deg,#0f766e,#5eead4)" />
               </Card>
 
-              <Card className="space-y-5">
+              <Card className="space-y-5 h-full flex flex-col">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-400">
                     Supplier Ranking
@@ -516,7 +516,7 @@ const DashboardPage = () => {
                 <ProgressList items={dashboard.top_suppliers || []} accent="linear-gradient(90deg,#2563eb,#93c5fd)" />
               </Card>
 
-              <Card className="space-y-5">
+              <Card className="space-y-5 h-full flex flex-col">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-400">
                     Balance Snapshot
@@ -541,7 +541,7 @@ const DashboardPage = () => {
                 </div>
               </Card>
 
-              <Card className="space-y-5">
+              <Card className="space-y-5 h-full flex flex-col">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-400">
                     Activity Feed
@@ -550,7 +550,7 @@ const DashboardPage = () => {
                     Latest journal activity
                   </h3>
                 </div>
-                <div className="space-y-3">
+                <div className="space-y-3 overflow-y-auto max-h-[400px] pr-1">
                   {(dashboard.recent_activity || []).map((item) => (
                     <div
                       key={item.id}
