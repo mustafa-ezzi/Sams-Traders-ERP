@@ -9,6 +9,20 @@ from common.models import BaseModel
 
 class User(AbstractUser):
     tenant_id = models.CharField(max_length=50)
+    business_name = models.CharField(max_length=255, blank=True, default="")
+    phone_number = models.CharField(max_length=50, blank=True, default="")
+    tenant_limit = models.PositiveIntegerField(default=1)
+    allowed_dimensions = models.ManyToManyField(
+        "Dimension",
+        blank=True,
+        related_name="users",
+    )
+
+    def can_create_more_tenants(self):
+        assigned_count = self.allowed_dimensions.count()
+        if assigned_count == 0 and self.tenant_id:
+            assigned_count = 1
+        return assigned_count < self.tenant_limit
 
 
 class Dimension(models.Model):
@@ -300,3 +314,28 @@ class Expense(BaseModel):
 
     def __str__(self):
         return self.expense_number
+
+
+class Inquiry(BaseModel):
+    class Status(models.TextChoices):
+        OPEN = "OPEN", "Open"
+        CLOSED = "CLOSED", "Closed"
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="inquiries",
+    )
+    user_name = models.CharField(max_length=255)
+    subject = models.CharField(max_length=255)
+    message = models.TextField()
+    admin_reply = models.TextField(blank=True, default="")
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.OPEN)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.user_name}: {self.subject}"

@@ -62,6 +62,9 @@ class Size(BaseModel):
 
 class Unit(BaseModel):
     name = models.CharField(max_length=255)
+    base_quantity = models.DecimalField(max_digits=12, decimal_places=4, default=1)
+    breakdown_unit = models.CharField(max_length=255, blank=True, default="")
+    breakdown_quantity = models.DecimalField(max_digits=12, decimal_places=4, default=1)
 
     class Meta:
         constraints = [
@@ -127,6 +130,9 @@ class RawMaterial(BaseModel):
 # =========================
 
 PRODUCT_TYPE_CHOICES = [
+    ("RAW_MATERIAL", "Raw Material"),
+    ("ASSEMBLY_PRODUCT", "Assembly Product"),
+    ("FINISHED_GOOD", "Finished Good"),
     ("READY_MADE", "Ready Made"),
     ("MANUFACTURED", "Manufactured"),
 ]
@@ -137,7 +143,12 @@ class Product(BaseModel):
     product_type = models.CharField(max_length=20, choices=PRODUCT_TYPE_CHOICES)
     unit = models.ForeignKey(Unit, on_delete=models.PROTECT, null=True, blank=True)
 
-    packaging_cost = models.DecimalField(max_digits=12, decimal_places=2)
+    packaging_cost = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    moulding_charges = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    labour_charges = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    direct_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    use_calculated_cost = models.BooleanField(default=True)
+    confirmed_unit_cost = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     net_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
 
     category = models.ForeignKey(Category, on_delete=models.PROTECT, null=True, blank=True)
@@ -178,6 +189,7 @@ class ProductMaterial(BaseModel):
     raw_material = models.ForeignKey(
         RawMaterial, on_delete=models.PROTECT
     )
+    uom = models.ForeignKey(Unit, on_delete=models.PROTECT, null=True, blank=True)
 
     quantity = models.DecimalField(max_digits=12, decimal_places=4)
     rate = models.DecimalField(max_digits=12, decimal_places=2)

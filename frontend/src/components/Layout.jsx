@@ -108,6 +108,13 @@ const icons = {
       <path d="M17 11h6" />
     </Icon>
   ),
+  support: (
+    <Icon className="h-[15px] w-[15px]">
+      <path d="M21 11.5a8.5 8.5 0 1 1-3.45-6.85" />
+      <path d="M9 9h.01M12 9h.01M15 9h.01" />
+      <path d="M8 14h8" />
+    </Icon>
+  ),
 };
 
 const navigation = [
@@ -142,6 +149,7 @@ const navigation = [
     title: "Reports",
     id: "reports",
     items: [
+      { to: "/reports/balance-sheet", label: "Balance Sheet", icon: icons.reports },
       { to: "/reports/ledger", label: "Ledger Reports", icon: icons.reports },
       { to: "/reports/party-ledger", label: "Party Ledger", icon: icons.reports },
       // { to: "/reports/coa-completeness", label: "COA Completeness", icon: icons.reports },
@@ -160,7 +168,7 @@ const navigation = [
       { to: "/warehouses", label: "Warehouses", icon: icons.warehouse },
       { to: "/raw-materials", label: "Raw Materials", icon: icons.raw },
       { to: "/products", label: "Products", icon: icons.products },
-      // { to: "/production", label: "production", icon: icons.products },
+      { to: "/production", label: "production", icon: icons.products },
 
       { to: "/accounts", label: "Chart Of Accounts", icon: icons.accounts },
     ],
@@ -170,6 +178,7 @@ const navigation = [
     id: "users",
     items: [
       { to: "/users/dimensions", label: "Dimensions", icon: icons.users },
+      { to: "/support", label: "Support", icon: icons.support },
     ],
   },
 ];
@@ -180,6 +189,7 @@ const pageTitles = {
   "/products": { title: "Products", eyebrow: "Inventory" },
   "/accounts": { title: "Chart of Accounts", eyebrow: "Accounting" },
   "/users/dimensions": { title: "Dimensions", eyebrow: "Users" },
+  "/reports/balance-sheet": { title: "Balance Sheet", eyebrow: "Reports" },
   "/reports/ledger": { title: "Ledger Reports", eyebrow: "Reports" },
   "/reports/party-ledger": { title: "Party Ledger", eyebrow: "Reports" },
   "/reports/coa-completeness": { title: "COA Completeness", eyebrow: "Reports" },
@@ -199,6 +209,7 @@ const pageTitles = {
   "/masters/sizes": { title: "Sizes", eyebrow: "Masters" },
   "/masters/categories": { title: "Categories", eyebrow: "Masters" },
   "/masters/brands": { title: "Brands", eyebrow: "Masters" },
+  "/support": { title: "Support", eyebrow: "Users" },
 };
 
 const NavSection = ({ section, onNavigate }) => {
@@ -272,9 +283,10 @@ const NavSection = ({ section, onNavigate }) => {
 
 const Layout = () => {
   const { pathname } = useLocation();
-  const { tenantId, setTenant, logout } = useAuth();
+  const { tenantId, setTenant, logout, allowedDimensions } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [dimensions, setDimensions] = useState([]);
+  const isOnboardingOnly = !allowedDimensions?.length;
 
   const pageMeta = useMemo(
     () => pageTitles[pathname] || { title: "Workspace", eyebrow: "ERP" },
@@ -282,6 +294,10 @@ const Layout = () => {
   );
 
   useEffect(() => {
+    if (isOnboardingOnly) {
+      setDimensions([]);
+      return;
+    }
     if (!localStorage.getItem("token")) {
       return;
     }
@@ -290,7 +306,7 @@ const Layout = () => {
       .list()
       .then((items) => setDimensions(items || []))
       .catch(() => setDimensions([]));
-  }, []);
+  }, [isOnboardingOnly]);
 
   const activeDimension = dimensions.find((item) => item.code === tenantId);
 
@@ -299,49 +315,70 @@ const Layout = () => {
       {/* Brand / Dimension */}
       <div className="px-3 pb-5">
         <p className="text-[26px] font-semibold text-white/90">{activeDimension?.name || tenantId}</p>
-        <p className="mt-0.5 text-[14px] text-slate-500">ERP Workspace</p>
+        <p className="mt-0.5 text-[14px] text-slate-500">CoreLedger by TrisiteSolutions</p>
       </div>
 
       <div className="h-px bg-white/[0.06]" />
 
-      {/* Dashboard */}
-      <div className="mt-4 px-0">
-        <NavLink
-          to="/"
-          end
-          onClick={() => setMobileOpen(false)}
-          className={({ isActive }) =>
-            `group flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all ${isActive
-              ? "bg-white/[0.1] text-white"
-              : "text-slate-400 hover:bg-white/[0.05] hover:text-slate-200"
-            }`
-          }
-        >
-          {({ isActive }) => (
-            <>
-              <span
-                className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md transition-colors ${isActive ? "bg-blue-500/20 text-blue-300" : "text-slate-500 group-hover:text-slate-300"
-                  }`}
-              >
-                {icons.dashboard}
-              </span>
-              <span className="font-medium">Dashboard</span>
-              {isActive && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-blue-400" />}
-            </>
-          )}
-        </NavLink>
-      </div>
+      {isOnboardingOnly ? (
+        <div className="mt-4 px-0">
+          <NavLink
+            to="/users/dimensions"
+            onClick={() => setMobileOpen(false)}
+            className={({ isActive }) =>
+              `group flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all ${isActive
+                ? "bg-white/[0.1] text-white"
+                : "text-slate-400 hover:bg-white/[0.05] hover:text-slate-200"
+              }`
+            }
+          >
+            <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md bg-blue-500/20 text-blue-300">
+              {icons.users}
+            </span>
+            <span className="font-medium">Create First Dimension</span>
+          </NavLink>
+        </div>
+      ) : (
+        <div className="mt-4 px-0">
+          <NavLink
+            to="/"
+            end
+            onClick={() => setMobileOpen(false)}
+            className={({ isActive }) =>
+              `group flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all ${isActive
+                ? "bg-white/[0.1] text-white"
+                : "text-slate-400 hover:bg-white/[0.05] hover:text-slate-200"
+              }`
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <span
+                  className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md transition-colors ${isActive ? "bg-blue-500/20 text-blue-300" : "text-slate-500 group-hover:text-slate-300"
+                    }`}
+                >
+                  {icons.dashboard}
+                </span>
+                <span className="font-medium">Dashboard</span>
+                {isActive && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-blue-400" />}
+              </>
+            )}
+          </NavLink>
+        </div>
+      )}
 
       {/* Collapsible sections */}
-      <nav className="mt-4 flex-1 space-y-0.5">
-        {navigation.map((section) => (
-          <NavSection
-            key={section.id}
-            section={section}
-            onNavigate={() => setMobileOpen(false)}
-          />
-        ))}
-      </nav>
+      {!isOnboardingOnly ? (
+        <nav className="mt-4 flex-1 space-y-0.5">
+          {navigation.map((section) => (
+            <NavSection
+              key={section.id}
+              section={section}
+              onNavigate={() => setMobileOpen(false)}
+            />
+          ))}
+        </nav>
+      ) : null}
     </div>
   );
 
@@ -405,23 +442,23 @@ const Layout = () => {
             </div>
 
             <div className="flex items-center gap-2">
-              <select
-                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-                value={tenantId}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setTenant(value);
-
-                  // force full app reload
-                  window.location.reload();
-                }}
-              >
-                {(dimensions.length ? dimensions : [{ code: tenantId, name: tenantId }]).map((dimension) => (
-                  <option key={dimension.code} value={dimension.code}>
-                    {dimension.name}
-                  </option>
-                ))}
-              </select>
+              {!isOnboardingOnly ? (
+                <select
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                  value={tenantId}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setTenant(value);
+                    window.location.reload();
+                  }}
+                >
+                  {(dimensions.length ? dimensions : [{ code: tenantId, name: tenantId }]).map((dimension) => (
+                    <option key={dimension.code} value={dimension.code}>
+                      {dimension.name}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
               <Button variant="secondary" onClick={logout}>
                 Logout
               </Button>

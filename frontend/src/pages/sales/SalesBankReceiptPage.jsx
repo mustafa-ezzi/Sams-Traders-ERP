@@ -279,12 +279,7 @@ const SalesBankReceiptPage = () => {
             <h2 className="text-xl font-bold text-slate-900">
               {editingId ? "Edit Bank Receipt" : "Create Bank Receipt"}
             </h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Receive payment from a customer against a sales invoice and reduce the outstanding invoice balance.
-            </p>
-            <p className="mt-1 text-xs text-slate-400">
-              Only COAs marked with account type `BANK` appear here.
-            </p>
+           
           </div>
           {editingId ? (
             <Button variant="secondary" onClick={resetForm}>

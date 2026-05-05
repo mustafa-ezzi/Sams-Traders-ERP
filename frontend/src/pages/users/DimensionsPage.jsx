@@ -6,9 +6,11 @@ import ConfirmModal from "../../components/ui/ConfirmModal";
 import FormInput from "../../components/ui/FormInput";
 import StateView from "../../components/StateView";
 import { useToast } from "../../context/ToastContext";
+import { useAuth } from "../../context/AuthContext";
 
 const DimensionsPage = () => {
   const toast = useToast();
+  const { setAllowedDimensions, setTenant } = useAuth();
   const [dimensions, setDimensions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -33,6 +35,14 @@ const DimensionsPage = () => {
     try {
       const response = await dimensionService.list();
       setDimensions(response || []);
+      setAllowedDimensions(response || []);
+      if ((response || []).length > 0) {
+        const currentTenant = localStorage.getItem("tenantId") || "";
+        const exists = (response || []).some((item) => item.code === currentTenant);
+        if (!exists) {
+          setTenant(response[0].code);
+        }
+      }
     } catch (loadError) {
       setError(extractErrorMessage(loadError) || "Failed to load dimensions");
     } finally {
@@ -77,6 +87,7 @@ const DimensionsPage = () => {
       toast.success(response.message || "Dimension created successfully");
       setForm({ name: "", code: "", is_active: true });
       await loadDimensions();
+      window.location.href = "/";
     } catch (submitError) {
       toast.error(extractErrorMessage(submitError));
     } finally {
@@ -94,16 +105,7 @@ const DimensionsPage = () => {
         onConfirm={handleDelete}
       />
 
-      <Card className="bg-[linear-gradient(135deg,rgba(255,255,255,0.92),rgba(237,247,255,0.98))]">
-        <div>
-          <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">
-            Dimensions
-          </h2>
-          <p className="mt-2 max-w-2xl text-sm text-slate-500">
-            Create a new dimension for a separate business workspace. Default chart of accounts is created automatically.
-          </p>
-        </div>
-      </Card>
+     
 
       <Card>
         <form className="grid gap-4 md:grid-cols-3" onSubmit={handleSubmit}>

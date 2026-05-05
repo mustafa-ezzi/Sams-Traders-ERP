@@ -53,6 +53,11 @@ const LoginPage = () => {
       const accessToken = response?.access;
       const refreshToken = response?.refresh;
       const user = response?.user;
+      const allowedDimensions = user?.allowed_dimensions || [];
+      const loginTenant =
+        user?.tenant_id ||
+        allowedDimensions?.[0]?.code ||
+        "";
 
       if (!accessToken || !user) {
         setError("Login response is missing token or user data.");
@@ -62,10 +67,9 @@ const LoginPage = () => {
 
       localStorage.setItem("token", accessToken);
       localStorage.setItem("refreshToken", refreshToken);
-      const activeTenant = localStorage.getItem("tenantId") || "SAMS_TRADERS";
-      localStorage.setItem("tenantId", activeTenant);
+      localStorage.setItem("tenantId", loginTenant);
 
-      login(accessToken, activeTenant);
+      login(accessToken, loginTenant, allowedDimensions);
 
       toast.success(`Welcome ${user.email}!`);
       navigate("/");

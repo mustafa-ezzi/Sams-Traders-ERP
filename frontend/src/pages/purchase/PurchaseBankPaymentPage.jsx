@@ -279,12 +279,7 @@ const PurchaseBankPaymentPage = () => {
             <h2 className="text-xl font-bold text-slate-900">
               {editingId ? "Edit Bank Payment" : "Create Bank Payment"}
             </h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Pay a supplier purchase invoice from a bank COA account and reduce the remaining invoice balance.
-            </p>
-            <p className="mt-1 text-xs text-slate-400">
-              Only COAs marked with account type `BANK` appear here.
-            </p>
+           
           </div>
           {editingId ? (
             <Button variant="secondary" onClick={resetForm}>

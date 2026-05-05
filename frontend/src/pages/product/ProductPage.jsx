@@ -17,8 +17,13 @@ import { flattenAccountTree, formatAccountLabel } from "../../utils/accounts";
 
 const schema = z.object({
   name: z.string().trim().min(1, "Name is required"),
-  productType: z.enum(["READY_MADE", "MANUFACTURED"]),
-  packagingCost: z.coerce.number().min(0),
+  productType: z.enum(["ASSEMBLY_PRODUCT", "FINISHED_GOOD"]),
+  mouldingCharges: z.coerce.number().min(0),
+  labourCharges: z.coerce.number().min(0),
+  packagingCharges: z.coerce.number().min(0),
+  directPrice: z.coerce.number().min(0),
+  useCalculatedCost: z.boolean(),
+  confirmedUnitCost: z.coerce.number().min(0),
   category: z.union([z.string().uuid("Category must be a valid UUID"), z.literal("")]),
   unit: z.union([z.string().uuid("Unit must be a valid UUID"), z.literal("")]),
   inventory_account: z.union([z.string().uuid("Inventory account must be a valid UUID"), z.literal("")]),
@@ -28,8 +33,13 @@ const schema = z.object({
 
 const defaultValues = {
   name: "",
-  productType: "READY_MADE",
-  packagingCost: 0,
+  productType: "FINISHED_GOOD",
+  mouldingCharges: 0,
+  labourCharges: 0,
+  packagingCharges: 0,
+  directPrice: 0,
+  useCalculatedCost: true,
+  confirmedUnitCost: 0,
   category: "",
   unit: "",
   inventory_account: "",
@@ -60,14 +70,13 @@ const ProductPage = () => {
   const [inventoryAccounts, setInventoryAccounts] = useState([]);
   const [cogsAccounts, setCogsAccounts] = useState([]);
   const [revenueAccounts, setRevenueAccounts] = useState([]);
-  const [materialRows, setMaterialRows] = useState([
-    { raw_material_id: "", quantity: 1, rate: 0 },
-  ]);
+  const [materialRows, setMaterialRows] = useState([{ raw_material_id: "", uom_id: "", quantity: 1, rate: 0 }]);
   const limit = 10;
   const toast = useToast();
   const form = useForm({ resolver: zodResolver(schema), defaultValues });
   const productType = form.watch("productType");
   const selectedCategoryId = form.watch("category");
+  const useCalculatedCost = form.watch("useCalculatedCost");
   const selectedInventoryAccount = form.watch("inventory_account");
   const selectedCogsAccount = form.watch("cogs_account");
   const selectedRevenueAccount = form.watch("revenue_account");
@@ -187,20 +196,31 @@ const ProductPage = () => {
         .filter((row) => row.raw_material_id)
         .map((row) => ({
           raw_material_id: row.raw_material_id,
+          uom_id: row.uom_id || null,
           quantity: Number(row.quantity),
           rate: Number(row.rate),
         }));
 
+      if (values.productType === "ASSEMBLY_PRODUCT" && sanitizedRows.length === 0) {
+        toast.error("Assembly product must include at least one raw material line.");
+        return;
+      }
+
       const payload = {
         name: values.name,
         product_type: values.productType,
-        packaging_cost: values.packagingCost,
+        moulding_charges: values.mouldingCharges,
+        labour_charges: values.labourCharges,
+        packaging_cost: values.packagingCharges,
+        direct_price: values.directPrice,
+        use_calculated_cost: values.useCalculatedCost,
+        confirmed_unit_cost: values.confirmedUnitCost,
         category: values.category || null,
         unit: values.unit || null,
         inventory_account: values.inventory_account || null,
         cogs_account: values.cogs_account || null,
         revenue_account: values.revenue_account || null,
-        materials: values.productType === "MANUFACTURED" ? sanitizedRows : [],
+        materials: values.productType === "ASSEMBLY_PRODUCT" ? sanitizedRows : [],
       };
 
       if (editingId) {
@@ -213,7 +233,7 @@ const ProductPage = () => {
 
       setEditingId("");
       form.reset(defaultValues);
-      setMaterialRows([{ raw_material_id: "", quantity: 1, rate: 0 }]);
+      setMaterialRows([{ raw_material_id: "", uom_id: "", quantity: 1, rate: 0 }]);
       await load();
     } catch (submitError) {
       const msg = submitError?.response?.data?.message || submitError.message || "Save failed";
@@ -224,6 +244,15 @@ const ProductPage = () => {
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
   const selectedMaterialIds = materialRows.map((row) => row.raw_material_id).filter(Boolean);
+  const materialCost = materialRows.reduce(
+    (sum, row) => sum + (Number(row.quantity) || 0) * (Number(row.rate) || 0),
+    0
+  );
+  const autoAssemblyCost =
+    materialCost +
+    (Number(form.watch("mouldingCharges")) || 0) +
+    (Number(form.watch("labourCharges")) || 0) +
+    (Number(form.watch("packagingCharges")) || 0);
 
   const applyCategoryCoasToForm = () => {
     if (!selectedCategory) {
@@ -274,19 +303,51 @@ const ProductPage = () => {
               className="w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
               {...form.register("productType")}
             >
-              <option value="READY_MADE">READY_MADE</option>
-              <option value="MANUFACTURED">MANUFACTURED</option>
+              <option value="FINISHED_GOOD">Finished Good</option>
+              <option value="ASSEMBLY_PRODUCT">Assembly Product</option>
             </select>
           </div>
 
-          <FormInput
-            label="Packaging Cost"
-            required
-            type="number"
-            step="0.01"
-            error={form.formState.errors.packagingCost?.message}
-            {...form.register("packagingCost")}
-          />
+          {productType === "FINISHED_GOOD" ? (
+            <FormInput
+              label="Per Piece Price"
+              required
+              type="number"
+              step="0.01"
+              error={form.formState.errors.directPrice?.message}
+              {...form.register("directPrice")}
+            />
+          ) : (
+            <FormInput
+              label="Packaging Charges"
+              required
+              type="number"
+              step="0.01"
+              error={form.formState.errors.packagingCharges?.message}
+              {...form.register("packagingCharges")}
+            />
+          )}
+
+          {productType === "ASSEMBLY_PRODUCT" && (
+            <>
+              <FormInput
+                label="Moulding Charges"
+                required
+                type="number"
+                step="0.01"
+                error={form.formState.errors.mouldingCharges?.message}
+                {...form.register("mouldingCharges")}
+              />
+              <FormInput
+                label="Labour Charges"
+                required
+                type="number"
+                step="0.01"
+                error={form.formState.errors.labourCharges?.message}
+                {...form.register("labourCharges")}
+              />
+            </>
+          )}
 
           <div className="space-y-2">
             <label className="block text-sm font-semibold text-slate-700">Category</label>
@@ -368,6 +429,30 @@ const ProductPage = () => {
             </select>
           </div>
 
+          {productType === "ASSEMBLY_PRODUCT" && (
+            <div className="rounded-[20px] border border-emerald-200 bg-emerald-50/60 p-4 xl:col-span-3">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-sm font-semibold text-emerald-900">
+                  Calculated cost per unit: {formatDecimal(autoAssemblyCost)}
+                </p>
+                <label className="inline-flex items-center gap-2 text-sm text-emerald-900">
+                  <input type="checkbox" {...form.register("useCalculatedCost")} />
+                  Use calculated cost
+                </label>
+              </div>
+              {!useCalculatedCost && (
+                <FormInput
+                  label="Confirmed Unit Cost"
+                  required
+                  type="number"
+                  step="0.01"
+                  error={form.formState.errors.confirmedUnitCost?.message}
+                  {...form.register("confirmedUnitCost")}
+                />
+              )}
+            </div>
+          )}
+
           <div className="rounded-[26px] border border-slate-200 bg-slate-50/80 p-4 xl:col-span-3">
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -376,14 +461,14 @@ const ProductPage = () => {
                   Server-side amount and net amount calculation stays intact.
                 </p>
               </div>
-              {productType === "MANUFACTURED" && (
+              {productType === "ASSEMBLY_PRODUCT" && (
                 <Button
                   type="button"
                   variant="secondary"
                   onClick={() =>
                     setMaterialRows((prev) => [
                       ...prev,
-                      { raw_material_id: "", quantity: 1, rate: 0 },
+                      { raw_material_id: "", uom_id: "", quantity: 1, rate: 0 },
                     ])
                   }
                 >
@@ -392,9 +477,9 @@ const ProductPage = () => {
               )}
             </div>
 
-            {productType === "READY_MADE" ? (
+            {productType === "FINISHED_GOOD" ? (
               <div className="rounded-2xl border border-dashed border-slate-300 bg-white/70 px-4 py-5 text-sm text-slate-500">
-                READY_MADE products do not require raw material lines.
+                Finished goods do not require raw material lines.
               </div>
             ) : (
               <div className="space-y-3">
@@ -403,7 +488,7 @@ const ProductPage = () => {
                   return (
                     <div
                       key={index}
-                      className="grid gap-3 rounded-2xl border border-white bg-white p-4 shadow-sm md:grid-cols-[1.5fr_1fr_1fr_auto]"
+                    className="grid gap-3 rounded-2xl border border-white bg-white p-4 shadow-sm md:grid-cols-[1.3fr_1fr_1fr_1fr_auto]"
                     >
                       <div className="space-y-2">
                         <label className="text-xs font-semibold text-slate-600">Raw Material</label>
@@ -435,6 +520,27 @@ const ProductPage = () => {
                               }
                             >
                               {option.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold text-slate-600">UOM</label>
+                        <select
+                          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
+                          value={row.uom_id}
+                          onChange={(event) =>
+                            setMaterialRows((prev) =>
+                              prev.map((item, i) =>
+                                i === index ? { ...item, uom_id: event.target.value } : item
+                              )
+                            )
+                          }
+                        >
+                          <option value="">Select UOM</option>
+                          {unitOptions.map((unit) => (
+                            <option key={unit.id} value={unit.id}>
+                              {unit.name}
                             </option>
                           ))}
                         </select>
@@ -487,7 +593,7 @@ const ProductPage = () => {
                         onClick={() =>
                           setMaterialRows((prev) =>
                             prev.length === 1
-                              ? [{ raw_material_id: "", quantity: 1, rate: 0 }]
+                              ? [{ raw_material_id: "", uom_id: "", quantity: 1, rate: 0 }]
                               : prev.filter((_, i) => i !== index)
                           )
                         }
@@ -513,7 +619,7 @@ const ProductPage = () => {
                 onClick={() => {
                   setEditingId("");
                   form.reset(defaultValues);
-                  setMaterialRows([{ raw_material_id: "", quantity: 1, rate: 0 }]);
+                  setMaterialRows([{ raw_material_id: "", uom_id: "", quantity: 1, rate: 0 }]);
                 }}
               >
                 Cancel
@@ -551,11 +657,13 @@ const ProductPage = () => {
 
                       <td className="px-4 py-3">
                         <span className={`inline-block rounded-md border px-2 py-0.5 text-xs font-medium ${
-                          row.product_type === "MANUFACTURED"
+                          (row.product_type === "ASSEMBLY_PRODUCT" || row.product_type === "MANUFACTURED")
                             ? "border-violet-200 bg-violet-50 text-violet-700"
                             : "border-slate-200 bg-slate-100 text-slate-600"
                         }`}>
-                          {row.product_type === "MANUFACTURED" ? "Manufactured" : "Ready Made"}
+                          {(row.product_type === "ASSEMBLY_PRODUCT" || row.product_type === "MANUFACTURED")
+                            ? "Assembly Product"
+                            : "Finished Good"}
                         </span>
                       </td>
 
@@ -601,8 +709,18 @@ const ProductPage = () => {
                             setEditingId(row.id);
                             form.reset({
                               name: row.name,
-                              productType: row.product_type,
-                              packagingCost: Number(row.packaging_cost),
+                              productType:
+                                row.product_type === "MANUFACTURED"
+                                  ? "ASSEMBLY_PRODUCT"
+                                  : row.product_type === "READY_MADE"
+                                    ? "FINISHED_GOOD"
+                                    : row.product_type,
+                              mouldingCharges: Number(row.moulding_charges || 0),
+                              labourCharges: Number(row.labour_charges || 0),
+                              packagingCharges: Number(row.packaging_cost || 0),
+                              directPrice: Number(row.direct_price || 0),
+                              useCalculatedCost: row.use_calculated_cost ?? true,
+                              confirmedUnitCost: Number(row.confirmed_unit_cost || 0),
                               category: row.category || "",
                               unit: row.unit || "",
                               inventory_account: row.inventory_account || "",
@@ -613,10 +731,11 @@ const ProductPage = () => {
                               row.materials?.length
                                 ? row.materials.map((m) => ({
                                     raw_material_id: m.raw_material_id,
+                                    uom_id: m.uom_id || "",
                                     quantity: Number(m.quantity),
                                     rate: Number(m.rate),
                                   }))
-                                : [{ raw_material_id: "", quantity: 1, rate: 0 }]
+                                : [{ raw_material_id: "", uom_id: "", quantity: 1, rate: 0 }]
                             );
                           }}
                         >

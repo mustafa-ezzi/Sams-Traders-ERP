@@ -2,7 +2,7 @@ from django.db import models
 
 from accounts.models import Account
 from common.models import BaseModel
-from inventory.models import Product, Supplier, Warehouse
+from inventory.models import Product, RawMaterial, Supplier, Unit, Warehouse
 
 
 class PurchaseInvoice(BaseModel):
@@ -30,12 +30,36 @@ class PurchaseInvoice(BaseModel):
 
 
 class PurchaseInvoiceLine(BaseModel):
+    ITEM_TYPE_CHOICES = [
+        ("RAW_MATERIAL", "Raw Material"),
+        ("FINISHED_GOOD", "Finished Good"),
+    ]
+
     invoice = models.ForeignKey(
         PurchaseInvoice,
         on_delete=models.CASCADE,
         related_name="lines",
     )
-    product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name="purchase_invoice_lines")
+    item_type = models.CharField(
+        max_length=20,
+        choices=ITEM_TYPE_CHOICES,
+        default="FINISHED_GOOD",
+    )
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.PROTECT,
+        related_name="purchase_invoice_lines",
+        null=True,
+        blank=True,
+    )
+    raw_material = models.ForeignKey(
+        RawMaterial,
+        on_delete=models.PROTECT,
+        related_name="purchase_invoice_lines",
+        null=True,
+        blank=True,
+    )
+    uom = models.ForeignKey(Unit, on_delete=models.PROTECT, null=True, blank=True)
     quantity = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     rate = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
@@ -46,7 +70,8 @@ class PurchaseInvoiceLine(BaseModel):
         ordering = ["created_at"]
 
     def __str__(self):
-        return f"{self.invoice.invoice_number} - {self.product.name}"
+        item_name = self.raw_material.name if self.raw_material_id else self.product.name
+        return f"{self.invoice.invoice_number} - {item_name}"
 
 
 class PurchaseReturn(BaseModel):

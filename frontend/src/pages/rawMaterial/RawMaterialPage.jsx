@@ -22,10 +22,8 @@ const schema = z.object({
   category: z.string().uuid("categoryId must be a valid UUID"),
   size: z.string().uuid("sizeId must be a valid UUID"),
   purchase_unit: z.string().uuid("purchase_unit must be a valid UUID"),
-  selling_unit: z.string().uuid("selling_unitId must be a valid UUID"),
   inventory_account: z.union([z.string().uuid("inventory account must be a valid UUID"), z.literal("")]),
   purchase_price: z.coerce.number().min(0),
-  selling_price: z.coerce.number().min(0),
 });
 
 const defaultValues = {
@@ -34,10 +32,8 @@ const defaultValues = {
   category: "",
   size: "",
   purchase_unit: "",
-  selling_unit: "",
   inventory_account: "",
   purchase_price: 0,
-  selling_price: 0,
 };
 
 const selectClassName =
@@ -231,20 +227,6 @@ const RawMaterialPage = () => {
 
           <div className="space-y-2">
             <label className="block text-sm font-semibold text-slate-700">
-              Selling Unit <span className="text-rose-500">*</span>
-            </label>
-            <select className={selectClassName} {...form.register("selling_unit")} disabled={loadingOptions}>
-              <option value="">Select selling unit</option>
-              {units.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="space-y-2">
-            <label className="block text-sm font-semibold text-slate-700">
               Inventory Account
             </label>
             <select
@@ -262,8 +244,16 @@ const RawMaterialPage = () => {
           </div>
 
           {/* <FormInput label="Quantity" required type="number" step="0.01" error={form.formState.errors.quantity?.message} {...form.register("quantity")} /> */}
-          <FormInput label="Purchase Price" required type="number" step="0.01" error={form.formState.errors.purchase_price?.message} {...form.register("purchase_price")} />
-          <FormInput label="Selling Price" required type="number" step="0.01" error={form.formState.errors.selling_price?.message} {...form.register("selling_price")} />
+          <div>
+            <FormInput
+              label="Rate Per Purchase UOM"
+              type="number"
+              step="0.01"
+              error={form.formState.errors.purchase_price?.message}
+              {...form.register("purchase_price")}
+            />
+            <p className="mt-1 text-xs text-slate-500">Optional. Leave blank to keep default rate 0.</p>
+          </div>
 
           <div className="flex flex-col gap-3 sm:flex-row xl:col-span-3">
             <Button type="submit" className="w-full sm:w-auto">{editingId ? "Update" : "Create"}</Button>
@@ -295,8 +285,8 @@ const RawMaterialPage = () => {
                   <th className="px-5 py-4 font-bold text-slate-700">Category</th>
                   <th className="px-5 py-4 font-bold text-slate-700">Inventory Account</th>
                   <th className="px-5 py-4 font-bold text-slate-700">Qty</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Purchase</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Selling</th>
+                  <th className="px-5 py-4 font-bold text-slate-700">Purchase UOM</th>
+                  <th className="px-5 py-4 font-bold text-slate-700">Rate</th>
                   <th className="px-5 py-4 text-right font-bold text-slate-700">Actions</th>
                 </tr>
               </thead>
@@ -314,8 +304,8 @@ const RawMaterialPage = () => {
                         : "-"}
                     </td>
                     <td className="px-5 py-4 text-slate-600">{formatDecimal(row.quantity)}</td>
+                    <td className="px-5 py-4 text-slate-600">{row.purchase_unit?.name || "-"}</td>
                     <td className="px-5 py-4 text-slate-600">{formatDecimal(row.purchase_price)}</td>
-                    <td className="px-5 py-4 text-slate-600">{formatDecimal(row.selling_price)}</td>
                     <td className="px-5 py-4 text-right">
                       <button
                         type="button"
@@ -328,10 +318,8 @@ const RawMaterialPage = () => {
                             category: row.category?.id || row.category,
                             size: row.size?.id || row.size,
                             purchase_unit: row.purchase_unit?.id || row.purchase_unit,
-                            selling_unit: row.selling_unit?.id || row.selling_unit,
                             inventory_account: row.inventory_account || "",
                             purchase_price: Number(row.purchase_price),
-                            selling_price: Number(row.selling_price),
                           });
                         }}
                       >

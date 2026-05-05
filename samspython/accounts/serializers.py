@@ -1,11 +1,16 @@
 from rest_framework import serializers
 
 from accounts.dimensions import build_dimension_code
-from accounts.models import Account, Dimension, Expense
+from accounts.models import Account, Dimension, Expense, Inquiry, User
 
 
 class LoginSerializer(serializers.Serializer):
     email = serializers.EmailField()
+    password = serializers.CharField()
+
+
+class AdminLoginSerializer(serializers.Serializer):
+    username = serializers.CharField()
     password = serializers.CharField()
 
 
@@ -40,6 +45,61 @@ class DimensionSerializer(serializers.ModelSerializer):
         attrs["name"] = name
         attrs["code"] = code
         return attrs
+
+
+class AdminUserSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, min_length=6, required=False)
+
+    class Meta:
+        model = User
+        fields = [
+            "id",
+            "username",
+            "email",
+            "phone_number",
+            "business_name",
+            "tenant_limit",
+            "tenant_id",
+            "password",
+            "is_active",
+            "date_joined",
+        ]
+        read_only_fields = ["id", "date_joined"]
+        extra_kwargs = {
+            "tenant_id": {"read_only": True},
+        }
+
+    def validate(self, attrs):
+        is_create = self.instance is None
+        if is_create and not attrs.get("password"):
+            raise serializers.ValidationError({"password": "Password is required for new users."})
+
+        tenant_limit = attrs.get("tenant_limit", getattr(self.instance, "tenant_limit", 1))
+        if tenant_limit < 1:
+            raise serializers.ValidationError({"tenant_limit": "Tenant limit must be at least 1."})
+        return attrs
+
+    def create(self, validated_data):
+        password = validated_data.pop("password")
+        user = User.objects.create_user(
+            username=validated_data["username"],
+            email=validated_data["email"],
+            password=password,
+            tenant_id="",
+            phone_number=validated_data.get("phone_number", ""),
+            business_name=validated_data.get("business_name", ""),
+            tenant_limit=validated_data.get("tenant_limit", 1),
+            is_active=validated_data.get("is_active", True),
+        )
+        return user
+
+    def update(self, instance, validated_data):
+        validated_data.pop("password", None)
+        for field in ["username", "email", "phone_number", "business_name", "tenant_limit", "is_active"]:
+            if field in validated_data:
+                setattr(instance, field, validated_data[field])
+        instance.save()
+        return instance
 
 
 class AccountSerializer(serializers.ModelSerializer):
@@ -227,3 +287,46 @@ class ExpenseSerializer(serializers.ModelSerializer):
         instance.remarks = validated_data.get("remarks", instance.remarks)
         instance.save()
         return instance
+
+
+class InquirySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Inquiry
+        fields = [
+            "id",
+            "user",
+            "user_name",
+            "subject",
+            "message",
+            "admin_reply",
+            "status",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "user", "status", "created_at", "updated_at"]
+        extra_kwargs = {
+            "user_name": {"read_only": True},
+            "admin_reply": {"read_only": True},
+        }
+
+    def create(self, validated_data):
+        request = self.context["request"]
+        validated_data["tenant_id"] = request.tenant_id
+        validated_data["user"] = request.user
+        return super().create(validated_data)
+
+
+class AdminInquirySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Inquiry
+        fields = [
+            "id",
+            "tenant_id",
+            "user_name",
+            "subject",
+            "message",
+            "admin_reply",
+            "status",
+            "created_at",
+        ]
+        read_only_fields = ["id", "tenant_id", "user_name", "subject", "message", "created_at"]

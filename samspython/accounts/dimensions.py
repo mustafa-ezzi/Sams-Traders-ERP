@@ -25,6 +25,16 @@ def get_active_dimension_codes():
     )
 
 
+def get_user_active_dimension_codes(user):
+    user_codes = list(user.allowed_dimensions.values_list("code", flat=True))
+    return list(
+        Dimension.objects.filter(
+            code__in=user_codes,
+            is_active=True,
+        ).order_by("name").values_list("code", flat=True)
+    )
+
+
 def build_dimension_code(name, explicit_code=""):
     if explicit_code:
         return explicit_code.strip().upper().replace(" ", "_")

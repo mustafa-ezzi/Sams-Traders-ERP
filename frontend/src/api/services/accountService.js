@@ -47,6 +47,13 @@ const accountService = {
     });
     return response.data.data || {};
   },
+  async getBalanceSheetReport(params, selectedTenant = "") {
+    const response = await axiosInstance.get("/accounts/accounts/balance-sheet-report/", {
+      params,
+      headers: selectedTenant ? { "x-tenant-id": selectedTenant } : {},
+    });
+    return response.data.data || {};
+  },
   async getCoaCompletenessReport(params, selectedTenant = "") {
     const response = await axiosInstance.get("/accounts/accounts/coa-completeness-report/", {
       params,
@@ -54,8 +61,9 @@ const accountService = {
     });
     return response.data.data || {};
   },
-  async getDashboardOverview(selectedTenant = "") {
+  async getDashboardOverview(selectedTenant = "", period = "all") {
     const response = await axiosInstance.get("/accounts/accounts/dashboard-overview/", {
+      params: { period },
       headers: selectedTenant ? { "x-tenant-id": selectedTenant } : {},
     });
     return response.data.data || {};

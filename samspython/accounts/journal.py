@@ -43,6 +43,27 @@ def _resolve_product_account(product, field_name, error_label):
     )
 
 
+def _resolve_raw_material_account(raw_material, field_name, error_label):
+    account = getattr(raw_material, field_name, None)
+    if account:
+        return account
+
+    category = getattr(raw_material, "category", None)
+    if category:
+        account = getattr(category, field_name, None)
+        if account:
+            return account
+
+    raise ValidationError(
+        {
+            error_label: (
+                f"{raw_material.name} is missing {field_name}. "
+                "Set it on the raw material or its category before posting."
+            )
+        }
+    )
+
+
 def _allocate_amounts(entries, target_total):
     target_total = quantize_money(target_total)
     total_weight = sum(quantize_money(entry["weight"]) for entry in entries)
@@ -141,14 +162,23 @@ def _build_purchase_invoice_lines(invoice):
         "product__category",
         "product__inventory_account",
         "product__category__inventory_account",
+        "raw_material__inventory_account",
+        "raw_material__category__inventory_account",
     )
     for line in invoice_lines:
-        inventory_account = _resolve_product_account(line.product, "inventory_account", "inventory_account")
+        if line.item_type == "RAW_MATERIAL":
+            inventory_account = _resolve_raw_material_account(
+                line.raw_material, "inventory_account", "inventory_account"
+            )
+            line_description = line.raw_material.name
+        else:
+            inventory_account = _resolve_product_account(line.product, "inventory_account", "inventory_account")
+            line_description = line.product.name
         weighted_lines.append(
             {
                 "account": inventory_account,
                 "weight": line.total_amount,
-                "line_description": line.product.name,
+                "line_description": line_description,
             }
         )
 

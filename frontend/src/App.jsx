@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import Layout from "./components/Layout";
 import { useAuth } from "./context/AuthContext";
 import LoginPage from "./pages/LoginPage";
@@ -24,18 +24,55 @@ import AccountsPage from "./pages/accounts/AccountsPage";
 import ExpensePage from "./pages/accounts/ExpensePage";
 import DimensionsPage from "./pages/users/DimensionsPage";
 import CoaCompletenessReportPage from "./pages/reports/CoaCompletenessReportPage";
+import BalanceSheetPage from "./pages/reports/BalanceSheetPage";
 import LedgerReportsPage from "./pages/reports/LedgerReportsPage";
 import PartyLedgerReportsPage from "./pages/reports/PartyLedgerReportsPage";
+import AdminLoginPage from "./pages/admin/AdminLoginPage";
+import AdminUsersPage from "./pages/admin/AdminUsersPage";
+import AdminInquiriesPage from "./pages/admin/AdminInquiriesPage";
+import SupportPage from "./pages/SupportPage";
 
 const Protected = ({ children }) => {
-  const { token } = useAuth();
-  return token ? children : <Navigate to="/login" replace />;
+  const { token, allowedDimensions } = useAuth();
+  const location = useLocation();
+
+  if (!token) {
+    return <Navigate to="/login" replace />;
+  }
+
+  const needsOnboarding = !allowedDimensions?.length;
+  if (needsOnboarding && location.pathname !== "/users/dimensions") {
+    return <Navigate to="/users/dimensions" replace />;
+  }
+  return children;
+};
+
+const AdminProtected = ({ children }) => {
+  const adminToken = localStorage.getItem("adminToken");
+  return adminToken ? children : <Navigate to="/admin/login" replace />;
 };
 
 const App = () => (
   <BrowserRouter>
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/admin/login" element={<AdminLoginPage />} />
+      <Route
+        path="/admin/users"
+        element={
+          <AdminProtected>
+            <AdminUsersPage />
+          </AdminProtected>
+        }
+      />
+      <Route
+        path="/admin/inquiries"
+        element={
+          <AdminProtected>
+            <AdminInquiriesPage />
+          </AdminProtected>
+        }
+      />
       <Route
         path="/"
         element={
@@ -56,6 +93,7 @@ const App = () => (
         <Route path="expenses" element={<ExpensePage />} />
         <Route path="reports/ledger" element={<LedgerReportsPage />} />
         <Route path="reports/party-ledger" element={<PartyLedgerReportsPage />} />
+        <Route path="reports/balance-sheet" element={<BalanceSheetPage />} />
         <Route path="reports/coa-completeness" element={<CoaCompletenessReportPage />} />
         <Route path="warehouses" element={<WarehousePage />} />
         <Route path="opening-stock" element={<OpeningStockPage />} />
@@ -68,6 +106,7 @@ const App = () => (
         <Route path="sales-bank-receipts" element={<SalesBankReceiptPage />} />
         <Route path="customers" element={<CustomersPage />} />
         <Route path="suppliers" element={<SuppliersPage />} />
+        <Route path="support" element={<SupportPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

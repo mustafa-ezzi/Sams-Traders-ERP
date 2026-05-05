@@ -56,6 +56,16 @@ class ProductionService {
     };
   }
 
+  async preview(data) {
+    const payload = {
+      warehouse_id: data.warehouseId,
+      product_id: data.productId,
+      quantity: Number(data.quantity),
+    };
+    const response = await axiosInstance.post(`${BASE_URL}preview/`, payload);
+    return response.data?.data || null;
+  }
+
   async update(id, data) {
     const payload = {
       date: data.date,

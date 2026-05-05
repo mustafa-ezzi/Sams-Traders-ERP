@@ -1,4 +1,5 @@
 from datetime import date
+from datetime import timedelta
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -15,8 +16,8 @@ from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 
 from accounts.models import Account
-from accounts.dimensions import get_active_dimension_codes, seed_default_coa_for_dimension
-from accounts.reporting import build_ledger_report
+from accounts.dimensions import get_user_active_dimension_codes, seed_default_coa_for_dimension
+from accounts.reporting import build_balance_sheet_report, build_ledger_report
 from inventory.models import (
     Category,
     Customer,
@@ -35,10 +36,12 @@ from sales.models import SalesBankReceipt, SalesInvoice, SalesInvoiceLine, Sales
 from sales.services import get_sales_invoice_financials
 
 from .serializers import AccountSerializer, DimensionSerializer, ExpenseSerializer, LoginSerializer
-from .services import login_service
-from .models import Dimension, Expense, JournalEntry, JournalLine, User
+from .serializers import AdminInquirySerializer, AdminLoginSerializer, AdminUserSerializer, InquirySerializer
+from .services import admin_login_service, login_service
+from .models import Dimension, Expense, Inquiry, JournalEntry, JournalLine, User
 from .journal import delete_journal_entry, sync_expense_journal
 from inventory.pagination import StandardResultsSetPagination
+from accounts.authentication import AdminJWTAuthentication
 
 
 class LoginView(APIView):
@@ -72,6 +75,78 @@ class LoginView(APIView):
                 },
                 status=status.HTTP_401_UNAUTHORIZED,
             )
+
+
+class AdminLoginView(APIView):
+    def post(self, request):
+        try:
+            serializer = AdminLoginSerializer(data=request.data)
+
+            if not serializer.is_valid():
+                raise ValidationError(serializer.errors)
+
+            response = admin_login_service(serializer.validated_data)
+
+            return Response(response, status=status.HTTP_200_OK)
+        except ValidationError as e:
+            return Response(
+                {
+                    "error": True,
+                    "message": "Validation failed",
+                    "details": e.detail,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception as e:
+            return Response(
+                {
+                    "error": True,
+                    "message": str(e),
+                    "details": {},
+                },
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+
+class AdminUserViewSet(ModelViewSet):
+    serializer_class = AdminUserSerializer
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [AdminJWTAuthentication]
+    queryset = User.objects.filter(is_staff=False).order_by("-date_joined")
+
+
+class AdminDimensionViewSet(ModelViewSet):
+    serializer_class = DimensionSerializer
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [AdminJWTAuthentication]
+    queryset = Dimension.objects.filter(is_active=True).order_by("name")
+    http_method_names = ["get"]
+
+
+class InquiryViewSet(ModelViewSet):
+    serializer_class = InquirySerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+    http_method_names = ["get", "post"]
+
+    def get_queryset(self):
+        return Inquiry.objects.filter(
+            tenant_id=self.request.tenant_id,
+            deleted_at__isnull=True,
+        ).order_by("-created_at")
+
+    def perform_create(self, serializer):
+        serializer.save(
+            user_name=self.request.user.username or self.request.user.email or "User",
+        )
+
+
+class AdminInquiryViewSet(ModelViewSet):
+    serializer_class = AdminInquirySerializer
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [AdminJWTAuthentication]
+    http_method_names = ["get", "patch"]
+    queryset = Inquiry.objects.filter(deleted_at__isnull=True).order_by("-created_at")
 
 
 class AccountViewSet(ModelViewSet):
@@ -121,7 +196,7 @@ class AccountViewSet(ModelViewSet):
         return codes
 
     def _resolve_tenant_ids(self, tenant_scope):
-        valid_tenants = get_active_dimension_codes()
+        valid_tenants = get_user_active_dimension_codes(self.request.user)
         if tenant_scope == "BOTH":
             return valid_tenants
         if tenant_scope in valid_tenants:
@@ -533,207 +608,207 @@ class AccountViewSet(ModelViewSet):
 
         return Response({"data": payload})
 
+    @action(detail=False, methods=["get"], url_path="balance-sheet-report")
+    def balance_sheet_report(self, request):
+        tenant_scope = request.query_params.get("tenant_scope") or request.user.tenant_id
+        as_of_date_raw = request.query_params.get("as_of_date")
+
+        if as_of_date_raw:
+            try:
+                as_of_date = date.fromisoformat(as_of_date_raw)
+            except ValueError:
+                raise ValidationError({"as_of_date": "As of date must be in YYYY-MM-DD format."})
+        else:
+            as_of_date = date.today()
+
+        tenant_ids = self._resolve_tenant_ids(tenant_scope)
+        payload = build_balance_sheet_report(
+            tenant_ids=tenant_ids,
+            as_of_date=as_of_date,
+        )
+
+        return Response(
+            {
+                "data": {
+                    "tenant_scope": tenant_scope,
+                    **payload,
+                }
+            }
+        )
+
     @action(detail=False, methods=["get"], url_path="dashboard-overview")
     def dashboard_overview(self, request):
         tenant_id = request.user.tenant_id
         today = date.today()
         month_start = today.replace(day=1)
+        period = (request.query_params.get("period") or "all").lower()
+
+        if period not in {"today", "week", "month", "all"}:
+            raise ValidationError({"period": "Valid values are today, week, month, all."})
+
+        start_date = None
+        if period == "today":
+            start_date = today
+        elif period == "week":
+            start_date = today - timedelta(days=today.weekday())
+        elif period == "month":
+            start_date = month_start
+
+        def with_date_range(queryset, field_name):
+            if start_date:
+                queryset = queryset.filter(**{f"{field_name}__gte": start_date})
+            return queryset.filter(**{f"{field_name}__lte": today})
+
+        sales_queryset = SalesInvoice.objects.filter(
+            tenant_id=tenant_id,
+            deleted_at__isnull=True,
+        )
+        purchase_queryset = PurchaseInvoice.objects.filter(
+            tenant_id=tenant_id,
+            deleted_at__isnull=True,
+        )
+        receipt_queryset = SalesBankReceipt.objects.filter(
+            tenant_id=tenant_id,
+            deleted_at__isnull=True,
+        )
+        payment_queryset = PurchaseBankPayment.objects.filter(
+            tenant_id=tenant_id,
+            deleted_at__isnull=True,
+        )
+        journal_queryset = JournalLine.objects.filter(
+            tenant_id=tenant_id,
+            deleted_at__isnull=True,
+            journal_entry__deleted_at__isnull=True,
+        )
+        product_queryset = Product.objects.filter(tenant_id=tenant_id, deleted_at__isnull=True)
+        raw_material_queryset = RawMaterial.objects.filter(tenant_id=tenant_id, deleted_at__isnull=True)
+        customer_queryset = Customer.objects.filter(tenant_id=tenant_id, deleted_at__isnull=True)
+        supplier_queryset = Supplier.objects.filter(tenant_id=tenant_id, deleted_at__isnull=True)
+        warehouse_queryset = Warehouse.objects.filter(tenant_id=tenant_id, deleted_at__isnull=True)
+        opening_stock_queryset = OpeningStock.objects.filter(tenant_id=tenant_id, deleted_at__isnull=True)
+        stock_queryset = Stock.objects.filter(
+            tenant_id=tenant_id, deleted_at__isnull=True, raw_material__deleted_at__isnull=True
+        ).select_related("raw_material")
+        product_stock_queryset = ProductStock.objects.filter(
+            tenant_id=tenant_id, deleted_at__isnull=True, product__deleted_at__isnull=True
+        ).select_related("product")
+        entry_queryset = JournalEntry.objects.filter(tenant_id=tenant_id, deleted_at__isnull=True)
+
+        sales_filtered = with_date_range(sales_queryset, "date")
+        purchases_filtered = with_date_range(purchase_queryset, "date")
+        receipts_filtered = with_date_range(receipt_queryset, "date")
+        payments_filtered = with_date_range(payment_queryset, "date")
+        journal_filtered = with_date_range(journal_queryset, "journal_entry__date")
+        products_filtered = with_date_range(product_queryset, "created_at")
+        raw_materials_filtered = with_date_range(raw_material_queryset, "created_at")
+        customers_filtered = with_date_range(customer_queryset, "created_at")
+        suppliers_filtered = with_date_range(supplier_queryset, "created_at")
+        warehouses_filtered = with_date_range(warehouse_queryset, "created_at")
+        opening_stock_filtered = with_date_range(opening_stock_queryset, "created_at")
+        stock_filtered = with_date_range(stock_queryset, "created_at")
+        product_stock_filtered = with_date_range(product_stock_queryset, "created_at")
+        entries_filtered = with_date_range(entry_queryset, "date")
 
         total_sales = (
-            SalesInvoice.objects.filter(
-                tenant_id=tenant_id,
-                deleted_at__isnull=True,
-            ).aggregate(total=Coalesce(Sum("net_amount"), Decimal("0.00")))["total"]
+            sales_filtered.aggregate(total=Coalesce(Sum("net_amount"), Decimal("0.00")))["total"]
             or Decimal("0.00")
         )
         total_purchases = (
-            PurchaseInvoice.objects.filter(
-                tenant_id=tenant_id,
-                deleted_at__isnull=True,
-            ).aggregate(total=Coalesce(Sum("net_amount"), Decimal("0.00")))["total"]
+            purchases_filtered.aggregate(total=Coalesce(Sum("net_amount"), Decimal("0.00")))["total"]
             or Decimal("0.00")
         )
 
-        products_count = Product.objects.filter(
-            tenant_id=tenant_id,
-            deleted_at__isnull=True,
-        ).count()
-        raw_materials_count = RawMaterial.objects.filter(
-            tenant_id=tenant_id,
-            deleted_at__isnull=True,
-        ).count()
-        customers_count = Customer.objects.filter(
-            tenant_id=tenant_id,
-            deleted_at__isnull=True,
-        ).count()
-        suppliers_count = Supplier.objects.filter(
-            tenant_id=tenant_id,
-            deleted_at__isnull=True,
-        ).count()
-        warehouses_count = Warehouse.objects.filter(
-            tenant_id=tenant_id,
-            deleted_at__isnull=True,
-        ).count()
-        opening_stock_count = OpeningStock.objects.filter(
-            tenant_id=tenant_id,
-            deleted_at__isnull=True,
-        ).count()
+        products_count = products_filtered.count()
+        raw_materials_count = raw_materials_filtered.count()
+        customers_count = customers_filtered.count()
+        suppliers_count = suppliers_filtered.count()
+        warehouses_count = warehouses_filtered.count()
+        opening_stock_count = opening_stock_filtered.count()
 
-        month_sales = (
-            SalesInvoice.objects.filter(
-                tenant_id=tenant_id,
-                deleted_at__isnull=True,
-                date__gte=month_start,
-                date__lte=today,
-            ).aggregate(total=Coalesce(Sum("net_amount"), Decimal("0.00")))["total"]
-            or Decimal("0.00")
-        )
-        month_purchases = (
-            PurchaseInvoice.objects.filter(
-                tenant_id=tenant_id,
-                deleted_at__isnull=True,
-                date__gte=month_start,
-                date__lte=today,
-            ).aggregate(total=Coalesce(Sum("net_amount"), Decimal("0.00")))["total"]
-            or Decimal("0.00")
-        )
+        month_sales = total_sales
+        month_purchases = total_purchases
         month_receipts = (
-            SalesBankReceipt.objects.filter(
-                tenant_id=tenant_id,
-                deleted_at__isnull=True,
-                date__gte=month_start,
-                date__lte=today,
-            ).aggregate(total=Coalesce(Sum("amount"), Decimal("0.00")))["total"]
+            receipts_filtered.aggregate(total=Coalesce(Sum("amount"), Decimal("0.00")))["total"]
             or Decimal("0.00")
         )
         month_payments = (
-            PurchaseBankPayment.objects.filter(
-                tenant_id=tenant_id,
-                deleted_at__isnull=True,
-                date__gte=month_start,
-                date__lte=today,
-            ).aggregate(total=Coalesce(Sum("amount"), Decimal("0.00")))["total"]
+            payments_filtered.aggregate(total=Coalesce(Sum("amount"), Decimal("0.00")))["total"]
             or Decimal("0.00")
         )
         month_profit = (
-            JournalLine.objects.filter(
-                tenant_id=tenant_id,
-                deleted_at__isnull=True,
-                journal_entry__deleted_at__isnull=True,
-                journal_entry__date__gte=month_start,
-                journal_entry__date__lte=today,
+            journal_filtered.filter(
                 account__account_type=Account.AccountType.REVENUE,
             ).aggregate(total=Coalesce(Sum("credit"), Decimal("0.00")))["total"]
             or Decimal("0.00")
         ) - (
-            JournalLine.objects.filter(
-                tenant_id=tenant_id,
-                deleted_at__isnull=True,
-                journal_entry__deleted_at__isnull=True,
-                journal_entry__date__gte=month_start,
-                journal_entry__date__lte=today,
+            journal_filtered.filter(
                 account__account_type=Account.AccountType.COGS,
             ).aggregate(total=Coalesce(Sum("debit"), Decimal("0.00")))["total"]
             or Decimal("0.00")
         )
         total_profit = (
-            JournalLine.objects.filter(
-                tenant_id=tenant_id,
-                deleted_at__isnull=True,
-                journal_entry__deleted_at__isnull=True,
+            journal_filtered.filter(
                 account__account_type=Account.AccountType.REVENUE,
             ).aggregate(total=Coalesce(Sum("credit"), Decimal("0.00")))["total"]
             or Decimal("0.00")
         ) - (
-            JournalLine.objects.filter(
-                tenant_id=tenant_id,
-                deleted_at__isnull=True,
-                journal_entry__deleted_at__isnull=True,
+            journal_filtered.filter(
                 account__account_type=Account.AccountType.COGS,
             ).aggregate(total=Coalesce(Sum("debit"), Decimal("0.00")))["total"]
             or Decimal("0.00")
         )
 
         receivables_outstanding = Decimal("0.00")
-        for invoice in SalesInvoice.objects.filter(
-            tenant_id=tenant_id,
-            deleted_at__isnull=True,
-        ):
+        for invoice in sales_filtered:
             receivables_outstanding += get_sales_invoice_financials(invoice)["balance_amount"]
 
         payables_outstanding = Decimal("0.00")
-        for invoice in PurchaseInvoice.objects.filter(
-            tenant_id=tenant_id,
-            deleted_at__isnull=True,
-        ):
+        for invoice in purchases_filtered:
             payables_outstanding += get_purchase_invoice_financials(invoice)["balance_amount"]
 
         raw_material_stock_value = Decimal("0.00")
-        for stock in Stock.objects.filter(
-            tenant_id=tenant_id,
-            deleted_at__isnull=True,
-            raw_material__deleted_at__isnull=True,
-        ).select_related("raw_material"):
+        for stock in stock_filtered:
             raw_material_stock_value += self._money(stock.quantity) * self._money(
                 stock.raw_material.purchase_price
             )
 
         product_stock_value = Decimal("0.00")
-        for stock in ProductStock.objects.filter(
-            tenant_id=tenant_id,
-            deleted_at__isnull=True,
-            product__deleted_at__isnull=True,
-        ).select_related("product"):
+        for stock in product_stock_filtered:
             product_stock_value += self._money(stock.quantity) * self._money(
                 stock.product.net_amount
             )
 
         monthly_purchase_map = {
             item["month"]: self._money(item["total"])
-            for item in PurchaseInvoice.objects.filter(
-                tenant_id=tenant_id,
-                deleted_at__isnull=True,
-            )
+            for item in purchases_filtered
             .annotate(month=TruncMonth("date"))
             .values("month")
             .annotate(total=Coalesce(Sum("net_amount"), Decimal("0.00")))
         }
         monthly_sales_map = {
             item["month"]: self._money(item["total"])
-            for item in SalesInvoice.objects.filter(
-                tenant_id=tenant_id,
-                deleted_at__isnull=True,
-            )
+            for item in sales_filtered
             .annotate(month=TruncMonth("date"))
             .values("month")
             .annotate(total=Coalesce(Sum("net_amount"), Decimal("0.00")))
         }
         monthly_receipt_map = {
             item["month"]: self._money(item["total"])
-            for item in SalesBankReceipt.objects.filter(
-                tenant_id=tenant_id,
-                deleted_at__isnull=True,
-            )
+            for item in receipts_filtered
             .annotate(month=TruncMonth("date"))
             .values("month")
             .annotate(total=Coalesce(Sum("amount"), Decimal("0.00")))
         }
         monthly_payment_map = {
             item["month"]: self._money(item["total"])
-            for item in PurchaseBankPayment.objects.filter(
-                tenant_id=tenant_id,
-                deleted_at__isnull=True,
-            )
+            for item in payments_filtered
             .annotate(month=TruncMonth("date"))
             .values("month")
             .annotate(total=Coalesce(Sum("amount"), Decimal("0.00")))
         }
         monthly_revenue_map = {
             item["month"]: self._money(item["total"])
-            for item in JournalLine.objects.filter(
-                tenant_id=tenant_id,
-                deleted_at__isnull=True,
-                journal_entry__deleted_at__isnull=True,
+            for item in journal_filtered.filter(
                 account__account_type=Account.AccountType.REVENUE,
             )
             .annotate(month=TruncMonth("journal_entry__date"))
@@ -742,10 +817,7 @@ class AccountViewSet(ModelViewSet):
         }
         monthly_cogs_map = {
             item["month"]: self._money(item["total"])
-            for item in JournalLine.objects.filter(
-                tenant_id=tenant_id,
-                deleted_at__isnull=True,
-                journal_entry__deleted_at__isnull=True,
+            for item in journal_filtered.filter(
                 account__account_type=Account.AccountType.COGS,
             )
             .annotate(month=TruncMonth("journal_entry__date"))
@@ -780,21 +852,14 @@ class AccountViewSet(ModelViewSet):
                 month_cursor = month_cursor.replace(month=month_cursor.month - 1)
         monthly_trends.reverse()
 
-        journal_summary = JournalLine.objects.filter(
-            tenant_id=tenant_id,
-            deleted_at__isnull=True,
-            journal_entry__deleted_at__isnull=True,
-        ).aggregate(
+        journal_summary = journal_filtered.aggregate(
             debit=Coalesce(Sum("debit"), Decimal("0.00")),
             credit=Coalesce(Sum("credit"), Decimal("0.00")),
             count=Count("id"),
         )
 
         recent_activity = []
-        recent_entries = JournalEntry.objects.filter(
-            tenant_id=tenant_id,
-            deleted_at__isnull=True,
-        ).order_by("-date", "-created_at")[:8]
+        recent_entries = entries_filtered.order_by("-date", "-created_at")[:8]
         for entry in recent_entries:
             entry_totals = entry.lines.filter(deleted_at__isnull=True).aggregate(
                 debit=Coalesce(Sum("debit"), Decimal("0.00")),
@@ -815,15 +880,10 @@ class AccountViewSet(ModelViewSet):
             )
 
         top_customers = []
-        for customer in Customer.objects.filter(
-            tenant_id=tenant_id,
-            deleted_at__isnull=True,
-        ):
+        for customer in customers_filtered:
             customer_total = (
-                SalesInvoice.objects.filter(
-                    tenant_id=tenant_id,
+                sales_filtered.filter(
                     customer=customer,
-                    deleted_at__isnull=True,
                 ).aggregate(total=Coalesce(Sum("net_amount"), Decimal("0.00")))["total"]
                 or Decimal("0.00")
             )
@@ -837,15 +897,10 @@ class AccountViewSet(ModelViewSet):
         top_customers = sorted(top_customers, key=lambda item: item["amount"], reverse=True)[:5]
 
         top_suppliers = []
-        for supplier in Supplier.objects.filter(
-            tenant_id=tenant_id,
-            deleted_at__isnull=True,
-        ):
+        for supplier in suppliers_filtered:
             supplier_total = (
-                PurchaseInvoice.objects.filter(
-                    tenant_id=tenant_id,
+                purchases_filtered.filter(
                     supplier=supplier,
-                    deleted_at__isnull=True,
                 ).aggregate(total=Coalesce(Sum("net_amount"), Decimal("0.00")))["total"]
                 or Decimal("0.00")
             )
@@ -861,6 +916,7 @@ class AccountViewSet(ModelViewSet):
         stock_mix_total = self._money(raw_material_stock_value + product_stock_value)
         payload = {
             "tenant_id": tenant_id,
+            "period": period,
             "today": today.isoformat(),
             "hero": {
                 "title": f"{tenant_id.replace('_', ' ').title()} Command Center",
@@ -1118,11 +1174,23 @@ class ExpenseViewSet(ModelViewSet):
 class DimensionViewSet(ModelViewSet):
     serializer_class = DimensionSerializer
     permission_classes = [IsAuthenticated]
-    queryset = Dimension.objects.all().order_by("name")
 
-    def _has_dimension_dependencies(self, dimension_code):
+    def get_queryset(self):
+        allowed_codes = list(self.request.user.allowed_dimensions.values_list("code", flat=True))
+        if not allowed_codes and self.request.user.tenant_id:
+            allowed_codes = [self.request.user.tenant_id]
+        return Dimension.objects.filter(code__in=allowed_codes).order_by("name")
+
+    def _has_dimension_dependencies(self, dimension_code, current_user=None):
+        user_dependency_queryset = User.objects.filter(tenant_id=dimension_code)
+        user_allowed_dependency_queryset = User.objects.filter(allowed_dimensions__code=dimension_code)
+        if current_user:
+            user_dependency_queryset = user_dependency_queryset.exclude(id=current_user.id)
+            user_allowed_dependency_queryset = user_allowed_dependency_queryset.exclude(id=current_user.id)
+
         dependency_checks = [
-            User.objects.filter(tenant_id=dimension_code),
+            user_dependency_queryset,
+            user_allowed_dependency_queryset,
             Category.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
             RawMaterial.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
             Product.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
@@ -1150,10 +1218,19 @@ class DimensionViewSet(ModelViewSet):
         return any(queryset.exists() for queryset in dependency_checks)
 
     def create(self, request, *args, **kwargs):
+        if not request.user.can_create_more_tenants():
+            return Response(
+                {"detail": "Your tenant creation limit has been reached."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         dimension = serializer.save()
         seed_default_coa_for_dimension(dimension.code)
+        request.user.allowed_dimensions.add(dimension)
+        if not request.user.tenant_id:
+            request.user.tenant_id = dimension.code
+            request.user.save(update_fields=["tenant_id"])
         return Response(
             {
                 "data": self.get_serializer(dimension).data,
@@ -1164,20 +1241,27 @@ class DimensionViewSet(ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
+        fallback_dimension = (
+            request.user.allowed_dimensions.filter(is_active=True).exclude(code=instance.code).order_by("name").first()
+        )
 
-        if request.user.tenant_id == instance.code:
-            return Response(
-                {"detail": "You cannot delete the currently active dimension."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        if self._has_dimension_dependencies(instance.code):
+        if self._has_dimension_dependencies(instance.code, current_user=request.user):
             return Response(
                 {"detail": "Cannot delete dimension because active users or business records exist."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        if request.user.tenant_id == instance.code:
+            if not fallback_dimension:
+                return Response(
+                    {"detail": "Cannot delete the last active dimension."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            request.user.tenant_id = fallback_dimension.code
+            request.user.save(update_fields=["tenant_id"])
+
         with transaction.atomic():
+            request.user.allowed_dimensions.remove(instance)
             for account in Account.objects.filter(tenant_id=instance.code).order_by("-level", "-code"):
                 Account.objects.filter(pk=account.pk).delete()
             instance.delete()

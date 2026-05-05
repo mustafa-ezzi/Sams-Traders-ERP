@@ -14,7 +14,8 @@ const selectClassName =
   "w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100";
 
 const createEmptyLine = () => ({
-  productId: "",
+  itemType: "RAW_MATERIAL",
+  itemId: "",
   quantity: "1",
   rate: "0",
   discount: "0",
@@ -82,7 +83,7 @@ const PurchaseInvoicePage = () => {
   const [deleteId, setDeleteId] = useState("");
   const limit = 10;
 
-  const productMap = useMemo(
+  const itemMap = useMemo(
     () =>
       productOptions.reduce((accumulator, product) => {
         accumulator[product.id] = product;
@@ -141,7 +142,7 @@ const PurchaseInvoicePage = () => {
       const response = await purchaseInvoiceService.getProductOptions(warehouseId);
       setProductOptions(response);
     } catch {
-      toast.error("Failed to load product stock options");
+      toast.error("Failed to load purchase item options");
     }
   };
 
@@ -185,12 +186,19 @@ const PurchaseInvoicePage = () => {
     setForm((current) => {
       const nextLines = [...current.lines];
       const nextLine =
-        field === "productId"
+        field === "itemId"
           ? {
               ...nextLines[index],
-              productId: value,
-              rate: value ? toRateString(productMap[value]?.net_amount) : "0",
+              itemId: value,
+              rate: value ? toRateString(itemMap[value]?.net_amount) : "0",
             }
+          : field === "itemType"
+            ? {
+                ...nextLines[index],
+                itemType: value,
+                itemId: "",
+                rate: "0",
+              }
           : {
               ...nextLines[index],
               [field]: value,
@@ -229,9 +237,11 @@ const PurchaseInvoicePage = () => {
     remarks: form.remarks,
     invoice_discount: toNumber(form.invoiceDiscount),
     lines: form.lines
-      .filter((line) => line.productId)
+      .filter((line) => line.itemId)
       .map((line) => ({
-        product_id: line.productId,
+        item_type: line.itemType,
+        product_id: line.itemType === "FINISHED_GOOD" ? line.itemId : null,
+        raw_material_id: line.itemType === "RAW_MATERIAL" ? line.itemId : null,
         quantity: toNumber(line.quantity),
         rate: toNumber(line.rate),
         discount: toNumber(line.discount),
@@ -251,12 +261,12 @@ const PurchaseInvoicePage = () => {
       toast.error("Please select an invoice date");
       return false;
     }
-    if (!form.lines.some((line) => line.productId)) {
-      toast.error("Please add at least one product line");
+    if (!form.lines.some((line) => line.itemId)) {
+      toast.error("Please add at least one purchase line");
       return false;
     }
-    if (form.lines.some((line) => !line.productId || toNumber(line.quantity) <= 0)) {
-      toast.error("Each line needs a product and quantity greater than zero");
+    if (form.lines.some((line) => !line.itemId || toNumber(line.quantity) <= 0)) {
+      toast.error("Each line needs an item and quantity greater than zero");
       return false;
     }
     return true;
@@ -301,7 +311,8 @@ const PurchaseInvoicePage = () => {
         lines:
           invoice.lines?.length > 0
             ? invoice.lines.map((line) => ({
-                productId: line.productId,
+                itemType: line.itemType,
+                itemId: line.itemType === "RAW_MATERIAL" ? line.rawMaterialId : line.productId,
                 quantity: String(line.quantity),
                 rate: String(line.rate),
                 discount: String(line.discount),
@@ -338,9 +349,7 @@ const PurchaseInvoicePage = () => {
       <h2 className="text-xl font-bold text-slate-900">
         {editingId ? "Edit Purchase Invoice" : "Create Purchase Invoice"}
       </h2>
-      <p className="mt-1 text-sm text-slate-500">
-        Record supplier purchases and move finished products into warehouse stock.
-      </p>
+     
     </div>
     {editingId ? (
       <Button variant="secondary" onClick={resetForm}>
@@ -413,8 +422,9 @@ const PurchaseInvoicePage = () => {
 
       {/* Table Header */}
       <div className="grid gap-2 bg-indigo-50 px-4 py-3 text-xs font-bold uppercase tracking-widest text-slate-500"
-        style={{ gridTemplateColumns: "1.8fr 80px 70px 110px 110px 110px 40px" }}>
-        <span>Product Name</span>
+        style={{ gridTemplateColumns: "130px 1.8fr 80px 70px 110px 110px 110px 40px" }}>
+        <span>Type</span>
+        <span>Purchase Item</span>
         <span>Qty</span>
         <span>Unit</span>
         <span>Rate (Price)</span>
@@ -426,20 +436,33 @@ const PurchaseInvoicePage = () => {
       {/* Table Rows */}
       <div className="divide-y divide-slate-100 px-4 py-2 space-y-0">
         {form.lines.map((line, index) => {
-          const selectedProduct = productMap[line.productId];
+          const selectedItem = itemMap[line.itemId];
           const metrics = lineMetrics[index];
           return (
             <div
-              key={`${index}-${line.productId}`}
+              key={`${index}-${line.itemId}`}
               className="grid gap-2 py-3 items-center"
-              style={{ gridTemplateColumns: "1.8fr 80px 70px 110px 110px 110px 40px" }}
+              style={{ gridTemplateColumns: "130px 1.8fr 80px 70px 110px 110px 110px 40px" }}
             >
-              {/* Product Name */}
-              <select className={selectClassName} value={line.productId}
-                onChange={(e) => handleLineChange(index, "productId", e.target.value)}>
-                <option value="">— Select Product —</option>
-                {productOptions.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
+              <select
+                className={selectClassName}
+                value={line.itemType}
+                onChange={(e) => handleLineChange(index, "itemType", e.target.value)}
+              >
+                <option value="RAW_MATERIAL">Raw Material</option>
+                <option value="FINISHED_GOOD">Finished Good</option>
+              </select>
+
+              {/* Purchase Item */}
+              <select className={selectClassName} value={line.itemId}
+                onChange={(e) => handleLineChange(index, "itemId", e.target.value)}>
+                <option value="">— Select Item —</option>
+                {productOptions
+                  .filter((p) => p.item_type === line.itemType)
+                  .map((p) => (
+                  <option key={`${p.item_type}-${p.id}`} value={p.id}>
+                    {p.name} ({p.item_type === "RAW_MATERIAL" ? "Raw Material" : "Finished Good"})
+                  </option>
                 ))}
               </select>
 
@@ -451,9 +474,9 @@ const PurchaseInvoicePage = () => {
                 onChange={(e) => handleLineChange(index, "quantity", e.target.value)}
               />
 
-              {/* Unit — auto from product */}
+              {/* Unit — auto from item */}
               <div className="flex items-center rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-500">
-                {selectedProduct?.unit ?? "—"}
+                {selectedItem?.unit ?? "—"}
               </div>
 
               {/* Rate */}
@@ -493,7 +516,7 @@ const PurchaseInvoicePage = () => {
       {/* Add Line */}
       <div className="px-4 pb-4">
         <Button type="button" variant="secondary" onClick={addLine}>
-          + Add Product Line
+          + Add Purchase Line
         </Button>
       </div>
     </div>

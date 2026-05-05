@@ -17,7 +17,7 @@ const schema = z.object({
   date: z.string().min(1, "Date is required"),
   warehouseId: z.string().uuid("warehouseId must be a valid UUID"),
   productId: z.string().uuid("productId must be a valid UUID"),
-  quantity: z.coerce.number().refine((value) => value !== 0, "Quantity cannot be 0"),
+  quantity: z.coerce.number().positive("Quantity must be greater than 0"),
 });
 
 const defaultValues = {
@@ -29,6 +29,11 @@ const defaultValues = {
 
 const selectClassName =
   "w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100";
+
+const hasMaterialShortage = (preview) =>
+  (preview?.material_requirements || []).some(
+    (item) => Number(item.required_quantity) > Number(item.available_quantity)
+  );
 
 const ProductionPage = () => {
   const [records, setRecords] = useState([]);
@@ -42,10 +47,13 @@ const ProductionPage = () => {
   const [deleteId, setDeleteId] = useState("");
   const [warehouses, setWarehouses] = useState([]);
   const [products, setProducts] = useState([]);
+  const [preview, setPreview] = useState(null);
   const limit = 10;
   const toast = useToast();
   const form = useForm({ resolver: zodResolver(schema), defaultValues });
   const selectedProductId = form.watch("productId");
+  const selectedWarehouseId = form.watch("warehouseId");
+  const selectedQuantity = form.watch("quantity");
 
   const load = async (nextPage = page, nextSearch = search) => {
     setLoading(true);
@@ -84,7 +92,12 @@ const ProductionPage = () => {
         productService.list({ page: 1, limit: 100, search: "" }),
       ]);
       setWarehouses(warehouseResponse.data || []);
-      setProducts(productResponse.data || []);
+      const assemblyProducts = (productResponse.data || []).filter(
+        (item) =>
+          item.product_type === "ASSEMBLY_PRODUCT" ||
+          item.product_type === "MANUFACTURED"
+      );
+      setProducts(assemblyProducts);
     } catch {
       toast.error("Failed to load warehouse and product dropdown data");
     } finally {
@@ -96,6 +109,20 @@ const ProductionPage = () => {
     load(1, "");
     loadOptions();
   }, []);
+
+  useEffect(() => {
+    const warehouseId = selectedWarehouseId;
+    const productId = selectedProductId;
+    const quantity = Number(selectedQuantity);
+    if (!warehouseId || !productId || !quantity || quantity <= 0) {
+      setPreview(null);
+      return;
+    }
+    productionService
+      .preview({ warehouseId, productId, quantity })
+      .then((data) => setPreview(data))
+      .catch(() => setPreview(null));
+  }, [selectedWarehouseId, selectedProductId, selectedQuantity]);
 
   const onSubmit = form.handleSubmit(async (values) => {
     try {
@@ -147,6 +174,7 @@ const ProductionPage = () => {
     editingRecord && editingRecord.productId === selectedProductId
       ? Number(editingRecord.previousAvailability || 0)
       : currentAvailability;
+  const materialShortage = hasMaterialShortage(preview);
 
   return (
     <section className="space-y-6">
@@ -166,10 +194,10 @@ const ProductionPage = () => {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h2 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900">
-              Production
+              Assembly Manufacturing
             </h2>
             <p className="mt-2 text-sm text-slate-500">
-              Use positive quantities to stock up finished goods and negative quantities to stock down.
+              Select what you want to make, review the saved assembly formula, then enter production quantity.
             </p>
           </div>
           <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
@@ -211,10 +239,10 @@ const ProductionPage = () => {
 
           <div className="space-y-2">
             <label className="block text-sm font-semibold text-slate-700">
-              Product <span className="text-rose-500">*</span>
+              What do you want to make? <span className="text-rose-500">*</span>
             </label>
             <select className={selectClassName} {...form.register("productId")} disabled={loadingOptions}>
-              <option value="">Select product</option>
+              <option value="">Select assembly product</option>
               {products.map((item) => (
                 <option key={item.id} value={item.id}>
                   {item.name}
@@ -227,27 +255,32 @@ const ProductionPage = () => {
               </p>
             )}
             <p className="text-xs font-medium text-slate-500">
-              Previous available stock: {formatDecimal(previousAvailabilityHint)}
+              Current finished goods stock: {formatDecimal(preview?.current_finished_stock ?? previousAvailabilityHint)}
             </p>
           </div>
 
           <FormInput
-            label="Quantity Change"
+            label="How many finished goods do you want to make?"
             required
             type="number"
             step="0.01"
-            placeholder="Use positive or negative quantity"
+            placeholder="Enter quantity to manufacture"
             error={form.formState.errors.quantity?.message}
             {...form.register("quantity")}
           />
           <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-600 xl:col-span-2">
-            Positive quantity increases finished stock. Negative quantity reduces finished stock.
+            This quantity means the finished goods you want to make. Raw material stock will be deducted automatically from the saved assembly formula.
           </div>
 
           <div className="flex flex-col gap-3 xl:justify-end">
-            <Button className="w-full" type="submit">
-              {editingId ? "Update" : "Create"}
+            <Button className="w-full" type="submit" disabled={Boolean(preview && materialShortage)}>
+              {editingId ? "Update Production" : "Save Production"}
             </Button>
+            {preview && materialShortage && (
+              <p className="text-xs font-semibold text-rose-600">
+                Cannot save: one or more raw materials are short.
+              </p>
+            )}
             {editingId && (
               <Button
                 type="button"
@@ -264,6 +297,185 @@ const ProductionPage = () => {
           </div>
         </form>
       </Card>
+
+      {selectedProduct && (
+        <Card>
+          <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
+                Auto-loaded Assembly Details
+              </p>
+              <h3 className="mt-1 text-xl font-extrabold text-slate-900">{selectedProduct.name}</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                Formula and cost are loaded from the saved assembly product setup.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-right">
+              <p className="text-xs uppercase tracking-wide text-blue-600">Cost Per Finished Unit</p>
+              <p className="mt-1 text-xl font-extrabold text-blue-900">
+                {formatDecimal(selectedProduct.net_amount)}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <p className="text-xs uppercase tracking-wide text-slate-400">Moulding Charge</p>
+              <p className="mt-1 text-sm font-semibold text-slate-900">
+                {formatDecimal(selectedProduct.moulding_charges)}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <p className="text-xs uppercase tracking-wide text-slate-400">Labour Charge</p>
+              <p className="mt-1 text-sm font-semibold text-slate-900">
+                {formatDecimal(selectedProduct.labour_charges)}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <p className="text-xs uppercase tracking-wide text-slate-400">Packaging Charge</p>
+              <p className="mt-1 text-sm font-semibold text-slate-900">
+                {formatDecimal(selectedProduct.packaging_cost)}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full min-w-[720px] text-sm">
+              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-4 py-3">Raw Material Used</th>
+                  <th className="px-4 py-3">UOM</th>
+                  <th className="px-4 py-3">Quantity Per Unit</th>
+                  <th className="px-4 py-3">Rate</th>
+                  <th className="px-4 py-3">Cost Per Unit</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(selectedProduct.materials || []).map((material) => (
+                  <tr key={material.id || material.raw_material_id} className="border-t border-slate-100">
+                    <td className="px-4 py-3 font-semibold text-slate-800">
+                      {material.raw_material_name || "Raw material"}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">{material.uom_name || "-"}</td>
+                    <td className="px-4 py-3 text-slate-600">{formatDecimal(material.quantity)}</td>
+                    <td className="px-4 py-3 text-slate-600">{formatDecimal(material.rate)}</td>
+                    <td className="px-4 py-3 text-slate-600">{formatDecimal(material.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {preview && (
+        <Card>
+            <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
+                  Auto Calculation
+                </p>
+                <h3 className="mt-1 text-base font-semibold text-slate-800">
+                  Raw material consumption and finished goods value
+                </h3>
+                <p className="text-sm text-slate-500">
+                  {preview.product_name} {preview.uom ? `| UOM: ${preview.uom}` : ""}
+                </p>
+                {preview.inventory_account && (
+                  <p className="text-sm text-slate-500">Inventory COA: {preview.inventory_account}</p>
+                )}
+              </div>
+              <div className="text-sm text-slate-600">
+                Finished goods value to add: <span className="font-semibold">{formatDecimal(preview.total_value)}</span>
+              </div>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-xs uppercase tracking-wide text-slate-400">Cost Per Unit</p>
+                <p className="mt-1 text-base font-bold text-slate-900">{formatDecimal(preview.cost_per_unit)}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-xs uppercase tracking-wide text-slate-400">Production Qty</p>
+                <p className="mt-1 text-base font-bold text-slate-900">{formatDecimal(preview.production_quantity)}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-xs uppercase tracking-wide text-slate-400">Current FG Stock</p>
+                <p className="mt-1 text-base font-bold text-slate-900">{formatDecimal(preview.current_finished_stock)}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-xs uppercase tracking-wide text-slate-400">Projected FG Stock</p>
+                <p className="mt-1 text-base font-bold text-slate-900">{formatDecimal(preview.projected_finished_stock)}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-xs uppercase tracking-wide text-slate-400">Raw Material Cost</p>
+                <p className="mt-1 text-base font-bold text-slate-900">{formatDecimal(preview.cost_breakdown?.raw_material_cost)}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-900 bg-slate-900 px-4 py-3 text-white">
+                <p className="text-xs uppercase tracking-wide text-slate-300">Finished Goods Value</p>
+                <p className="mt-1 text-base font-bold">{formatDecimal(preview.total_value)}</p>
+              </div>
+            </div>
+
+            <div className="mt-3 grid gap-3 md:grid-cols-3">
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                <p className="text-xs uppercase tracking-wide text-slate-400">Moulding</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">
+                  {formatDecimal(preview.cost_breakdown?.moulding_charges)}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                <p className="text-xs uppercase tracking-wide text-slate-400">Labour</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">
+                  {formatDecimal(preview.cost_breakdown?.labour_charges)}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                <p className="text-xs uppercase tracking-wide text-slate-400">Packaging</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">
+                  {formatDecimal(preview.cost_breakdown?.packaging_cost)}
+                </p>
+              </div>
+            </div>
+
+            <p className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              Producing {formatDecimal(preview.production_quantity)} finished goods will increase finished stock
+              from {formatDecimal(preview.current_finished_stock)} to {formatDecimal(preview.projected_finished_stock)}.
+              The raw material quantities below will be deducted from inventory.
+            </p>
+
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full min-w-[680px] text-xs">
+                <thead className="bg-slate-50 text-left text-slate-600">
+                  <tr>
+                    <th className="px-3 py-2">Raw Material</th>
+                    <th className="px-3 py-2">UOM</th>
+                    <th className="px-3 py-2">Qty/Unit</th>
+                    <th className="px-3 py-2">Required Qty</th>
+                    <th className="px-3 py-2">Available Qty</th>
+                    <th className="px-3 py-2">Status</th>
+                    <th className="px-3 py-2">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(preview.material_requirements || []).map((item) => (
+                    <tr key={item.raw_material_id} className="border-t border-slate-100">
+                      <td className="px-3 py-2 text-slate-800">{item.raw_material_name}</td>
+                      <td className="px-3 py-2 text-slate-600">{item.uom || "-"}</td>
+                      <td className="px-3 py-2 text-slate-600">{formatDecimal(item.quantity_per_unit)}</td>
+                      <td className="px-3 py-2 text-slate-600">{formatDecimal(item.required_quantity)}</td>
+                      <td className="px-3 py-2 text-slate-600">{formatDecimal(item.available_quantity)}</td>
+                      <td className={`px-3 py-2 font-semibold ${Number(item.available_quantity) >= Number(item.required_quantity) ? "text-emerald-700" : "text-rose-700"}`}>
+                        {Number(item.available_quantity) >= Number(item.required_quantity) ? "Enough" : "Short"}
+                      </td>
+                      <td className="px-3 py-2 text-slate-600">{formatDecimal(item.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+        </Card>
+      )}
 
       <StateView loading={loading} error={error} isEmpty={!loading && !error && records.length === 0} emptyMessage="No production entries found">
         <Card className="overflow-hidden p-0">

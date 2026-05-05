@@ -14,8 +14,12 @@ const mapInvoice = (invoice) => ({
   balanceAmount: invoice.balance_amount ?? invoice.balanceAmount ?? 0,
   lines: (invoice.lines || []).map((line) => ({
     ...line,
+    itemType: line.item_type || line.itemType || "FINISHED_GOOD",
     productId: line.product?.id || line.product_id || "",
     productName: line.product?.name || "",
+    rawMaterialId: line.raw_material?.id || line.raw_material_id || "",
+    rawMaterialName: line.raw_material?.name || "",
+    uomName: line.uom_name || line.uomName || "",
     availableQuantity: line.available_quantity ?? line.availableQuantity ?? "0.00",
   })),
 });

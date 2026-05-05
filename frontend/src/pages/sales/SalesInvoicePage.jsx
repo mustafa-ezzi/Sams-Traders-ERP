@@ -338,9 +338,7 @@ const SalesInvoicePage = () => {
             <h2 className="text-xl font-bold text-slate-900">
               {editingId ? "Edit Sales Invoice" : "Create Sales Invoice"}
             </h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Record customer sales and deduct finished goods from warehouse stock.
-            </p>
+            
           </div>
           {editingId ? (
             <Button variant="secondary" onClick={resetForm}>

@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from decimal import Decimal
 from django.utils.timezone import now
 from accounts.models import Account
 from .models import (
@@ -109,16 +110,50 @@ class UnitSerializer(serializers.ModelSerializer):
         fields = "__all__"
         read_only_fields = ["tenant_id"]
 
+    def validate_base_quantity(self, value):
+        if value is None or value <= 0:
+            raise serializers.ValidationError("Base quantity must be greater than 0.")
+        return value
+
+    def validate_breakdown_quantity(self, value):
+        if value is None or value <= 0:
+            raise serializers.ValidationError("Breakdown quantity must be greater than 0.")
+        return value
+
+    def validate(self, attrs):
+        breakdown_unit = attrs.get(
+            "breakdown_unit",
+            getattr(self.instance, "breakdown_unit", ""),
+        )
+        if not str(breakdown_unit or "").strip():
+            raise serializers.ValidationError(
+                {"breakdown_unit": "Breakdown unit is required (for example: Gram, ML, PCS)."}
+            )
+        return attrs
+
 
 class ProductMaterialSerializer(serializers.ModelSerializer):
     raw_material_id = serializers.PrimaryKeyRelatedField(
         source="raw_material", queryset=RawMaterial.objects.all()
     )
+    uom_id = serializers.PrimaryKeyRelatedField(
+        source="uom", queryset=Unit.objects.all(), allow_null=True, required=False
+    )
     raw_material_name = serializers.ReadOnlyField(source="raw_material.name")
+    uom_name = serializers.ReadOnlyField(source="uom.name")
 
     class Meta:
         model = ProductMaterial
-        fields = ["id", "raw_material_id", "raw_material_name", "quantity", "rate", "amount"]
+        fields = [
+            "id",
+            "raw_material_id",
+            "raw_material_name",
+            "uom_id",
+            "uom_name",
+            "quantity",
+            "rate",
+            "amount",
+        ]
         read_only_fields = ["id", "amount"]
 
     def validate(self, data):
@@ -145,7 +180,12 @@ class ProductSerializer(serializers.ModelSerializer):
             "id",
             "name",
             "product_type",
+            "direct_price",
+            "moulding_charges",
+            "labour_charges",
             "packaging_cost",
+            "use_calculated_cost",
+            "confirmed_unit_cost",
             "net_amount",
             "category",
             "unit",
@@ -163,14 +203,43 @@ class ProductSerializer(serializers.ModelSerializer):
         category = data.get("category", getattr(self.instance, "category", None))
         unit = data.get("unit", getattr(self.instance, "unit", None))
 
-        if product_type == "READY_MADE" and materials:
+        normalized_product_type = (
+            "ASSEMBLY_PRODUCT" if product_type in {"MANUFACTURED"} else
+            "FINISHED_GOOD" if product_type in {"READY_MADE"} else product_type
+        )
+
+        if normalized_product_type == "RAW_MATERIAL":
             raise serializers.ValidationError(
-                "READY_MADE products cannot have raw material line items"
+                "Raw materials should be created from the raw material module."
             )
-        if product_type == "MANUFACTURED" and not materials:
+
+        if normalized_product_type == "FINISHED_GOOD" and materials:
             raise serializers.ValidationError(
-                "MANUFACTURED products must include at least one raw material line item"
+                "Finished goods cannot have raw material line items"
             )
+        if normalized_product_type == "ASSEMBLY_PRODUCT" and not materials:
+            raise serializers.ValidationError(
+                "Assembly products must include at least one raw material line item"
+            )
+
+        if normalized_product_type == "FINISHED_GOOD" and data.get("direct_price", 0) <= 0:
+            raise serializers.ValidationError(
+                {"direct_price": "Direct finished goods must include per-unit price."}
+            )
+
+        use_calculated_cost = data.get(
+            "use_calculated_cost",
+            getattr(self.instance, "use_calculated_cost", True),
+        )
+        confirmed_unit_cost = data.get(
+            "confirmed_unit_cost",
+            getattr(self.instance, "confirmed_unit_cost", 0),
+        )
+        if normalized_product_type == "ASSEMBLY_PRODUCT" and not use_calculated_cost:
+            if confirmed_unit_cost is None or Decimal(str(confirmed_unit_cost)) <= 0:
+                raise serializers.ValidationError(
+                    {"confirmed_unit_cost": "Provide confirmed unit cost when calculated cost is disabled."}
+                )
         material_ids = [m["raw_material"].id for m in materials]
         if len(set(material_ids)) != len(material_ids):
             raise serializers.ValidationError("Duplicate raw materials are not allowed")
@@ -207,6 +276,7 @@ class ProductSerializer(serializers.ModelSerializer):
             [Account.AccountGroup.REVENUE],
         )
 
+        data["product_type"] = normalized_product_type
         return data
 
     def create(self, validated_data):
@@ -215,20 +285,37 @@ class ProductSerializer(serializers.ModelSerializer):
 
         product = Product.objects.create(tenant_id=tenant_id, **validated_data)
 
-        net_amount = product.packaging_cost or 0
+        raw_material_total = Decimal("0.00")
 
         for material in materials_data:
             material_obj = ProductMaterial.objects.create(
                 tenant_id=tenant_id,
                 product=product,  # ✅ FIX
                 raw_material=material["raw_material"],
+                uom=material.get("uom"),
                 quantity=material["quantity"],
                 rate=material["rate"],
                 amount=material["amount"],
             )
-            net_amount += material_obj.amount
+            raw_material_total += Decimal(str(material_obj.amount or 0))
 
-        product.net_amount = round(net_amount, 2)
+        if product.product_type == "ASSEMBLY_PRODUCT":
+            calculated = (
+                raw_material_total
+                + Decimal(str(product.packaging_cost or 0))
+                + Decimal(str(product.moulding_charges or 0))
+                + Decimal(str(product.labour_charges or 0))
+            )
+            final_cost = calculated if product.use_calculated_cost else Decimal(
+                str(product.confirmed_unit_cost or 0)
+            )
+            product.confirmed_unit_cost = final_cost
+            product.net_amount = round(final_cost, 2)
+        elif product.product_type == "FINISHED_GOOD":
+            product.confirmed_unit_cost = Decimal(str(product.direct_price or 0))
+            product.net_amount = round(Decimal(str(product.direct_price or 0)), 2)
+        else:
+            product.net_amount = round(raw_material_total, 2)
         product.save()
 
         return product
@@ -245,8 +332,21 @@ class ProductSerializer(serializers.ModelSerializer):
         instance.product_type = validated_data.get(
             "product_type", instance.product_type
         )
+        instance.direct_price = validated_data.get("direct_price", instance.direct_price)
+        instance.moulding_charges = validated_data.get(
+            "moulding_charges", instance.moulding_charges
+        )
+        instance.labour_charges = validated_data.get(
+            "labour_charges", instance.labour_charges
+        )
         instance.packaging_cost = validated_data.get(
             "packaging_cost", instance.packaging_cost
+        )
+        instance.use_calculated_cost = validated_data.get(
+            "use_calculated_cost", instance.use_calculated_cost
+        )
+        instance.confirmed_unit_cost = validated_data.get(
+            "confirmed_unit_cost", instance.confirmed_unit_cost
         )
         instance.category = validated_data.get("category", instance.category)
         instance.unit = validated_data.get("unit", instance.unit)
@@ -257,7 +357,7 @@ class ProductSerializer(serializers.ModelSerializer):
         instance.revenue_account = validated_data.get(
             "revenue_account", instance.revenue_account
         )
-        net_amount = instance.packaging_cost
+        raw_material_total = Decimal("0.00")
         instance.save()
 
         for material in materials_data:
@@ -265,13 +365,30 @@ class ProductSerializer(serializers.ModelSerializer):
                 tenant_id=tenant_id,
                 product=instance,
                 raw_material=material.get("raw_material"),
+                uom=material.get("uom"),
                 quantity=material.get("quantity"),
                 rate=material.get("rate"),
                 amount=material.get("amount"),
             )
-            net_amount += material_obj.amount
+            raw_material_total += Decimal(str(material_obj.amount or 0))
 
-        instance.net_amount = round(net_amount, 2)
+        if instance.product_type == "ASSEMBLY_PRODUCT":
+            calculated = (
+                raw_material_total
+                + Decimal(str(instance.packaging_cost or 0))
+                + Decimal(str(instance.moulding_charges or 0))
+                + Decimal(str(instance.labour_charges or 0))
+            )
+            final_cost = calculated if instance.use_calculated_cost else Decimal(
+                str(instance.confirmed_unit_cost or 0)
+            )
+            instance.confirmed_unit_cost = final_cost
+            instance.net_amount = round(final_cost, 2)
+        elif instance.product_type == "FINISHED_GOOD":
+            instance.confirmed_unit_cost = Decimal(str(instance.direct_price or 0))
+            instance.net_amount = round(Decimal(str(instance.direct_price or 0)), 2)
+        else:
+            instance.net_amount = round(raw_material_total, 2)
         instance.save()
         return instance
 
@@ -360,9 +477,16 @@ class RawMaterialSerializer(serializers.ModelSerializer):
         model = RawMaterial
         fields = "__all__"
         read_only_fields = ["tenant_id", "created_at", "updated_at", "deleted_at"]
+        extra_kwargs = {"selling_unit": {"required": False}, "selling_price": {"required": False}}
 
     def validate(self, attrs):
         tenant_id = self.context["request"].user.tenant_id
+        if "purchase_price" in attrs:
+            attrs["purchase_price"] = attrs.get("purchase_price") or 0
+        purchase_unit = attrs.get("purchase_unit") or getattr(self.instance, "purchase_unit", None)
+        if purchase_unit:
+            attrs["selling_unit"] = purchase_unit
+        attrs["selling_price"] = 0
         validate_account_mapping(
             attrs.get("inventory_account"),
             tenant_id,
@@ -382,7 +506,6 @@ class RawMaterialDetailedSerializer(serializers.ModelSerializer):
     category = serializers.SerializerMethodField()
     size = serializers.SerializerMethodField()
     purchase_unit = serializers.SerializerMethodField()
-    selling_unit = serializers.SerializerMethodField()
 
     class Meta:
         model = RawMaterial
@@ -397,10 +520,8 @@ class RawMaterialDetailedSerializer(serializers.ModelSerializer):
             "category",
             "size",
             "purchase_unit",
-            "selling_unit",
             "inventory_account",
             "quantity",
-            "selling_price",
             "purchase_price",
         ]
 
@@ -415,10 +536,6 @@ class RawMaterialDetailedSerializer(serializers.ModelSerializer):
 
     def get_purchase_unit(self, obj):
         return {"id": str(obj.purchase_unit.id), "name": obj.purchase_unit.name}
-
-    def get_selling_unit(self, obj):
-        return {"id": str(obj.selling_unit.id), "name": obj.selling_unit.name}
-
 
 class OpeningStockSerializer(serializers.ModelSerializer):
     warehouse = OpeningStockDetailedSerializer(read_only=True)
@@ -632,10 +749,15 @@ class ProductionSerializer(serializers.ModelSerializer):
 
     def validate_product_id(self, value):
         tenant_id = self.context["request"].user.tenant_id
-        if not Product.objects.filter(
+        product = Product.objects.filter(
             id=value, tenant_id=tenant_id, deleted_at__isnull=True
-        ).exists():
+        ).first()
+        if not product:
             raise serializers.ValidationError("Product not found for this tenant")
+        if product.product_type not in {"ASSEMBLY_PRODUCT", "MANUFACTURED"}:
+            raise serializers.ValidationError(
+                "Only assembly products can be used in production entries."
+            )
         return value
 
     def validate_quantity(self, value):

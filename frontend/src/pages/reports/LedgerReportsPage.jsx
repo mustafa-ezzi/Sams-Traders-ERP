@@ -261,9 +261,7 @@ const LedgerReportsPage = () => {
       <Card className="space-y-6">
         <div>
           <h2 className="text-xl font-bold text-slate-900">Ledger Reports</h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Select an account head, choose the matching COA or party ledger, and generate debit and credit activity for the date range.
-          </p>
+         
         </div>
 
         <form className="space-y-5" onSubmit={handleGenerate}>

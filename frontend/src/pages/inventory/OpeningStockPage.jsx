@@ -165,9 +165,7 @@ const OpeningStockPage = () => {
             <h2 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900">
               Opening Stock
             </h2>
-            <p className="mt-2 text-sm text-slate-500">
-              Opening stock updates raw material inventory automatically.
-            </p>
+            
           </div>
           <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
             <input

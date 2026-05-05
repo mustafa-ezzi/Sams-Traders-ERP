@@ -37,7 +37,7 @@ from .serializers import (
     WarehouseSerializer,
 )
 from .pagination import StandardResultsSetPagination
-from .services import sync_product_stock_quantity
+from .services import sync_product_stock_quantity, sync_raw_material_stock_quantity
 from rest_framework import filters
 from rest_framework.exceptions import ValidationError
 
@@ -167,7 +167,7 @@ class RawMaterialViewSet(ModelViewSet):
         tenant_id = self.request.user.tenant_id
         qs = RawMaterial.objects.filter(
             tenant_id=tenant_id, deleted_at__isnull=True
-        ).select_related("brand", "category", "size", "purchase_unit", "selling_unit")
+        ).select_related("brand", "category", "size", "purchase_unit")
         qs = qs.annotate(
             quantity=Coalesce(
                 Sum(
@@ -187,7 +187,6 @@ class RawMaterialViewSet(ModelViewSet):
         category_id = self.request.query_params.get("category_id")
         size_id = self.request.query_params.get("size_id")
         purchase_unit_id = self.request.query_params.get("purchase_unit_id")
-        selling_unit_id = self.request.query_params.get("selling_unit_id")
 
         if brand_id:
             qs = qs.filter(brand_id=brand_id)
@@ -197,9 +196,6 @@ class RawMaterialViewSet(ModelViewSet):
             qs = qs.filter(size_id=size_id)
         if purchase_unit_id:
             qs = qs.filter(purchase_unit_id=purchase_unit_id)
-        if selling_unit_id:
-            qs = qs.filter(selling_unit_id=selling_unit_id)
-
         return qs
 
     def perform_create(self, serializer):
@@ -295,7 +291,6 @@ class OpeningStockViewSet(viewsets.ModelViewSet):
                 "raw_material__category",
                 "raw_material__size",
                 "raw_material__purchase_unit",
-                "raw_material__selling_unit",
             )
             .order_by("-date", "-created_at")
         )
@@ -323,47 +318,7 @@ class OpeningStockViewSet(viewsets.ModelViewSet):
 
     def _sync_stock_quantity(self, tenant_id, warehouse_id, raw_material_id):
         """Sync warehouse raw material stock from opening stock minus production consumption."""
-        opening_total = (
-            OpeningStock.objects.filter(
-                tenant_id=tenant_id,
-                warehouse_id=warehouse_id,
-                raw_material_id=raw_material_id,
-                deleted_at__isnull=True,
-            ).aggregate(total=Sum("quantity"))["total"]
-            or 0
-        )
-        consumption_total = (
-            ProductMaterial.objects.filter(
-                tenant_id=tenant_id,
-                raw_material_id=raw_material_id,
-                deleted_at__isnull=True,
-                product__deleted_at__isnull=True,
-                product__product_type="MANUFACTURED",
-                product__production__tenant_id=tenant_id,
-                product__production__warehouse_id=warehouse_id,
-                product__production__deleted_at__isnull=True,
-            ).aggregate(
-                total=Sum(
-                    ExpressionWrapper(
-                        F("quantity") * F("product__production__quantity"),
-                        output_field=DecimalField(max_digits=18, decimal_places=4),
-                    )
-                )
-            )["total"]
-            or 0
-        )
-        total_quantity = opening_total - consumption_total
-
-        stock, _ = Stock.objects.get_or_create(
-            tenant_id=tenant_id,
-            warehouse_id=warehouse_id,
-            raw_material_id=raw_material_id,
-            deleted_at__isnull=True,
-            defaults={"quantity": total_quantity},
-        )
-        stock.quantity = total_quantity
-        stock.deleted_at = None
-        stock.save(update_fields=["quantity", "deleted_at", "updated_at"])
+        sync_raw_material_stock_quantity(tenant_id, warehouse_id, raw_material_id)
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
@@ -533,8 +488,21 @@ class ProductionViewSet(viewsets.ModelViewSet):
     def _sync_product_stock_quantity(self, tenant_id, warehouse_id, product_id):
         sync_product_stock_quantity(tenant_id, warehouse_id, product_id)
 
+    def _get_finished_stock_quantity(self, tenant_id, warehouse_id, product_id):
+        return (
+            ProductStock.objects.filter(
+                tenant_id=tenant_id,
+                warehouse_id=warehouse_id,
+                product_id=product_id,
+                deleted_at__isnull=True,
+            )
+            .values_list("quantity", flat=True)
+            .first()
+            or Decimal("0")
+        )
+
     def _get_material_requirements(self, product, quantity):
-        if product.product_type != "MANUFACTURED":
+        if product.product_type not in {"ASSEMBLY_PRODUCT", "MANUFACTURED"}:
             return {}
 
         requirements = {}
@@ -544,7 +512,7 @@ class ProductionViewSet(viewsets.ModelViewSet):
         return requirements
 
     def _validate_material_availability(self, tenant_id, warehouse_id, product, quantity, instance=None):
-        if product.product_type != "MANUFACTURED":
+        if product.product_type not in {"ASSEMBLY_PRODUCT", "MANUFACTURED"}:
             return
 
         materials = product.materials.filter(deleted_at__isnull=True)
@@ -590,7 +558,7 @@ class ProductionViewSet(viewsets.ModelViewSet):
                 )
 
     def _sync_related_raw_material_stock(self, tenant_id, warehouse_id, product):
-        if not product or product.product_type != "MANUFACTURED":
+        if not product or product.product_type not in {"ASSEMBLY_PRODUCT", "MANUFACTURED"}:
             return
 
         raw_material_ids = list(
@@ -659,6 +627,104 @@ class ProductionViewSet(viewsets.ModelViewSet):
                 "message": "Production created successfully",
             },
             status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=False, methods=["post"], url_path="preview")
+    def preview(self, request):
+        tenant_id = request.user.tenant_id
+        warehouse_id = request.data.get("warehouse_id")
+        product_id = request.data.get("product_id")
+        quantity = request.data.get("quantity")
+
+        if not warehouse_id or not product_id:
+            raise ValidationError("warehouse_id and product_id are required.")
+
+        try:
+            quantity_decimal = Decimal(str(quantity or 0))
+        except Exception as exc:
+            raise ValidationError("quantity must be a valid number.") from exc
+
+        if quantity_decimal <= 0:
+            raise ValidationError("quantity must be greater than 0.")
+
+        product = Product.objects.filter(
+            id=product_id, tenant_id=tenant_id, deleted_at__isnull=True
+        ).prefetch_related("materials__raw_material", "materials__uom").first()
+        if not product:
+            raise ValidationError("Product not found for this tenant.")
+        if product.product_type not in {"ASSEMBLY_PRODUCT", "MANUFACTURED"}:
+            raise ValidationError("Only assembly products support production preview.")
+
+        materials = product.materials.filter(deleted_at__isnull=True)
+        if not materials.exists():
+            raise ValidationError("Assembly product has no active raw material lines.")
+
+        rows = []
+        for material in materials:
+            required_qty = Decimal(str(material.quantity or 0)) * quantity_decimal
+            current_stock = (
+                Stock.objects.filter(
+                    tenant_id=tenant_id,
+                    warehouse_id=warehouse_id,
+                    raw_material_id=material.raw_material_id,
+                    deleted_at__isnull=True,
+                )
+                .values_list("quantity", flat=True)
+                .first()
+                or Decimal("0")
+            )
+            rows.append(
+                {
+                    "raw_material_id": str(material.raw_material_id),
+                    "raw_material_name": material.raw_material.name,
+                    "uom": material.uom.name if material.uom else "",
+                    "quantity_per_unit": material.quantity,
+                    "required_quantity": round(required_qty, 4),
+                    "available_quantity": round(Decimal(str(current_stock)), 4),
+                    "rate": material.rate,
+                    "amount": round(Decimal(str(material.amount or 0)) * quantity_decimal, 2),
+                }
+            )
+
+        unit_cost = Decimal(str(product.net_amount or 0))
+        total_value = unit_cost * quantity_decimal
+        raw_material_cost = sum(
+            Decimal(str(material.amount or 0)) for material in materials
+        )
+        current_finished_stock = self._get_finished_stock_quantity(
+            tenant_id,
+            warehouse_id,
+            product.id,
+        )
+        projected_finished_stock = Decimal(str(current_finished_stock)) + quantity_decimal
+        inventory_account = getattr(product, "inventory_account", None)
+        return Response(
+            {
+                "data": {
+                    "product_id": str(product.id),
+                    "product_name": product.name,
+                    "product_type": product.product_type,
+                    "uom": product.unit.name if product.unit else "",
+                    "inventory_account": (
+                        f"{inventory_account.code} - {inventory_account.name}"
+                        if inventory_account
+                        else ""
+                    ),
+                    "current_finished_stock": round(Decimal(str(current_finished_stock)), 2),
+                    "projected_finished_stock": round(projected_finished_stock, 2),
+                    "cost_breakdown": {
+                        "raw_material_cost": round(raw_material_cost, 2),
+                        "moulding_charges": round(Decimal(str(product.moulding_charges or 0)), 2),
+                        "labour_charges": round(Decimal(str(product.labour_charges or 0)), 2),
+                        "packaging_cost": round(Decimal(str(product.packaging_cost or 0)), 2),
+                        "confirmed_unit_cost": round(Decimal(str(product.confirmed_unit_cost or 0)), 2),
+                    },
+                    "cost_per_unit": round(unit_cost, 2),
+                    "production_quantity": quantity_decimal,
+                    "total_value": round(total_value, 2),
+                    "material_requirements": rows,
+                }
+            }
         )
 
     def update(self, request, *args, **kwargs):

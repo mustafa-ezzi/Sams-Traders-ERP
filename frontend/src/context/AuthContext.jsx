@@ -21,11 +21,19 @@ const isTokenExpired = (token) => {
 };
 
 const storedToken = localStorage.getItem("token") || "";
-const storedTenantId = localStorage.getItem("tenantId") || "SAMS_TRADERS";
+const storedTenantId = localStorage.getItem("tenantId") || "";
+const storedAllowedDimensions = (() => {
+  try {
+    return JSON.parse(localStorage.getItem("allowedDimensions") || "[]");
+  } catch {
+    return [];
+  }
+})();
 
 const initialState = {
   token: storedToken,
   tenantId: storedTenantId,
+  allowedDimensions: storedAllowedDimensions,
 };
 
 const reducer = (state, action) => {
@@ -33,15 +41,23 @@ const reducer = (state, action) => {
     case "LOGIN":
       localStorage.setItem("token", action.payload.token);
       localStorage.setItem("tenantId", action.payload.tenantId);
+      localStorage.setItem(
+        "allowedDimensions",
+        JSON.stringify(action.payload.allowedDimensions || [])
+      );
       return { ...state, ...action.payload };
     case "LOGOUT":
       localStorage.removeItem("token");
       localStorage.removeItem("refreshToken");
       localStorage.removeItem("tenantId");
-      return { ...state, token: "", tenantId: "SAMS_TRADERS" };
+      localStorage.removeItem("allowedDimensions");
+      return { ...state, token: "", tenantId: "", allowedDimensions: [] };
     case "SET_TENANT":
       localStorage.setItem("tenantId", action.payload);
       return { ...state, tenantId: action.payload };
+    case "SET_ALLOWED_DIMENSIONS":
+      localStorage.setItem("allowedDimensions", JSON.stringify(action.payload || []));
+      return { ...state, allowedDimensions: action.payload || [] };
     default:
       return state;
   }
@@ -59,21 +75,25 @@ export const AuthProvider = ({ children }) => {
     () => ({
       token: state.token,
       tenantId: state.tenantId,
+      allowedDimensions: state.allowedDimensions,
       isAuthenticated: !!state.token && !isTokenExpired(state.token),
-      login: (token, tenantId) => {
+      login: (token, tenantId, allowedDimensions = []) => {
         dispatch({
           type: "LOGIN",
           payload: {
             token,
-            tenantId: tenantId || "SAMS_TRADERS",
+            tenantId: tenantId || "",
+            allowedDimensions,
           },
         });
       },
       logout,
       isTokenExpired: (token) => isTokenExpired(token || state.token),
       setTenant: (tenantId) => dispatch({ type: "SET_TENANT", payload: tenantId }),
+      setAllowedDimensions: (items) =>
+        dispatch({ type: "SET_ALLOWED_DIMENSIONS", payload: items || [] }),
     }),
-    [state.token, state.tenantId]
+    [state.token, state.tenantId, state.allowedDimensions]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -20,7 +20,7 @@ const toNumber = (value) => {
 const extractErrorMessage = (error) => {
   const data = error?.response?.data;
 
-  if (!data) {
+  if (!data) {  
     return "Something went wrong";
   }
 
@@ -310,9 +310,7 @@ const PurchaseReturnPage = () => {
             <h2 className="text-xl font-bold text-slate-900">
               {editingId ? "Edit Purchase Return" : "Create Purchase Return"}
             </h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Select a supplier invoice, review sold quantities, and return only the stock still available.
-            </p>
+           
           </div>
           {editingId ? (
             <Button variant="secondary" onClick={resetForm}>

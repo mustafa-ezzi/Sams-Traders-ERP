@@ -5,8 +5,8 @@ from django.utils.timezone import now
 from rest_framework import serializers
 
 from accounts.models import Account
-from inventory.models import Product, ProductStock, Supplier, Warehouse
-from inventory.serializers import ProductDetailedSerializer
+from inventory.models import Product, ProductStock, RawMaterial, Stock, Supplier, Warehouse
+from inventory.serializers import ProductDetailedSerializer, RawMaterialDetailedSerializer
 from purchase.models import (
     PurchaseBankPayment,
     PurchaseInvoice,
@@ -45,15 +45,22 @@ class AccountMiniSerializer(serializers.Serializer):
 
 class PurchaseInvoiceLineSerializer(serializers.ModelSerializer):
     product = ProductDetailedSerializer(read_only=True)
-    product_id = serializers.UUIDField(write_only=True)
+    product_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
+    raw_material = RawMaterialDetailedSerializer(read_only=True)
+    raw_material_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
+    uom_name = serializers.SerializerMethodField()
     available_quantity = serializers.SerializerMethodField()
 
     class Meta:
         model = PurchaseInvoiceLine
         fields = [
             "id",
+            "item_type",
             "product",
             "product_id",
+            "raw_material",
+            "raw_material_id",
+            "uom_name",
             "quantity",
             "rate",
             "amount",
@@ -64,22 +71,58 @@ class PurchaseInvoiceLineSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "amount", "total_amount", "available_quantity"]
 
     def get_available_quantity(self, obj):
-        stock = ProductStock.objects.filter(
-            tenant_id=obj.tenant_id,
-            warehouse_id=obj.invoice.warehouse_id,
-            product_id=obj.product_id,
-            deleted_at__isnull=True,
-        ).first()
+        if obj.item_type == "RAW_MATERIAL":
+            stock = Stock.objects.filter(
+                tenant_id=obj.tenant_id,
+                warehouse_id=obj.invoice.warehouse_id,
+                raw_material_id=obj.raw_material_id,
+                deleted_at__isnull=True,
+            ).first()
+        else:
+            stock = ProductStock.objects.filter(
+                tenant_id=obj.tenant_id,
+                warehouse_id=obj.invoice.warehouse_id,
+                product_id=obj.product_id,
+                deleted_at__isnull=True,
+            ).first()
         return str(stock.quantity if stock else Decimal("0.00"))
 
+    def get_uom_name(self, obj):
+        if obj.uom_id:
+            return obj.uom.name
+        if obj.raw_material_id:
+            return obj.raw_material.purchase_unit.name
+        if obj.product_id and obj.product.unit_id:
+            return obj.product.unit.name
+        return ""
+
     def validate_product_id(self, value):
+        if value is None:
+            return value
         tenant_id = self.context["request"].user.tenant_id
-        if not Product.objects.filter(
+        product = Product.objects.filter(
+            id=value,
+            tenant_id=tenant_id,
+            deleted_at__isnull=True,
+        ).first()
+        if not product:
+            raise serializers.ValidationError("Product not found for this tenant")
+        if product.product_type not in {"FINISHED_GOOD", "READY_MADE"}:
+            raise serializers.ValidationError(
+                "Only direct finished goods can be purchased from this product field."
+            )
+        return value
+
+    def validate_raw_material_id(self, value):
+        if value is None:
+            return value
+        tenant_id = self.context["request"].user.tenant_id
+        if not RawMaterial.objects.filter(
             id=value,
             tenant_id=tenant_id,
             deleted_at__isnull=True,
         ).exists():
-            raise serializers.ValidationError("Product not found for this tenant")
+            raise serializers.ValidationError("Raw material not found for this tenant")
         return value
 
     def validate_quantity(self, value):
@@ -98,6 +141,23 @@ class PurchaseInvoiceLineSerializer(serializers.ModelSerializer):
         return quantize_money(value)
 
     def validate(self, attrs):
+        item_type = attrs.get("item_type", "FINISHED_GOOD")
+        product_id = attrs.get("product_id")
+        raw_material_id = attrs.get("raw_material_id")
+
+        if item_type == "RAW_MATERIAL":
+            if not raw_material_id:
+                raise serializers.ValidationError({"raw_material_id": "Raw material is required."})
+            if product_id:
+                raise serializers.ValidationError({"product_id": "Do not select product for raw material purchase."})
+        elif item_type == "FINISHED_GOOD":
+            if not product_id:
+                raise serializers.ValidationError({"product_id": "Finished good product is required."})
+            if raw_material_id:
+                raise serializers.ValidationError({"raw_material_id": "Do not select raw material for finished good purchase."})
+        else:
+            raise serializers.ValidationError({"item_type": "Invalid purchase line type."})
+
         quantity = quantize_money(attrs.get("quantity", 0))
         rate = quantize_money(attrs.get("rate", 0))
         discount = quantize_money(attrs.get("discount", 0))
@@ -108,6 +168,10 @@ class PurchaseInvoiceLineSerializer(serializers.ModelSerializer):
 
         attrs["amount"] = amount
         attrs["total_amount"] = quantize_money(amount - discount)
+        if item_type == "RAW_MATERIAL":
+            attrs["uom_id"] = RawMaterial.objects.only("purchase_unit_id").get(id=raw_material_id).purchase_unit_id
+        elif item_type == "FINISHED_GOOD":
+            attrs["uom_id"] = Product.objects.only("unit_id").get(id=product_id).unit_id
         return attrs
 
 
@@ -199,12 +263,12 @@ class PurchaseInvoiceSerializer(serializers.ModelSerializer):
         gross_amount = Decimal("0.00")
 
         for line in line_items:
-            product_id = str(line["product_id"])
-            if product_id in seen_products:
+            line_key = f"{line['item_type']}:{line.get('product_id') or line.get('raw_material_id')}"
+            if line_key in seen_products:
                 raise serializers.ValidationError(
-                    {"lines": "Each product should appear only once per invoice."}
+                    {"lines": "Each purchase item should appear only once per invoice."}
                 )
-            seen_products.add(product_id)
+            seen_products.add(line_key)
             gross_amount += line["total_amount"]
 
         gross_amount = quantize_money(gross_amount)
@@ -233,7 +297,10 @@ class PurchaseInvoiceSerializer(serializers.ModelSerializer):
             PurchaseInvoiceLine.objects.create(
                 tenant_id=tenant_id,
                 invoice=invoice,
-                product_id=line_data["product_id"],
+                item_type=line_data["item_type"],
+                product_id=line_data.get("product_id"),
+                raw_material_id=line_data.get("raw_material_id"),
+                uom_id=line_data.get("uom_id"),
                 quantity=line_data["quantity"],
                 rate=line_data["rate"],
                 amount=line_data["amount"],

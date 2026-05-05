@@ -216,9 +216,7 @@ const ExpensePage = () => {
             <h2 className="text-xl font-bold text-slate-900">
               {editingId ? "Edit Expense" : "Create Expense"}
             </h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Record a bank-paid expense by selecting the bank COA and expense COA.
-            </p>
+           
           </div>
           {editingId ? (
             <Button variant="secondary" onClick={resetForm}>

@@ -306,9 +306,7 @@ const SalesReturnPage = () => {
             <h2 className="text-xl font-bold text-slate-900">
               {editingId ? "Edit Sales Return" : "Create Sales Return"}
             </h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Select a customer invoice and capture returned products with sold and return quantities.
-            </p>
+          
           </div>
           {editingId ? (
             <Button variant="secondary" onClick={resetForm}>

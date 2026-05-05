@@ -2,7 +2,8 @@ from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 from django.test import TestCase
-from rest_framework.test import APIRequestFactory, force_authenticate
+from rest_framework.test import APIClient, APIRequestFactory, force_authenticate
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from accounts.journal import (
     sync_expense_journal,
@@ -308,6 +309,99 @@ class LedgerReportTests(TestCase):
         self.assertEqual(len(response.data["data"]["rows"]), 1)
         self.assertEqual(response.data["data"]["total_debit"], "500.00")
         self.assertEqual(response.data["data"]["total_credit"], "0.00")
+
+    def test_balance_sheet_report_uses_actual_coa_balances_without_forcing_balance(self):
+        equity_root = Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="3000",
+            name="Equity",
+            account_group=Account.AccountGroup.EQUITY,
+            account_nature=Account.AccountNature.CREDIT,
+            level=1,
+            is_postable=False,
+            is_active=True,
+            sort_order=0,
+        )
+        capital = Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="3100",
+            name="Capital",
+            parent=equity_root,
+            account_group=Account.AccountGroup.EQUITY,
+            account_nature=Account.AccountNature.CREDIT,
+            level=2,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+
+        capital_entry = JournalEntry.objects.create(
+            tenant_id=self.tenant_id,
+            date="2026-04-01",
+            reference="JV-00001",
+            source_type=JournalEntry.SourceType.EXPENSE,
+            source_id="66666666-6666-6666-6666-666666666666",
+            document_type="Journal Voucher",
+            description="Capital introduced",
+        )
+        JournalLine.objects.create(
+            tenant_id=self.tenant_id,
+            journal_entry=capital_entry,
+            account=self.bank,
+            debit=Decimal("1000.00"),
+            credit=Decimal("0.00"),
+        )
+        JournalLine.objects.create(
+            tenant_id=self.tenant_id,
+            journal_entry=capital_entry,
+            account=capital,
+            debit=Decimal("0.00"),
+            credit=Decimal("1000.00"),
+        )
+
+        sales_entry = JournalEntry.objects.create(
+            tenant_id=self.tenant_id,
+            date="2026-04-05",
+            reference="JV-00002",
+            source_type=JournalEntry.SourceType.SALES_INVOICE,
+            source_id="77777777-7777-7777-7777-777777777777",
+            document_type="Sales Invoice",
+            description="Revenue posted",
+        )
+        JournalLine.objects.create(
+            tenant_id=self.tenant_id,
+            journal_entry=sales_entry,
+            account=self.bank,
+            debit=Decimal("500.00"),
+            credit=Decimal("0.00"),
+        )
+        JournalLine.objects.create(
+            tenant_id=self.tenant_id,
+            journal_entry=sales_entry,
+            account=self.revenue,
+            debit=Decimal("0.00"),
+            credit=Decimal("500.00"),
+        )
+
+        request = self.factory.get(
+            "/api/accounts/accounts/balance-sheet-report/",
+            {
+                "tenant_scope": self.tenant_id,
+                "as_of_date": "2026-04-30",
+            },
+        )
+        force_authenticate(request, user=self.user)
+        response = AccountViewSet.as_view({"get": "balance_sheet_report"})(request)
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.data["data"]
+        self.assertEqual(payload["summary"]["total_assets"], "1500.00")
+        self.assertEqual(payload["summary"]["total_liabilities"], "0.00")
+        self.assertEqual(payload["summary"]["total_equity"], "1000.00")
+        self.assertEqual(payload["summary"]["total_liabilities_and_equity"], "1000.00")
+        self.assertEqual(payload["summary"]["unclosed_profit_loss"], "500.00")
+        self.assertEqual(payload["summary"]["difference"], "500.00")
+        self.assertFalse(payload["summary"]["is_balanced"])
 
     def test_customer_party_ledger_report_with_open_dates(self):
         sales_entry = JournalEntry.objects.create(
@@ -1559,3 +1653,37 @@ class ExpenseTests(TestCase):
         self.assertEqual(lines[0].debit, Decimal("1500.00"))
         self.assertEqual(lines[1].account_id, self.bank.id)
         self.assertEqual(lines[1].credit, Decimal("1500.00"))
+
+
+class SaasIsolationTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.dim_a = Dimension.objects.create(code="TENANT_A", name="Tenant A", is_active=True)
+        self.dim_b = Dimension.objects.create(code="TENANT_B", name="Tenant B", is_active=True)
+        self.user = User.objects.create_user(
+            username="tenant-user",
+            email="tenant-user@test.com",
+            password="secret123",
+            tenant_id=self.dim_a.code,
+            tenant_limit=1,
+        )
+        self.user.allowed_dimensions.add(self.dim_a)
+        token = str(RefreshToken.for_user(self.user).access_token)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+
+    def test_rejects_access_to_unassigned_tenant_header(self):
+        response = self.client.get(
+            "/api/accounts/accounts/dashboard-overview/",
+            HTTP_X_TENANT_ID=self.dim_b.code,
+        )
+        self.assertEqual(response.status_code, 401)
+
+    def test_dimension_creation_fails_when_limit_reached(self):
+        response = self.client.post(
+            "/api/accounts/dimensions/",
+            {"name": "Tenant C", "code": "TENANT_C", "is_active": True},
+            format="json",
+            HTTP_X_TENANT_ID=self.dim_a.code,
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("limit", str(response.data).lower())

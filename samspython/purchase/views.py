@@ -16,9 +16,9 @@ from accounts.journal import (
     sync_purchase_return_journal,
 )
 from accounts.models import JournalEntry
-from inventory.models import Product, ProductStock
+from inventory.models import Product, ProductStock, RawMaterial, Stock
 from inventory.pagination import StandardResultsSetPagination
-from inventory.services import sync_product_stock_quantity
+from inventory.services import sync_product_stock_quantity, sync_raw_material_stock_quantity
 from purchase.models import (
     PurchaseBankPayment,
     PurchaseInvoice,
@@ -58,7 +58,7 @@ class PurchaseInvoiceViewSet(viewsets.ModelViewSet):
                     "lines",
                     queryset=PurchaseInvoiceLine.objects.filter(
                         deleted_at__isnull=True,
-                    ).select_related("product"),
+                    ).select_related("product", "product__unit", "raw_material", "raw_material__purchase_unit", "uom"),
                 )
             )
             .order_by("-date", "-created_at")
@@ -67,9 +67,13 @@ class PurchaseInvoiceViewSet(viewsets.ModelViewSet):
     def _get_serializable_invoice(self, invoice_id):
         return self.get_queryset().get(id=invoice_id)
 
-    def _sync_invoice_product_stock(self, invoice):
+    def _sync_invoice_inventory_stock(self, invoice):
         product_ids = list(
-            invoice.lines.filter(deleted_at__isnull=True).values_list("product_id", flat=True).distinct()
+            invoice.lines.filter(
+                deleted_at__isnull=True,
+                item_type="FINISHED_GOOD",
+                product_id__isnull=False,
+            ).values_list("product_id", flat=True).distinct()
         )
         for product_id in product_ids:
             sync_product_stock_quantity(
@@ -77,10 +81,27 @@ class PurchaseInvoiceViewSet(viewsets.ModelViewSet):
                 invoice.warehouse_id,
                 product_id,
             )
+        raw_material_ids = list(
+            invoice.lines.filter(
+                deleted_at__isnull=True,
+                item_type="RAW_MATERIAL",
+                raw_material_id__isnull=False,
+            ).values_list("raw_material_id", flat=True).distinct()
+        )
+        for raw_material_id in raw_material_ids:
+            sync_raw_material_stock_quantity(
+                invoice.tenant_id,
+                invoice.warehouse_id,
+                raw_material_id,
+            )
 
     def _sync_product_stock_pairs(self, tenant_id, warehouse_id, product_ids):
-        for product_id in set(product_ids):
+        for product_id in {product_id for product_id in product_ids if product_id}:
             sync_product_stock_quantity(tenant_id, warehouse_id, product_id)
+
+    def _sync_raw_material_stock_pairs(self, tenant_id, warehouse_id, raw_material_ids):
+        for raw_material_id in {raw_material_id for raw_material_id in raw_material_ids if raw_material_id}:
+            sync_raw_material_stock_quantity(tenant_id, warehouse_id, raw_material_id)
 
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
@@ -90,7 +111,7 @@ class PurchaseInvoiceViewSet(viewsets.ModelViewSet):
             serializer = self.get_serializer(data=request.data)
             serializer.is_valid(raise_exception=True)
             invoice = serializer.save()
-            self._sync_invoice_product_stock(invoice)
+            self._sync_invoice_inventory_stock(invoice)
             sync_purchase_invoice_journal(self._get_serializable_invoice(invoice.id))
         response_serializer = self.get_serializer(
             self._get_serializable_invoice(invoice.id)
@@ -110,12 +131,16 @@ class PurchaseInvoiceViewSet(viewsets.ModelViewSet):
         old_product_ids = list(
             instance.lines.filter(deleted_at__isnull=True).values_list("product_id", flat=True)
         )
+        old_raw_material_ids = list(
+            instance.lines.filter(deleted_at__isnull=True).values_list("raw_material_id", flat=True)
+        )
         with transaction.atomic():
             serializer = self.get_serializer(instance, data=request.data, partial=partial)
             serializer.is_valid(raise_exception=True)
             invoice = serializer.save()
-            self._sync_invoice_product_stock(invoice)
+            self._sync_invoice_inventory_stock(invoice)
             self._sync_product_stock_pairs(instance.tenant_id, old_warehouse_id, old_product_ids)
+            self._sync_raw_material_stock_pairs(instance.tenant_id, old_warehouse_id, old_raw_material_ids)
             sync_purchase_invoice_journal(self._get_serializable_invoice(invoice.id))
         response_serializer = self.get_serializer(
             self._get_serializable_invoice(invoice.id)
@@ -134,9 +159,13 @@ class PurchaseInvoiceViewSet(viewsets.ModelViewSet):
         product_ids = list(
             instance.lines.filter(deleted_at__isnull=True).values_list("product_id", flat=True)
         )
+        raw_material_ids = list(
+            instance.lines.filter(deleted_at__isnull=True).values_list("raw_material_id", flat=True)
+        )
         with transaction.atomic():
             self.perform_destroy(instance)
             self._sync_product_stock_pairs(tenant_id, warehouse_id, product_ids)
+            self._sync_raw_material_stock_pairs(tenant_id, warehouse_id, raw_material_ids)
             delete_journal_entry(
                 JournalEntry.SourceType.PURCHASE_INVOICE,
                 instance.id,
@@ -153,16 +182,17 @@ class PurchaseInvoiceViewSet(viewsets.ModelViewSet):
         warehouse_id = request.query_params.get("warehouse_id")
         search = request.query_params.get("search", "").strip()
 
-        queryset = Product.objects.filter(
+        product_queryset = Product.objects.filter(
             tenant_id=tenant_id,
             deleted_at__isnull=True,
+            product_type__in=["FINISHED_GOOD", "READY_MADE"],
         ).select_related("unit").order_by("name")
 
         if search:
-            queryset = queryset.filter(name__icontains=search)
+            product_queryset = product_queryset.filter(name__icontains=search)
 
-        products = []
-        for product in queryset[:100]:
+        items = []
+        for product in product_queryset[:100]:
             quantity = Decimal("0.00")
             if warehouse_id:
                 stock = ProductStock.objects.filter(
@@ -172,9 +202,10 @@ class PurchaseInvoiceViewSet(viewsets.ModelViewSet):
                     deleted_at__isnull=True,
                 ).first()
                 quantity = stock.quantity if stock else Decimal("0.00")
-            products.append(
+            items.append(
                 {
                     "id": str(product.id),
+                    "item_type": "FINISHED_GOOD",
                     "name": product.name,
                     "quantity": str(quantity),
                     "unit": product.unit.name if product.unit else None,
@@ -183,7 +214,36 @@ class PurchaseInvoiceViewSet(viewsets.ModelViewSet):
                 }
             )
 
-        return Response({"data": products})
+        raw_queryset = RawMaterial.objects.filter(
+            tenant_id=tenant_id,
+            deleted_at__isnull=True,
+        ).select_related("purchase_unit").order_by("name")
+        if search:
+            raw_queryset = raw_queryset.filter(name__icontains=search)
+
+        for raw_material in raw_queryset[:100]:
+            quantity = Decimal("0.00")
+            if warehouse_id:
+                stock = Stock.objects.filter(
+                    tenant_id=tenant_id,
+                    warehouse_id=warehouse_id,
+                    raw_material_id=raw_material.id,
+                    deleted_at__isnull=True,
+                ).first()
+                quantity = stock.quantity if stock else Decimal("0.00")
+            items.append(
+                {
+                    "id": str(raw_material.id),
+                    "item_type": "RAW_MATERIAL",
+                    "name": raw_material.name,
+                    "quantity": str(quantity),
+                    "unit": raw_material.purchase_unit.name,
+                    "product_type": "RAW_MATERIAL",
+                    "net_amount": str(raw_material.purchase_price),
+                }
+            )
+
+        return Response({"data": items})
 
 
 class PurchaseReturnViewSet(viewsets.ModelViewSet):
@@ -361,7 +421,10 @@ class PurchaseReturnViewSet(viewsets.ModelViewSet):
             }
 
         payload = []
-        invoice_lines = invoice.lines.filter(deleted_at__isnull=True).select_related("product")
+        invoice_lines = invoice.lines.filter(
+            deleted_at__isnull=True,
+            item_type="FINISHED_GOOD",
+        ).select_related("product")
         for invoice_line in invoice_lines:
             metrics = get_purchase_return_line_metrics(
                 invoice_line,
