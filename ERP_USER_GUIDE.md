@@ -2,79 +2,82 @@
 
 ## Purpose
 
-This guide explains the current ERP structure, the modules that are now available in the system, and how the main inventory, sales, purchase, banking, and accounting flows work together.
+This guide explains the current ERP structure and how the updated system now handles:
 
-It has been updated to reflect the latest ERP functions currently present in this repository.
+- unit setup
+- raw materials
+- products
+- direct finished goods
+- assembly products
+- production
+- purchases and sales
+- bank transactions
+- accounting and reports
 
-## Latest ERP Updates
+This version is aligned with the latest ERP logic in the project.
 
-The ERP is no longer limited to masters, inventory, parties, and basic COA setup. It now also includes:
+## Current ERP Scope
 
-- purchase invoices
-- purchase returns
-- sales invoices
-- sales returns
-- purchase bank payments
-- sales bank receipts
-- expense entries
-- opening bank and opening account management
-- ledger reports
-- party ledger reports
-- journal-backed accounting sync for major commercial transactions
-- richer dashboard/business summary data
-- dimension management for tenant-based working
-
-This means the ERP now supports a much more complete day-to-day business flow from stock setup to buying, selling, collecting, paying, expense booking, and reporting.
-
-## What This ERP Does
-
-This ERP is currently built around these major areas:
+The ERP now covers these major areas:
 
 - Dashboard
-- Administrator Setup
-- Inventory
+- Masters
+- Raw Materials
+- Products
+- Warehouses
+- Opening Stock
+- Production
 - Purchase
 - Sales
 - Bank Transactions
 - Accounting
 - Reports
-- Users / Dimensions
+- Dimensions
+- Support
 
-The current system is designed to help you:
+The system is now designed to support both:
 
-- maintain item master data
-- manage raw materials and finished products
-- define warehouses and opening stock
-- configure products with account mappings
-- manage customers and suppliers
-- record purchases and purchase returns
-- record sales and sales returns
-- receive customer payments through bank receipts
-- record supplier payments through bank payments
-- book direct business expenses from bank accounts
-- manage chart of accounts with hierarchy and posting rules
-- create opening banks and opening bank accounts under the COA
-- view ledger and party-ledger reports
-- work dimension-wise through tenant switching
+- `Raw Material Inventory`
+- `Finished Goods Inventory`
 
-## Tenant / Dimension Switching
+## Latest Updates
 
-The ERP supports dimension-based working. At the moment, your setup includes:
+The ERP has expanded beyond the earlier setup-only structure. It now includes:
+
+- unit of measure breakdown support in the setup flow
+- raw material purchase handling
+- direct finished good purchase handling
+- assembly product costing
+- production preview for assembly manufacturing
+- raw material consumption during production
+- finished goods stock increase during production
+- purchase bank payments
+- sales bank receipts
+- expenses
+- balance sheet report
+- ledger report
+- party ledger report
+- journal-backed accounting sync
+
+## Dimension / Tenant Working
+
+The ERP is dimension-based.
+
+Current examples:
 
 - `SAMS_TRADERS`
 - `AM_TRADERS`
 
 How it works:
 
-- You log in once.
-- After login, the dimension switcher in the top navbar controls which tenant you are currently viewing and editing.
-- When you switch dimension, the app loads data for that selected tenant only.
-- Accounts, masters, inventory, parties, purchases, sales, banks, expenses, and reports all work inside the selected dimension.
+- log in once
+- choose the active dimension from the top bar
+- all data entry and reporting happen inside that selected dimension
 
 Important:
 
-- Always confirm which dimension is selected before creating or editing records.
-- Data belongs to the active dimension context.
+- always confirm the active dimension before saving transactions
+- accounts, inventory, parties, purchases, sales, and reports all depend on the active dimension
 
 ## Main Navigation
 
@@ -93,6 +96,7 @@ The current app navigation includes:
   - Bank Receipts
   - Expenses
 - Reports
+  - Balance Sheet
   - Ledger Reports
   - Party Ledger
 - Administrator
@@ -105,70 +109,59 @@ The current app navigation includes:
   - Warehouses
   - Raw Materials
   - Products
+  - Production
   - Chart of Accounts
 - Users
   - Dimensions
+  - Support
 
-## Recommended Usage Order
+## Recommended Setup Order
 
-The cleanest setup and usage flow is:
+The cleanest setup order is:
 
 1. Select the correct dimension.
-2. Confirm the Chart of Accounts is seeded and organized correctly.
-3. Create master data:
-   - Units
-   - Sizes
-   - Brands
-   - Categories
-4. Create Warehouses.
-5. Create Raw Materials.
-6. Create Products.
-7. Create Customers and Suppliers.
-8. Create opening banks and opening bank accounts if bank transactions will be used.
-9. Enter Opening Stock.
-10. Start purchase entries.
-11. Start sales entries.
-12. Record bank receipts, bank payments, and expenses.
-13. Review ledger and party-ledger reports.
+2. Confirm the Chart of Accounts is available.
+3. Create Units.
+4. Create Sizes, Brands, and Categories.
+5. Create Warehouses.
+6. Create Raw Materials.
+7. Create Products.
+8. Create Customers and Suppliers.
+9. Create opening banks and opening accounts if bank transactions will be used.
+10. Load Opening Stock for raw materials.
+11. Start purchase entries.
+12. Start production for assembly products.
+13. Start sales entries.
+14. Use bank receipts, bank payments, and expenses.
+15. Review reports.
 
-Why this order matters:
+## Units
 
-- Categories and products depend on the COA.
-- Inventory setup should be completed before commercial transactions begin.
-- Customers and suppliers should be ready before sales and purchase entries.
-- Bank transactions require valid postable bank accounts.
-- Reports become more useful once transactions are flowing through journals.
-
-## Dashboard
-
-The dashboard is now more than a simple landing page.
-
-It is used to:
-
-- confirm the active dimension
-- review business KPIs
-- monitor sales, purchases, receipts, payments, and stock values
-- view recent accounting activity
-- understand current business movement from one screen
-
-## Administrator Setup
-
-### Units
-
-Use Units to define measurement units for items.
+Units are no longer just labels. They are intended to support manual breakdown logic.
 
 Examples:
 
-- KG
-- PCS
-- LTR
-- BOX
+- `1 KG = 1000 Grams`
+- `1 Liter = 1000 ML`
+- `1 Box = 12 PCS`
+
+The ERP setup idea is:
+
+- main unit is defined manually
+- breakdown unit is defined manually
+- conversion is user-defined, not hardcoded
+
+Practical use:
+
+- raw materials may be purchased in `KG`
+- assembly formulas may consume in `Gram`
+- finished goods may be stored in `Piece` or `Each`
+
+## Masters
 
 ### Sizes
 
-Use Sizes to classify item variants or packing sizes.
-
-Examples:
+Use Sizes for variants such as:
 
 - Small
 - Medium
@@ -178,79 +171,124 @@ Examples:
 
 ### Brands
 
-Use Brands to classify materials and products by brand identity.
+Brands help distinguish raw material or product quality/identity.
+
+Example:
+
+- `Pure`
+- `Semi`
+- `Super`
 
 ### Categories
 
-Categories can carry default accounting mappings:
+Categories can carry default COA mappings:
 
 - `inventory_account`
 - `cogs_account`
 - `revenue_account`
 
-This helps keep accounting assignments consistent across product families.
+This helps keep accounting assignments consistent.
 
-### Customers
+## Raw Materials
 
-Customers represent receivable parties.
+Raw materials are maintained from the `Raw Materials` module.
 
-Each customer can be linked to a control account, usually a receivable account such as:
+Example:
 
-- `1140 - A/c Receivables`
+- `PP Dana Pure`
 
-### Suppliers
+Typical fields:
 
-Suppliers represent payable parties.
+- name
+- brand
+- category
+- size
+- purchase unit
+- purchase price
+- inventory account
 
-Each supplier can be linked to a control account, usually a payable account such as:
+Important notes:
 
-- `2130 - A/c Payables`
+- raw materials are stored as raw-material inventory
+- purchase price can be kept flexible
+- if no rate is entered in the scenario flow, the starting value can be `0`
 
-### Warehouses
+## Products
 
-Warehouses represent physical stock locations.
+Products now effectively cover two major business cases:
 
-Use warehouses when:
+- `Assembly Product`
+- `Finished Good`
 
-- stock is stored in different places
-- purchases are received in a specific warehouse
-- sales stock is controlled warehouse-wise
-- opening stock must be loaded location-wise
+Raw materials are maintained separately in the raw material module.
 
-### Raw Materials
+### Assembly Products
 
-Raw Materials are base stock items.
+Assembly products are internally manufactured finished goods.
 
-They support:
+Example:
 
-- item master setup
-- unit/size/brand/category mapping
-- purchase and selling prices
-- inventory account mapping
-- stock quantity tracking through opening stock and related stock tables
+- `Ice Cube`
 
-### Products
+When creating an assembly product, the ERP should support:
 
-Products represent finished or sellable items.
+- finished good UOM
+- inventory account
+- raw material composition lines
+- moulding charges
+- labour charges
+- packaging charges
+- calculated cost per finished unit
+- optional confirmation of calculated cost
 
-The ERP supports:
+The cost of an assembly product comes from:
 
-- `READY_MADE` products
-- `MANUFACTURED` products
-
-Products can contain:
-
+- raw material cost
+- moulding charges
+- labour charges
 - packaging cost
-- inventory, COGS, and revenue accounts
-- raw material lines for manufactured items
 
-Net amount is derived from product costing logic already built into the system.
+Example:
 
-## Inventory
+- raw material cost = `25`
+- moulding = `15`
+- labour = `3`
+- packaging = `2`
+- final unit cost = `45`
 
-### Opening Stock
+### Direct Finished Goods
 
-Opening Stock is used to load initial stock balances, especially for inventory startup.
+These are finished goods purchased directly instead of manufactured internally.
+
+Example:
+
+- `Mug`
+
+Typical fields:
+
+- name
+- UOM
+- direct unit price
+- inventory account
+
+These items are purchased directly into finished goods inventory.
+
+## Warehouses
+
+Warehouses support both:
+
+- raw material stock
+- finished goods stock
+
+This is important because:
+
+- purchased raw materials must be stored before production
+- manufactured finished goods must be stored after production
+- directly purchased finished goods must also be stored in warehouse stock
+
+## Opening Stock
+
+Opening Stock is used for raw materials.
 
 Each opening stock entry supports:
 
@@ -261,173 +299,167 @@ Each opening stock entry supports:
 
 What it affects:
 
-- raw material stock totals
-- warehouse-wise stock position
-- downstream inventory visibility
-
-### Product Stock Movement
-
-The current ERP also updates product stock through commercial flows:
-
-- purchase invoices increase product stock
-- purchase returns decrease product stock
-- sales invoices decrease product stock
-- sales returns increase product stock
-
-This means stock is now linked more closely to actual business transactions rather than setup-only records.
+- raw material inventory
+- warehouse-wise raw material availability
 
 ## Purchase Module
 
 ### Purchase Invoices
 
-Purchase Invoices are used to record buying goods from suppliers.
+Purchase invoices now support purchasing:
 
-Current behavior:
+- raw materials
+- direct finished goods
 
-- supplier-wise invoice creation
-- warehouse-wise stock impact
-- product line entry
-- journal sync for accounting impact
-- financial calculations for invoice balances
+Each line can behave differently depending on item type.
 
-Use purchase invoices when:
+For raw material purchase:
 
-- stock is received from a supplier
-- purchase value must flow into stock/accounting
-- payable balances need to be tracked
+- select supplier
+- select raw material
+- confirm UOM
+- enter quantity
+- enter rate
+
+For direct finished good purchase:
+
+- select supplier
+- select finished good product
+- confirm UOM
+- enter quantity
+- enter rate
+
+Inventory result:
+
+- raw material purchases increase raw material stock
+- direct finished good purchases increase finished goods stock
 
 ### Purchase Returns
 
-Purchase Returns are used when items are returned against a purchase invoice.
-
-Current behavior:
-
-- linked to supplier and original purchase invoice
-- line-wise return control
-- validation against returnable quantity
-- stock reversal
-- journal sync
+Purchase returns are used to reverse eligible finished good purchase quantities against the original purchase invoice.
 
 ### Purchase Bank Payments
 
-Purchase Bank Payments are used to record supplier payments through a selected bank account.
+Purchase bank payments record supplier payments from selected bank accounts and reduce open payable exposure.
 
-Current behavior:
+## Production
 
-- linked to supplier
-- linked to purchase invoice
-- shows outstanding invoice balance logic
-- creates accounting journal effect
-- reduces supplier payable exposure in reporting flow
+Production is now the core manufacturing flow for assembly products.
+
+This is used after the assembly product has already been defined with its raw material formula and cost structure.
+
+### Production Flow
+
+1. Select warehouse.
+2. Select the assembly product to manufacture.
+3. Enter the finished goods quantity to produce.
+4. Review the production preview.
+5. Save production.
+
+### What the Preview Shows
+
+When an assembly product is selected, the ERP can show:
+
+- raw materials used
+- quantity per unit
+- required raw material quantity for the requested production quantity
+- available raw material quantity
+- stock status such as enough or short
+- cost per unit
+- raw material cost
+- moulding charges
+- labour charges
+- packaging charges
+- current finished goods stock
+- projected finished goods stock
+- total finished goods value
+
+### Production Result
+
+After production is saved:
+
+- raw material stock decreases
+- finished goods stock increases
+
+Example:
+
+- produce `4000` ice cubes
+- unit cost = `45`
+- total finished goods value = `180000`
+
+This means:
+
+- raw materials are consumed according to saved formula lines
+- `4000` finished goods are added to stock
+- finished inventory value is updated through quantity and costing logic
 
 ## Sales Module
 
 ### Sales Invoices
 
-Sales Invoices are used to record sales to customers.
+Sales invoices are used to sell finished goods to customers.
 
 Current behavior:
 
-- customer-wise invoice creation
-- warehouse-wise stock deduction
-- product line entry
-- journal sync for accounting impact
-- receivable balance tracking
-
-Use sales invoices when:
-
-- goods are sold to a customer
-- stock should reduce
-- revenue and receivable effect should be recorded
+- customer selection
+- warehouse selection
+- finished good line selection
+- stock deduction
+- journal sync
+- receivable impact
 
 ### Sales Returns
 
-Sales Returns are used to reverse returned sold items.
-
-Current behavior:
-
-- linked to customer and original sales invoice
-- line-wise return quantity control
-- stock is added back
-- journal entries are updated
+Sales returns reverse eligible sold quantities and add returned stock back into finished goods inventory.
 
 ### Sales Bank Receipts
 
-Sales Bank Receipts are used to record customer collections through bank accounts.
-
-Current behavior:
-
-- linked to customer
-- linked to sales invoice
-- balance-aware invoice selection
-- journal sync
-- improves receivable tracking and reporting
+Sales bank receipts record customer collections through bank accounts and reduce open receivable exposure.
 
 ## Bank Transactions
 
 ### Opening Banks and Opening Accounts
 
-The ERP now supports structured opening bank setup inside the COA.
+The ERP supports opening bank structure under the COA.
 
 Current logic:
 
 - opening banks are created under account code `1110`
-- opening account items are created under the selected bank
-- bank transaction modules use valid postable bank accounts
-
-This gives a cleaner bank-account structure for:
-
-- receipts
-- payments
-- expenses
-- future reconciliation workflows
+- opening account items are created under those banks
+- bank transactions use postable bank accounts
 
 ### Expenses
 
-Expenses are now part of the ERP.
-
-Expense entries support:
+Expenses support:
 
 - date
 - bank account
 - expense account
 - amount
-- remarks/description flow
-- automatic journal sync
+- remarks
 
-Use expenses when:
-
-- business spending is paid directly from a bank account
-- operating costs need to hit the books immediately
+Journal posting is created automatically.
 
 ## Accounting
 
-### Chart of Accounts (COA)
+### Chart of Accounts
 
 The COA remains the accounting backbone of the ERP.
 
-It defines:
+It is used for:
 
-- account hierarchy
-- posting vs header accounts
-- account group and type
-- account nature
-- valid mappings for categories, products, customers, and suppliers
-
-It is also used by newer ERP functions such as:
-
-- purchase journals
-- sales journals
-- bank receipts
-- bank payments
-- expenses
-- ledger reporting
+- raw material inventory accounts
+- product inventory accounts
+- product COGS accounts
+- product revenue accounts
+- customer control accounts
+- supplier control accounts
+- bank accounts
+- expense accounts
 
 ### Journal-backed Posting
 
-A major improvement in the latest ERP updates is that important transactions now sync with journals automatically.
-
-This applies to:
+The ERP automatically posts journals for:
 
 - purchase invoices
 - purchase returns
@@ -437,18 +469,28 @@ This applies to:
 - sales bank receipts
 - expenses
 
-This creates a much stronger accounting foundation for reports and future financial statements.
+This gives the ERP a much stronger accounting foundation.
 
 ## Reports
 
+### Balance Sheet
+
+The ERP now includes a balance sheet report.
+
+It shows:
+
+- actual asset balances
+- actual liability balances
+- actual equity balances
+- liabilities plus equity total
+- difference, if books are not closed or do not match perfectly
+
 ### Ledger Reports
 
-Ledger Reports are now available in the ERP.
+Ledger reports support:
 
-They support:
-
-- account-head based filtering
-- COA-level ledger view
+- account-head filtering
+- account ledger selection
 - supplier ledger selection
 - customer ledger selection
 - date range filtering
@@ -456,86 +498,102 @@ They support:
 
 ### Party Ledger
 
-Party Ledger reports are also available for:
+Party ledger supports:
 
-- customers
-- suppliers
-
-These reports help review:
-
+- customer ledger review
+- supplier ledger review
 - invoice movement
 - return movement
-- bank receipt/payment movement
-- running commercial exposure by party
+- receipt/payment movement
+
+## Dashboard
+
+The dashboard helps review:
+
+- sales
+- purchases
+- receipts
+- payments
+- stock values
+- recent journal activity
+- top customers and suppliers
 
 ## Key Business Rules
 
-- All records are dimension-aware.
-- Active dimension is selected from the navbar.
-- Most deletions are soft deletes.
-- Stock and journal-related transactions update dependent values after create, update, and delete.
-- Selected accounts must belong to the active dimension.
-- Selected accounts must be active and postable where posting is required.
-- Products, customers, suppliers, and categories must use proper COA group rules.
-- Purchase and sales returns are controlled against the original invoice lines.
-- Bank receipts and bank payments are balance-aware against invoices.
-- Opening stock remains unique by date, warehouse, and raw material.
+- all records are dimension-aware
+- active dimension controls what data is visible and editable
+- units should support manual measurement breakdown
+- raw materials are stored separately from finished goods
+- warehouses should support both raw materials and finished goods
+- raw material purchases increase raw material stock
+- direct finished good purchases increase finished goods stock
+- production consumes raw materials and increases finished goods
+- purchase and sales returns reverse eligible quantities only
+- selected COA accounts must belong to the active dimension, be active, and be postable where required
+- most records use soft delete behavior
 
-## Current Scope of the ERP
+## Practical Real-Life Flow
 
-At the current stage, the ERP covers:
+### Example 1: Buy Raw Material
 
-- dimension management
-- dashboard business summaries
-- chart of accounts management
-- opening banks and opening account setup
-- master setup
-- customer and supplier setup
-- raw material setup
-- product setup
-- warehouse setup
-- opening stock
-- purchase invoices
-- purchase returns
-- sales invoices
-- sales returns
-- bank payments
-- bank receipts
-- expense entry
-- ledger reports
-- party ledger reports
-- automatic journal synchronization for major transactions
+1. Create raw material `PP Dana Pure`.
+2. Assign brand, category, and UOM.
+3. Purchase it from a supplier in `KG`.
+4. Save the invoice.
+5. Raw material stock increases in the warehouse.
 
-## Future Updates
+### Example 2: Create Assembly Product
 
-This ERP will continue to expand. Many more updates are planned in future versions, including:
+1. Create product `Ice Cube`.
+2. Set it as an assembly product.
+3. Select finished good UOM such as `Piece`.
+4. Add raw material lines like `PP Dana Pure`.
+5. Add moulding, labour, and packaging charges.
+6. Confirm the final cost.
 
-- balance sheet
+### Example 3: Buy Direct Finished Good
+
+1. Create product `Mug`.
+2. Set it as a finished good.
+3. Enter direct unit price.
+4. Purchase it from supplier.
+5. Finished goods stock increases.
+
+### Example 4: Manufacture Finished Goods
+
+1. Open Production.
+2. Select warehouse.
+3. Select assembly product `Ice Cube`.
+4. Enter quantity such as `4000`.
+5. Review material requirements and total value.
+6. Save.
+7. Raw materials reduce and finished goods increase.
+
+## Future Enhancements
+
+The ERP can still be expanded further with:
+
+- trial balance improvements
 - profit and loss improvements
-- full account reports
-- trial balance enhancements
+- more account reports
 - salesman commissions
-- sales receipt printing
-- purchase receipt printing
+- printed sales receipts
+- printed purchase receipts
 - printed reports
-- stock and financial report exports
-- more voucher/reporting screens
-- journal/accounting enhancements
-- richer management reporting
-- many more business features as the ERP grows
+- richer stock and management reporting
 
 ## Final Summary
 
-Your ERP has now moved beyond setup-only operations and supports a practical commercial and accounting workflow.
+The ERP now supports a much more complete operational flow:
 
-It currently helps you:
-
-- set up inventory and parties
-- manage purchases and sales
+- define units
+- create raw materials
+- create assembly products
+- create direct finished goods
+- buy stock
+- manufacture stock
+- sell stock
 - receive and pay through banks
-- book expenses
-- maintain COA discipline
-- keep journals in sync
-- review ledger-based reports by account and party
+- review accounting reports
 
-The latest updates have made the system much closer to a complete ERP foundation, and future updates are expected to add even more features such as balance sheet reporting, salesman commissions, account reports, and printable sales, purchase, and reporting documents.
+It now behaves as a real inventory and accounting ERP foundation with separate raw material and finished goods logic, production-driven stock movement, and report-ready accounting structure.
