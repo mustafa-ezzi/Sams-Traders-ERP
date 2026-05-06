@@ -9,6 +9,7 @@ from .models import (
     OpeningStock,
     Production,
     Product,
+    ProductCostState,
     ProductMaterial,
     RawMaterial,
     Size,
@@ -61,14 +62,38 @@ def resolve_product_coa_defaults(category, attrs, instance=None):
     return attrs
 
 
-class BrandSerializer(serializers.ModelSerializer):
+class TenantUniqueNameSerializer(serializers.ModelSerializer):
+    duplicate_name_message = "Record with this name already exists."
+
+    def validate_name(self, value):
+        tenant_id = self.context["request"].user.tenant_id
+        qs = self.Meta.model.objects.filter(
+            tenant_id=tenant_id,
+            name=value,
+            deleted_at__isnull=True,
+        )
+
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+
+        if qs.exists():
+            raise serializers.ValidationError(self.duplicate_name_message)
+
+        return value
+
+
+class BrandSerializer(TenantUniqueNameSerializer):
+    duplicate_name_message = "Brand with this name already exists."
+
     class Meta:
         model = Brand
         fields = "__all__"
         read_only_fields = ["tenant_id"]
 
 
-class CategorySerializer(serializers.ModelSerializer):
+class CategorySerializer(TenantUniqueNameSerializer):
+    duplicate_name_message = "Category with this name already exists."
+
     class Meta:
         model = Category
         fields = "__all__"
@@ -97,14 +122,18 @@ class CategorySerializer(serializers.ModelSerializer):
         return attrs
 
 
-class SizeSerializer(serializers.ModelSerializer):
+class SizeSerializer(TenantUniqueNameSerializer):
+    duplicate_name_message = "Size with this name already exists."
+
     class Meta:
         model = Size
         fields = "__all__"
         read_only_fields = ["tenant_id"]
 
 
-class UnitSerializer(serializers.ModelSerializer):
+class UnitSerializer(TenantUniqueNameSerializer):
+    duplicate_name_message = "Unit with this name already exists."
+
     class Meta:
         model = Unit
         fields = "__all__"
@@ -173,6 +202,8 @@ class ProductMaterialSerializer(serializers.ModelSerializer):
 class ProductSerializer(serializers.ModelSerializer):
     quantity = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
     materials = ProductMaterialSerializer(many=True, required=False)
+    average_cost = serializers.SerializerMethodField()
+    stock_value = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
@@ -193,8 +224,31 @@ class ProductSerializer(serializers.ModelSerializer):
             "cogs_account",
             "revenue_account",
             "quantity",
+            "average_cost",
+            "stock_value",
             "materials",
         ]
+
+    def _get_cost_state(self, obj):
+        if not hasattr(self, "_cost_state_cache"):
+            self._cost_state_cache = {}
+
+        cache_key = str(obj.id)
+        if cache_key not in self._cost_state_cache:
+            self._cost_state_cache[cache_key] = ProductCostState.objects.filter(
+                tenant_id=obj.tenant_id,
+                product_id=obj.id,
+                deleted_at__isnull=True,
+            ).first()
+        return self._cost_state_cache[cache_key]
+
+    def get_average_cost(self, obj):
+        state = self._get_cost_state(obj)
+        return state.average_cost if state else Decimal("0.0000")
+
+    def get_stock_value(self, obj):
+        state = self._get_cost_state(obj)
+        return state.total_value if state else Decimal("0.00")
 
     def validate(self, data):
         tenant_id = self.context["request"].user.tenant_id
@@ -483,6 +537,11 @@ class RawMaterialSerializer(serializers.ModelSerializer):
         tenant_id = self.context["request"].user.tenant_id
         if "purchase_price" in attrs:
             attrs["purchase_price"] = attrs.get("purchase_price") or 0
+
+        category = attrs.get("category") or getattr(self.instance, "category", None)
+        if category and getattr(category, "inventory_account", None):
+            attrs["inventory_account"] = category.inventory_account
+
         purchase_unit = attrs.get("purchase_unit") or getattr(self.instance, "purchase_unit", None)
         if purchase_unit:
             attrs["selling_unit"] = purchase_unit
@@ -499,12 +558,10 @@ class RawMaterialSerializer(serializers.ModelSerializer):
 class RawMaterialDetailedSerializer(serializers.ModelSerializer):
     quantity = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
     unit_name = serializers.ReadOnlyField()
-    size_name = serializers.ReadOnlyField()
     brand_name = serializers.ReadOnlyField()
     category_name = serializers.ReadOnlyField()
     brand = serializers.SerializerMethodField()
     category = serializers.SerializerMethodField()
-    size = serializers.SerializerMethodField()
     purchase_unit = serializers.SerializerMethodField()
 
     class Meta:
@@ -514,11 +571,9 @@ class RawMaterialDetailedSerializer(serializers.ModelSerializer):
             "name",
             "brand",
             "brand_name",
-            "size_name",
             "category_name",
             "unit_name",
             "category",
-            "size",
             "purchase_unit",
             "inventory_account",
             "quantity",
@@ -530,9 +585,6 @@ class RawMaterialDetailedSerializer(serializers.ModelSerializer):
 
     def get_category(self, obj):
         return {"id": str(obj.category.id), "name": obj.category.name}
-
-    def get_size(self, obj):
-        return {"id": str(obj.size.id), "name": obj.size.name}
 
     def get_purchase_unit(self, obj):
         return {"id": str(obj.purchase_unit.id), "name": obj.purchase_unit.name}

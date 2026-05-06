@@ -1,11 +1,10 @@
 import { z } from "zod";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import rawMaterialService from "../../api/services/rawMaterialService";
 import brandService from "../../api/services/brandService";
 import categoryService from "../../api/services/categoryService";
-import sizeService from "../../api/services/sizeService";
 import unitService from "../../api/services/unitService";
 import accountService from "../../api/services/accountService";
 import StateView from "../../components/StateView";
@@ -20,7 +19,6 @@ const schema = z.object({
   name: z.string().trim().min(1, "Name is required"),
   brand: z.string().uuid("brandId must be a valid UUID"),
   category: z.string().uuid("categoryId must be a valid UUID"),
-  size: z.string().uuid("sizeId must be a valid UUID"),
   purchase_unit: z.string().uuid("purchase_unit must be a valid UUID"),
   inventory_account: z.union([z.string().uuid("inventory account must be a valid UUID"), z.literal("")]),
   purchase_price: z.coerce.number().min(0),
@@ -30,7 +28,6 @@ const defaultValues = {
   name: "",
   brand: "",
   category: "",
-  size: "",
   purchase_unit: "",
   inventory_account: "",
   purchase_price: 0,
@@ -49,13 +46,24 @@ const RawMaterialPage = () => {
   const [total, setTotal] = useState(0);
   const [brands, setBrands] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [sizes, setSizes] = useState([]);
   const [units, setUnits] = useState([]);
   const [inventoryAccounts, setInventoryAccounts] = useState([]);
   const [loadingOptions, setLoadingOptions] = useState(false);
   const limit = 10;
   const toast = useToast();
   const form = useForm({ resolver: zodResolver(schema), defaultValues });
+  const selectedCategoryId = form.watch("category");
+  const selectedInventoryAccountId = form.watch("inventory_account");
+
+  const categoryMap = useMemo(
+    () => Object.fromEntries(categories.map((category) => [category.id, category])),
+    [categories]
+  );
+
+  const selectedInventoryAccount = useMemo(
+    () => inventoryAccounts.find((account) => account.id === selectedInventoryAccountId),
+    [inventoryAccounts, selectedInventoryAccountId]
+  );
 
   const load = async (nextPage = page, nextSearch = search) => {
     setLoading(true);
@@ -79,16 +87,14 @@ const RawMaterialPage = () => {
   const loadOptions = async () => {
     setLoadingOptions(true);
     try {
-      const [brandRes, categoryRes, sizeRes, unitRes, accountRes] = await Promise.all([
+      const [brandRes, categoryRes, unitRes, accountRes] = await Promise.all([
         brandService.list({ page: 1, limit: 100, search: "" }),
         categoryService.list({ page: 1, limit: 100, search: "" }),
-        sizeService.list({ page: 1, limit: 100, search: "" }),
         unitService.list({ page: 1, limit: 100, search: "" }),
         accountService.list(),
       ]);
       setBrands(brandRes.data || []);
       setCategories(categoryRes.data || []);
-      setSizes(sizeRes.data || []);
       setUnits(unitRes.data || []);
       setInventoryAccounts(
         flattenAccountTree(accountRes || []).filter(
@@ -107,19 +113,27 @@ const RawMaterialPage = () => {
     loadOptions();
   }, []);
 
+  useEffect(() => {
+    if (!selectedCategoryId) {
+      form.setValue("inventory_account", "", { shouldValidate: true, shouldDirty: true });
+      return;
+    }
+
+    const category = categoryMap[selectedCategoryId];
+    const inheritedInventoryAccount = category?.inventory_account || "";
+    form.setValue("inventory_account", inheritedInventoryAccount, {
+      shouldValidate: true,
+      shouldDirty: true,
+    });
+  }, [categoryMap, form, selectedCategoryId]);
+
   const onSubmit = form.handleSubmit(async (values) => {
     try {
       if (editingId) {
-        await rawMaterialService.update(editingId, {
-          ...values,
-          inventory_account: values.inventory_account || null,
-        });
+        await rawMaterialService.update(editingId, values);
         toast.success("Raw material updated");
       } else {
-        await rawMaterialService.create({
-          ...values,
-          inventory_account: values.inventory_account || null,
-        });
+        await rawMaterialService.create(values);
         toast.success("Raw material created");
       }
       setEditingId("");
@@ -199,20 +213,6 @@ const RawMaterialPage = () => {
 
           <div className="space-y-2">
             <label className="block text-sm font-semibold text-slate-700">
-              Size <span className="text-rose-500">*</span>
-            </label>
-            <select className={selectClassName} {...form.register("size")} disabled={loadingOptions}>
-              <option value="">Select size</option>
-              {sizes.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="space-y-2">
-            <label className="block text-sm font-semibold text-slate-700">
               Purchase Unit <span className="text-rose-500">*</span>
             </label>
             <select className={selectClassName} {...form.register("purchase_unit")} disabled={loadingOptions}>
@@ -229,18 +229,16 @@ const RawMaterialPage = () => {
             <label className="block text-sm font-semibold text-slate-700">
               Inventory Account
             </label>
-            <select
-              className={selectClassName}
-              {...form.register("inventory_account")}
-              disabled={loadingOptions}
-            >
-              <option value="">Select inventory account</option>
-              {inventoryAccounts.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {formatAccountLabel(item)}
-                </option>
-              ))}
-            </select>
+            <input
+              className={`${selectClassName} bg-slate-50 text-slate-600`}
+              value={selectedInventoryAccount ? formatAccountLabel(selectedInventoryAccount) : ""}
+              readOnly
+              placeholder="Auto selected from category"
+            />
+            <input type="hidden" {...form.register("inventory_account")} />
+            <p className="text-xs text-slate-500">
+              This field is inherited automatically from the selected category.
+            </p>
           </div>
 
           {/* <FormInput label="Quantity" required type="number" step="0.01" error={form.formState.errors.quantity?.message} {...form.register("quantity")} /> */}
@@ -316,7 +314,6 @@ const RawMaterialPage = () => {
                             name: row.name,
                             brand: row.brand?.id || row.brand,
                             category: row.category?.id || row.category,
-                            size: row.size?.id || row.size,
                             purchase_unit: row.purchase_unit?.id || row.purchase_unit,
                             inventory_account: row.inventory_account || "",
                             purchase_price: Number(row.purchase_price),

@@ -87,6 +87,7 @@ const UnitsPage = () => {
     } catch (submitError) {
       const message =
         submitError?.response?.data?.message ||
+        submitError?.response?.data?.name?.[0] ||
         submitError?.response?.data?.breakdown_unit?.[0] ||
         "Save failed";
       setError(message);
@@ -303,4 +304,3 @@ const UnitsPage = () => {
 };
 
 export default UnitsPage;
-

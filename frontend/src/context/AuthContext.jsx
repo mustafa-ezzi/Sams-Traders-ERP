@@ -29,11 +29,23 @@ const storedAllowedDimensions = (() => {
     return [];
   }
 })();
+const storedCreateTenantIds = (() => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem("createTenantIds") || "null");
+    if (Array.isArray(parsed) && parsed.length) {
+      return [...new Set(parsed.filter(Boolean))];
+    }
+  } catch {
+    // ignore malformed local storage and fall back to active tenant
+  }
+  return storedTenantId ? [storedTenantId] : [];
+})();
 
 const initialState = {
   token: storedToken,
   tenantId: storedTenantId,
   allowedDimensions: storedAllowedDimensions,
+  createTenantIds: storedCreateTenantIds,
 };
 
 const reducer = (state, action) => {
@@ -45,19 +57,46 @@ const reducer = (state, action) => {
         "allowedDimensions",
         JSON.stringify(action.payload.allowedDimensions || [])
       );
+      localStorage.setItem(
+        "createTenantIds",
+        JSON.stringify(
+          action.payload.createTenantIds?.length
+            ? [...new Set(action.payload.createTenantIds.filter(Boolean))]
+            : action.payload.tenantId
+              ? [action.payload.tenantId]
+              : []
+        )
+      );
       return { ...state, ...action.payload };
     case "LOGOUT":
       localStorage.removeItem("token");
       localStorage.removeItem("refreshToken");
       localStorage.removeItem("tenantId");
       localStorage.removeItem("allowedDimensions");
-      return { ...state, token: "", tenantId: "", allowedDimensions: [] };
+      localStorage.removeItem("createTenantIds");
+      return { ...state, token: "", tenantId: "", allowedDimensions: [], createTenantIds: [] };
     case "SET_TENANT":
       localStorage.setItem("tenantId", action.payload);
-      return { ...state, tenantId: action.payload };
+      {
+        const nextCreateTenantIds = [
+          ...new Set([action.payload, ...state.createTenantIds].filter(Boolean)),
+        ];
+        localStorage.setItem("createTenantIds", JSON.stringify(nextCreateTenantIds));
+        return {
+          ...state,
+          tenantId: action.payload,
+          createTenantIds: nextCreateTenantIds,
+        };
+      }
     case "SET_ALLOWED_DIMENSIONS":
       localStorage.setItem("allowedDimensions", JSON.stringify(action.payload || []));
       return { ...state, allowedDimensions: action.payload || [] };
+    case "SET_CREATE_TENANTS":
+      {
+        const nextCreateTenantIds = [...new Set((action.payload || []).filter(Boolean))];
+        localStorage.setItem("createTenantIds", JSON.stringify(nextCreateTenantIds));
+        return { ...state, createTenantIds: nextCreateTenantIds };
+      }
     default:
       return state;
   }
@@ -76,14 +115,21 @@ export const AuthProvider = ({ children }) => {
       token: state.token,
       tenantId: state.tenantId,
       allowedDimensions: state.allowedDimensions,
+      createTenantIds: state.createTenantIds,
       isAuthenticated: !!state.token && !isTokenExpired(state.token),
-      login: (token, tenantId, allowedDimensions = []) => {
+      login: (token, tenantId, allowedDimensions = [], createTenantIds = []) => {
         dispatch({
           type: "LOGIN",
           payload: {
             token,
             tenantId: tenantId || "",
             allowedDimensions,
+            createTenantIds:
+              createTenantIds.length
+                ? [...new Set(createTenantIds.filter(Boolean))]
+                : tenantId
+                  ? [tenantId]
+                  : [],
           },
         });
       },
@@ -92,8 +138,10 @@ export const AuthProvider = ({ children }) => {
       setTenant: (tenantId) => dispatch({ type: "SET_TENANT", payload: tenantId }),
       setAllowedDimensions: (items) =>
         dispatch({ type: "SET_ALLOWED_DIMENSIONS", payload: items || [] }),
+      setCreateTenants: (items) =>
+        dispatch({ type: "SET_CREATE_TENANTS", payload: items || [] }),
     }),
-    [state.token, state.tenantId, state.allowedDimensions]
+    [state.token, state.tenantId, state.allowedDimensions, state.createTenantIds]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

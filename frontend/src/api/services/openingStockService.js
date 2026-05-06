@@ -1,4 +1,5 @@
 import axiosInstance from "../axiosInstance.js";
+import { createAcrossDimensions } from "../createAcrossDimensions";
 
 const BASE_URL = "/inventory/opening-stock/";
 
@@ -63,7 +64,11 @@ class OpeningStockService {
                 quantity: Number(data.quantity),
             };
 
-            const response = await axiosInstance.post(BASE_URL, payload);
+            const { response, isMulti, tenantIds } = await createAcrossDimensions((tenantId) =>
+                axiosInstance.post(BASE_URL, payload, {
+                    headers: tenantId ? { "x-tenant-id": tenantId } : {},
+                })
+            );
 
             const transformedData = response.data.data || response.data;
             return {
@@ -75,7 +80,9 @@ class OpeningStockService {
                     currentAvailability: transformedData.current_availability,
                     availableQuantity: transformedData.available_quantity,
                 },
-                message: response.data.message || "Opening stock created successfully",
+                message: isMulti
+                    ? `Opening stock created in ${tenantIds.join(", ")}`
+                    : response.data.message || "Opening stock created successfully",
             };
         } catch (error) {
             throw error;

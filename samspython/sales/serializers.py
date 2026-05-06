@@ -54,9 +54,20 @@ class SalesInvoiceLineSerializer(serializers.ModelSerializer):
             "amount",
             "discount",
             "total_amount",
+            "cost_used",
+            "cost_total",
+            "profit",
             "available_quantity",
         ]
-        read_only_fields = ["id", "amount", "total_amount", "available_quantity"]
+        read_only_fields = [
+            "id",
+            "amount",
+            "total_amount",
+            "cost_used",
+            "cost_total",
+            "profit",
+            "available_quantity",
+        ]
 
     def _get_excluded_ids(self):
         return self.context.get("excluded_sale_line_ids", [])

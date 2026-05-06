@@ -122,6 +122,49 @@ class AccountSerializer(serializers.ModelSerializer):
             "children",
         ]
         read_only_fields = ["tenant_id", "level"]
+        extra_kwargs = {
+            "code": {"required": False, "allow_blank": True},
+        }
+
+    @staticmethod
+    def _normalize_code_for_generation(code):
+        code_str = str(code or "").strip()
+        if not code_str.isdigit():
+            raise serializers.ValidationError({"code": "Account code must contain only digits."})
+        return code_str if len(code_str) >= 5 else code_str.ljust(5, "0")
+
+    def _generate_next_child_code(self, parent, tenant_id):
+        normalized_parent_code = self._normalize_code_for_generation(parent.code)
+        step = 10 if normalized_parent_code.endswith("00") else 1
+        branch_limit = int(normalized_parent_code) + (100 if step == 10 else 10)
+
+        child_codes = Account.objects.filter(
+            tenant_id=tenant_id,
+            parent=parent,
+            deleted_at__isnull=True,
+        ).values_list("code", flat=True)
+
+        normalized_existing_codes = [
+            int(self._normalize_code_for_generation(code))
+            for code in child_codes
+        ]
+        next_code_value = (
+            max(normalized_existing_codes) + step
+            if normalized_existing_codes
+            else int(normalized_parent_code) + step
+        )
+
+        if next_code_value >= branch_limit:
+            raise serializers.ValidationError(
+                {"code": f"No more child account codes are available under parent {parent.code}."}
+            )
+
+        return str(next_code_value).zfill(len(normalized_parent_code))
+
+    def _ensure_parent_is_header(self, parent):
+        if parent and parent.is_postable:
+            parent.is_postable = False
+            parent.save(update_fields=["is_postable", "updated_at"])
 
     def get_children(self, obj):
         queryset = obj.children.filter(deleted_at__isnull=True).order_by("code")
@@ -142,8 +185,16 @@ class AccountSerializer(serializers.ModelSerializer):
         if parent and parent.deleted_at is not None:
             raise serializers.ValidationError("Parent account cannot be soft deleted.")
 
-        if parent and parent.is_postable:
-            raise serializers.ValidationError("Cannot assign a postable account as parent.")
+        code = (data.get("code") or "").strip()
+        if self.instance is None:
+            if parent:
+                data["code"] = self._generate_next_child_code(parent, tenant_id)
+            elif not code:
+                raise serializers.ValidationError({"code": "Code is required for a root account."})
+            elif not code.isdigit():
+                raise serializers.ValidationError({"code": "Account code must contain only digits."})
+        elif "code" in data and code and not code.isdigit():
+            raise serializers.ValidationError({"code": "Account code must contain only digits."})
 
         account_group = data.get("account_group", getattr(self.instance, "account_group", None))
         account_type = data.get("account_type", getattr(self.instance, "account_type", None))
@@ -175,12 +226,14 @@ class AccountSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         request = self.context["request"]
         validated_data["tenant_id"] = request.tenant_id
+        self._ensure_parent_is_header(validated_data.get("parent"))
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
         if "code" in validated_data and instance.code != validated_data["code"]:
             raise serializers.ValidationError("Account code cannot be changed.")
 
+        self._ensure_parent_is_header(validated_data.get("parent"))
         return super().update(instance, validated_data)
 
 

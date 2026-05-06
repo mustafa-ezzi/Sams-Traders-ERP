@@ -18,7 +18,12 @@ from accounts.journal import (
 from accounts.models import JournalEntry
 from inventory.models import Product, ProductStock, RawMaterial, Stock
 from inventory.pagination import StandardResultsSetPagination
-from inventory.services import sync_product_stock_quantity, sync_raw_material_stock_quantity
+from inventory.services import (
+    get_current_product_average_cost,
+    rebuild_product_costing,
+    sync_product_stock_quantity,
+    sync_raw_material_stock_quantity,
+)
 from purchase.models import (
     PurchaseBankPayment,
     PurchaseInvoice,
@@ -81,6 +86,7 @@ class PurchaseInvoiceViewSet(viewsets.ModelViewSet):
                 invoice.warehouse_id,
                 product_id,
             )
+        rebuild_product_costing(invoice.tenant_id, product_ids)
         raw_material_ids = list(
             invoice.lines.filter(
                 deleted_at__isnull=True,
@@ -96,8 +102,10 @@ class PurchaseInvoiceViewSet(viewsets.ModelViewSet):
             )
 
     def _sync_product_stock_pairs(self, tenant_id, warehouse_id, product_ids):
-        for product_id in {product_id for product_id in product_ids if product_id}:
+        product_ids = {product_id for product_id in product_ids if product_id}
+        for product_id in product_ids:
             sync_product_stock_quantity(tenant_id, warehouse_id, product_id)
+        rebuild_product_costing(tenant_id, product_ids)
 
     def _sync_raw_material_stock_pairs(self, tenant_id, warehouse_id, raw_material_ids):
         for raw_material_id in {raw_material_id for raw_material_id in raw_material_ids if raw_material_id}:
@@ -211,6 +219,7 @@ class PurchaseInvoiceViewSet(viewsets.ModelViewSet):
                     "unit": product.unit.name if product.unit else None,
                     "product_type": product.product_type,
                     "net_amount": str(product.net_amount),
+                    "average_cost": str(get_current_product_average_cost(tenant_id, product.id)),
                 }
             )
 
@@ -291,10 +300,13 @@ class PurchaseReturnViewSet(viewsets.ModelViewSet):
                 purchase_return.purchase_invoice.warehouse_id,
                 product_id,
             )
+        rebuild_product_costing(purchase_return.tenant_id, product_ids)
 
     def _sync_product_stock_pairs(self, tenant_id, warehouse_id, product_ids):
-        for product_id in set(product_ids):
+        product_ids = {product_id for product_id in product_ids if product_id}
+        for product_id in product_ids:
             sync_product_stock_quantity(tenant_id, warehouse_id, product_id)
+        rebuild_product_costing(tenant_id, product_ids)
 
     def create(self, request, *args, **kwargs):
         with transaction.atomic():

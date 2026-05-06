@@ -1,4 +1,5 @@
 import axiosInstance from "../axiosInstance";
+import { createAcrossDimensions } from "../createAcrossDimensions";
 
 const productService = {
   async list(params) {
@@ -6,7 +7,11 @@ const productService = {
     return response.data;
   },
   async create(payload) {
-    const response = await axiosInstance.post("/inventory/products/", payload);
+    const { response } = await createAcrossDimensions((tenantId) =>
+      axiosInstance.post("/inventory/products/", payload, {
+        headers: tenantId ? { "x-tenant-id": tenantId } : {},
+      })
+    );
     return response.data;
   },
   async update(id, payload) {
@@ -20,4 +25,3 @@ const productService = {
 };
 
 export default productService;
-

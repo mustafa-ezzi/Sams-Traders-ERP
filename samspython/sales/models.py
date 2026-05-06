@@ -53,6 +53,9 @@ class SalesInvoiceLine(BaseModel):
     amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     discount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    cost_used = models.DecimalField(max_digits=14, decimal_places=4, default=0)
+    cost_total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    profit = models.DecimalField(max_digits=14, decimal_places=2, default=0)
 
     class Meta:
         ordering = ["created_at"]

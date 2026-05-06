@@ -1,4 +1,5 @@
 import axiosInstance from "../axiosInstance";
+import { createAcrossDimensions } from "../createAcrossDimensions";
 
 const BASE_URL = "/sales/sales-returns/";
 
@@ -37,10 +38,16 @@ class SalesReturnService {
   }
 
   async create(payload) {
-    const response = await axiosInstance.post(BASE_URL, payload);
+    const { response, isMulti, tenantIds } = await createAcrossDimensions((tenantId) =>
+      axiosInstance.post(BASE_URL, payload, {
+        headers: tenantId ? { "x-tenant-id": tenantId } : {},
+      })
+    );
     return {
       data: mapSalesReturn(response.data.data || response.data),
-      message: response.data.message || "Sales return created successfully",
+      message: isMulti
+        ? `Sales return created in ${tenantIds.join(", ")}`
+        : response.data.message || "Sales return created successfully",
     };
   }
 

@@ -16,7 +16,7 @@ const schema = z.object({
   code: z
     .string()
     .trim()
-    .regex(/^\d{4}$/, "Code must be a 4-digit account code"),
+    .regex(/^\d{4,5}$/, "Code must be a 4 or 5 digit account code"),
   name: z.string().trim().min(1, "Name is required"),
   parent: z.union([z.string().uuid("Parent must be valid"), z.literal("")]),
   account_group: z.enum([
@@ -60,6 +60,37 @@ const defaultValues = {
 const selectClassName =
   "w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100";
 
+const normalizeCodeForGeneration = (code) => {
+  const codeText = String(code || "").trim();
+  if (!/^\d+$/.test(codeText)) {
+    return "";
+  }
+  return codeText.length >= 5 ? codeText : codeText.padEnd(5, "0");
+};
+
+const getNextChildCode = (parentAccount, allAccounts) => {
+  if (!parentAccount) {
+    return "";
+  }
+
+  const normalizedParentCode = normalizeCodeForGeneration(parentAccount.code);
+  if (!normalizedParentCode) {
+    return "";
+  }
+
+  const step = normalizedParentCode.endsWith("00") ? 10 : 1;
+  const childCodes = allAccounts
+    .filter((account) => account.parent === parentAccount.id)
+    .map((account) => Number(normalizeCodeForGeneration(account.code)))
+    .filter((value) => Number.isFinite(value) && value > 0);
+
+  const nextValue = childCodes.length > 0
+    ? Math.max(...childCodes) + step
+    : Number(normalizedParentCode) + step;
+
+  return String(nextValue).padStart(normalizedParentCode.length, "0");
+};
+
 const AccountsPage = () => {
   const [activeTab, setActiveTab] = useState("coa");
   const [accountTree, setAccountTree] = useState([]);
@@ -82,9 +113,20 @@ const AccountsPage = () => {
   const parentOptions = useMemo(
     () =>
       flatAccounts.filter(
-        (account) => !account.is_postable && account.id !== editingId
+        (account) => account.id !== editingId
       ),
     [editingId, flatAccounts]
+  );
+  const generatedChildCode = useMemo(() => {
+    if (editingId || !parentValue) {
+      return "";
+    }
+    const parentAccount = flatAccounts.find((account) => account.id === parentValue);
+    return getNextChildCode(parentAccount, flatAccounts);
+  }, [editingId, flatAccounts, parentValue]);
+  const selectedParentAccount = useMemo(
+    () => flatAccounts.find((account) => account.id === parentValue) || null,
+    [flatAccounts, parentValue]
   );
 
   const buildTree = (accounts) => {
@@ -123,12 +165,8 @@ const AccountsPage = () => {
 
   try {
     const response = await accountService.list();
-
-    console.log("RESPONSE:", response);
-
     setAccountTree(Array.isArray(response) ? response : response.data);
   } catch (err) {
-    console.log("ERROR:", err);
     setError(err?.response?.data?.message || "Failed to load chart of accounts");
   } finally {
     setLoading(false);
@@ -152,6 +190,27 @@ const AccountsPage = () => {
     form.setValue("account_group", parentAccount.account_group);
     form.setValue("account_nature", parentAccount.account_nature);
   }, [flatAccounts, form, parentValue]);
+
+  useEffect(() => {
+    if (editingId) {
+      return;
+    }
+
+    if (parentValue && generatedChildCode) {
+      form.setValue("code", generatedChildCode, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+      return;
+    }
+
+    if (!parentValue && form.getValues("code") === generatedChildCode) {
+      form.setValue("code", "", {
+        shouldDirty: false,
+        shouldValidate: true,
+      });
+    }
+  }, [editingId, form, generatedChildCode, parentValue]);
 
   const resetForm = () => {
     setEditingId("");
@@ -301,9 +360,10 @@ const AccountsPage = () => {
           <FormInput
             label="Code"
             required
-            placeholder="1000"
+            placeholder={parentValue ? "Auto generated from parent" : "1000"}
             error={form.formState.errors.code?.message}
-            disabled={Boolean(editingId)}
+            readOnly={Boolean(editingId) || Boolean(parentValue)}
+            className={Boolean(editingId) || Boolean(parentValue) ? "bg-slate-100" : ""}
             {...form.register("code")}
           />
           <FormInput
@@ -323,6 +383,16 @@ const AccountsPage = () => {
                 </option>
               ))}
             </select>
+            {selectedParentAccount?.is_postable ? (
+              <p className="text-xs text-amber-700">
+                This parent is currently postable. It will be converted into a header account when you save a child under it.
+              </p>
+            ) : null}
+            {parentValue && generatedChildCode ? (
+              <p className="text-xs text-slate-500">
+                Next child code: <span className="font-semibold text-slate-700">{generatedChildCode}</span>
+              </p>
+            ) : null}
           </div>
           <FormInput
             label="Sort Order"

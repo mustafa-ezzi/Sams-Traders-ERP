@@ -1,6 +1,10 @@
 import axiosInstance from "../axiosInstance";
+import { createAcrossDimensions } from "../createAcrossDimensions";
 
 const BASE_URL = "/sales/sales-invoices/";
+
+const sumValues = (items, getter) =>
+  items.reduce((sum, item) => sum + Number(getter(item) || 0), 0);
 
 const mapInvoice = (invoice) => ({
   ...invoice,
@@ -12,13 +16,26 @@ const mapInvoice = (invoice) => ({
   returnedAmount: invoice.returned_amount ?? invoice.returnedAmount ?? 0,
   receivedAmount: invoice.received_amount ?? invoice.receivedAmount ?? 0,
   balanceAmount: invoice.balance_amount ?? invoice.balanceAmount ?? 0,
-  lines: (invoice.lines || []).map((line) => ({
-    ...line,
-    productId: line.product?.id || line.product_id || "",
-    productName: line.product?.name || "",
-    availableQuantity: line.available_quantity ?? line.availableQuantity ?? "0.00",
-  })),
+  lines: (invoice.lines || []).map((line) => {
+    const mappedLine = {
+      ...line,
+      productId: line.product?.id || line.product_id || "",
+      productName: line.product?.name || "",
+      availableQuantity: line.available_quantity ?? line.availableQuantity ?? "0.00",
+      costUsed: line.cost_used ?? line.costUsed ?? 0,
+      costTotal: line.cost_total ?? line.costTotal ?? 0,
+      profit: line.profit ?? 0,
+    };
+    return mappedLine;
+  }),
 });
+
+const mapInvoiceWithTotals = (invoice) => {
+  const mappedInvoice = mapInvoice(invoice);
+  mappedInvoice.costTotal = sumValues(mappedInvoice.lines, (line) => line.costTotal);
+  mappedInvoice.profit = sumValues(mappedInvoice.lines, (line) => line.profit);
+  return mappedInvoice;
+};
 
 class SalesInvoiceService {
   async list({ page = 1, limit = 20, search = "" }) {
@@ -28,7 +45,7 @@ class SalesInvoiceService {
 
     const items = response.data.data || response.data.results || [];
     return {
-      data: items.map(mapInvoice),
+      data: items.map(mapInvoiceWithTotals),
       total: response.data.total || 0,
       page: response.data.page || page,
       limit: response.data.limit || limit,
@@ -37,21 +54,27 @@ class SalesInvoiceService {
 
   async getById(id) {
     const response = await axiosInstance.get(`${BASE_URL}${id}/`);
-    return mapInvoice(response.data);
+    return mapInvoiceWithTotals(response.data);
   }
 
   async create(payload) {
-    const response = await axiosInstance.post(BASE_URL, payload);
+    const { response, isMulti, tenantIds } = await createAcrossDimensions((tenantId) =>
+      axiosInstance.post(BASE_URL, payload, {
+        headers: tenantId ? { "x-tenant-id": tenantId } : {},
+      })
+    );
     return {
-      data: mapInvoice(response.data.data || response.data),
-      message: response.data.message || "Sales invoice created successfully",
+      data: mapInvoiceWithTotals(response.data.data || response.data),
+      message: isMulti
+        ? `Sales invoice created in ${tenantIds.join(", ")}`
+        : response.data.message || "Sales invoice created successfully",
     };
   }
 
   async update(id, payload) {
     const response = await axiosInstance.put(`${BASE_URL}${id}/`, payload);
     return {
-      data: mapInvoice(response.data.data || response.data),
+      data: mapInvoiceWithTotals(response.data.data || response.data),
       message: response.data.message || "Sales invoice updated successfully",
     };
   }

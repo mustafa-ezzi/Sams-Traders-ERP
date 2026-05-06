@@ -1,4 +1,5 @@
 import axiosInstance from "../axiosInstance";
+import { createAcrossDimensions } from "../createAcrossDimensions";
 
 const accountService = {
   async list(params) {
@@ -14,15 +15,27 @@ const accountService = {
     return response.data.data || { root: null, banks: [] };
   },
   async createOpeningBank(payload) {
-    const response = await axiosInstance.post("/accounts/accounts/opening-banks/", payload);
+    const { response } = await createAcrossDimensions((tenantId) =>
+      axiosInstance.post("/accounts/accounts/opening-banks/", payload, {
+        headers: tenantId ? { "x-tenant-id": tenantId } : {},
+      })
+    );
     return response.data;
   },
   async createOpeningAccountItem(payload) {
-    const response = await axiosInstance.post("/accounts/accounts/opening-account-items/", payload);
+    const { response } = await createAcrossDimensions((tenantId) =>
+      axiosInstance.post("/accounts/accounts/opening-account-items/", payload, {
+        headers: tenantId ? { "x-tenant-id": tenantId } : {},
+      })
+    );
     return response.data;
   },
   async create(payload) {
-    const response = await axiosInstance.post("/accounts/accounts/", payload);
+    const { response } = await createAcrossDimensions((tenantId) =>
+      axiosInstance.post("/accounts/accounts/", payload, {
+        headers: tenantId ? { "x-tenant-id": tenantId } : {},
+      })
+    );
     return response.data;
   },
   async update(id, payload) {

@@ -1,4 +1,5 @@
 import axiosInstance from "../axiosInstance.js";
+import { createAcrossDimensions } from "../createAcrossDimensions";
 
 const BASE_URL = "/inventory/production/";
 
@@ -40,7 +41,11 @@ class ProductionService {
       quantity: Number(data.quantity),
     };
 
-    const response = await axiosInstance.post(BASE_URL, payload);
+    const { response, isMulti, tenantIds } = await createAcrossDimensions((tenantId) =>
+      axiosInstance.post(BASE_URL, payload, {
+        headers: tenantId ? { "x-tenant-id": tenantId } : {},
+      })
+    );
     const transformedData = response.data.data || response.data;
 
     return {
@@ -52,7 +57,9 @@ class ProductionService {
         currentAvailability: transformedData.current_availability,
         availableQuantity: transformedData.available_quantity,
       },
-      message: response.data.message || "Production created successfully",
+      message: isMulti
+        ? `Production created in ${tenantIds.join(", ")}`
+        : response.data.message || "Production created successfully",
     };
   }
 

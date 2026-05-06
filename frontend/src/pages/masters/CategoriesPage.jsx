@@ -124,7 +124,10 @@ const CategoriesPage = () => {
       resetForm();
       await loadRecords();
     } catch (submitError) {
-      const msg = submitError?.response?.data?.message || "Save failed";
+      const msg =
+        submitError?.response?.data?.message ||
+        submitError?.response?.data?.name?.[0] ||
+        "Save failed";
       setError(msg);
       toast.error(msg);
     }

@@ -12,7 +12,12 @@ axiosInstance.interceptors.request.use((config) => {
     config.headers.Authorization = `Bearer ${token}`;
   }
 
-  if (tenantId) {
+  const hasRequestTenant =
+    Boolean(config.headers?.["x-tenant-id"]) ||
+    Boolean(config.headers?.["X-Tenant-Id"]) ||
+    Boolean(config.headers?.get?.("x-tenant-id"));
+
+  if (tenantId && !hasRequestTenant) {
     config.headers["x-tenant-id"] = tenantId;
   }
 
@@ -29,6 +34,7 @@ axiosInstance.interceptors.response.use(
       localStorage.removeItem("token");
       localStorage.removeItem("refreshToken");
       localStorage.removeItem("tenantId");
+      localStorage.removeItem("createTenantIds");
       // Redirect to login page
       window.location.href = "/login";
     }

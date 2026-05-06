@@ -18,7 +18,11 @@ from accounts.journal import (
 from accounts.models import JournalEntry
 from inventory.models import Product, ProductStock
 from inventory.pagination import StandardResultsSetPagination
-from inventory.services import sync_product_stock_quantity
+from inventory.services import (
+    get_current_product_average_cost,
+    rebuild_product_costing,
+    sync_product_stock_quantity,
+)
 from sales.models import SalesBankReceipt, SalesInvoice, SalesInvoiceLine, SalesReturn, SalesReturnLine
 from sales.serializers import (
     SalesBankReceiptSerializer,
@@ -67,10 +71,13 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
         )
         for product_id in product_ids:
             sync_product_stock_quantity(invoice.tenant_id, invoice.warehouse_id, product_id)
+        rebuild_product_costing(invoice.tenant_id, product_ids)
 
     def _sync_product_stock_pairs(self, tenant_id, warehouse_id, product_ids):
-        for product_id in set(product_ids):
+        product_ids = {product_id for product_id in product_ids if product_id}
+        for product_id in product_ids:
             sync_product_stock_quantity(tenant_id, warehouse_id, product_id)
+        rebuild_product_costing(tenant_id, product_ids)
 
     def create(self, request, *args, **kwargs):
         with transaction.atomic():
@@ -163,6 +170,7 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
                     "unit": product.unit.name if product.unit else None,
                     "product_type": product.product_type,
                     "net_amount": str(product.net_amount),
+                    "average_cost": str(get_current_product_average_cost(tenant_id, product.id)),
                 }
             )
 
@@ -214,10 +222,13 @@ class SalesReturnViewSet(viewsets.ModelViewSet):
                 sales_return.sales_invoice.warehouse_id,
                 product_id,
             )
+        rebuild_product_costing(sales_return.tenant_id, product_ids)
 
     def _sync_product_stock_pairs(self, tenant_id, warehouse_id, product_ids):
-        for product_id in set(product_ids):
+        product_ids = {product_id for product_id in product_ids if product_id}
+        for product_id in product_ids:
             sync_product_stock_quantity(tenant_id, warehouse_id, product_id)
+        rebuild_product_costing(tenant_id, product_ids)
 
     def create(self, request, *args, **kwargs):
         with transaction.atomic():

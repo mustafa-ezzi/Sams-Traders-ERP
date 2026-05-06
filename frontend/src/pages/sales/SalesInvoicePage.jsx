@@ -97,15 +97,21 @@ const SalesInvoicePage = () => {
         const quantity = toNumber(line.quantity);
         const rate = toNumber(line.rate);
         const discount = toNumber(line.discount);
+        const averageCost = toNumber(productMap[line.productId]?.average_cost);
         const amount = quantity * rate;
         const totalAmount = Math.max(amount - discount, 0);
+        const costTotal = quantity * averageCost;
+        const profit = totalAmount - costTotal;
         return {
           amount,
           discount,
           totalAmount,
+          averageCost,
+          costTotal,
+          profit,
         };
       }),
-    [form.lines]
+    [form.lines, productMap]
   );
 
   const grossAmount = useMemo(
@@ -115,6 +121,14 @@ const SalesInvoicePage = () => {
   const netAmount = useMemo(
     () => Math.max(grossAmount - toNumber(form.invoiceDiscount), 0),
     [grossAmount, form.invoiceDiscount]
+  );
+  const estimatedCostTotal = useMemo(
+    () => lineMetrics.reduce((sum, line) => sum + line.costTotal, 0),
+    [lineMetrics]
+  );
+  const estimatedProfit = useMemo(
+    () => netAmount - estimatedCostTotal,
+    [estimatedCostTotal, netAmount]
   );
 
   const loadInvoices = async (nextPage = page, nextSearch = search) => {
@@ -408,7 +422,7 @@ const SalesInvoicePage = () => {
           <div className="overflow-hidden rounded-2xl border border-slate-200">
             <div
               className="grid gap-2 bg-indigo-50 px-4 py-3 text-xs font-bold uppercase tracking-widest text-slate-500"
-              style={{ gridTemplateColumns: "1.8fr 80px 90px 70px 110px 110px 110px 40px" }}
+              style={{ gridTemplateColumns: "1.8fr 80px 90px 70px 110px 110px 110px 110px 110px 110px 40px" }}
             >
               <span>Product Name</span>
               <span>Qty</span>
@@ -417,6 +431,9 @@ const SalesInvoicePage = () => {
               <span>Rate (Price)</span>
               <span>Amount</span>
               <span>Disc (Amt)</span>
+              <span>Avg Cost</span>
+              <span>COGS</span>
+              <span>Profit</span>
               <span></span>
             </div>
 
@@ -429,7 +446,7 @@ const SalesInvoicePage = () => {
                     key={`${index}-${line.productId}`}
                     className="grid items-center gap-2 py-3"
                     style={{
-                      gridTemplateColumns: "1.8fr 80px 90px 70px 110px 110px 110px 40px",
+                      gridTemplateColumns: "1.8fr 80px 90px 70px 110px 110px 110px 110px 110px 110px 40px",
                     }}
                   >
                     <select
@@ -484,6 +501,18 @@ const SalesInvoicePage = () => {
                       onChange={(e) => handleLineChange(index, "discount", e.target.value)}
                     />
 
+                    <div className="flex items-center rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm font-semibold text-emerald-700">
+                      {formatDecimal(metrics?.averageCost || 0)}
+                    </div>
+
+                    <div className="flex items-center rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-semibold text-slate-700">
+                      {formatDecimal(metrics?.costTotal || 0)}
+                    </div>
+
+                    <div className="flex items-center rounded-2xl border border-blue-200 bg-blue-50 px-3 py-3 text-sm font-semibold text-blue-700">
+                      {formatDecimal(metrics?.profit || 0)}
+                    </div>
+
                     <button
                       type="button"
                       onClick={() => removeLine(index)}
@@ -531,6 +560,14 @@ const SalesInvoicePage = () => {
               <div className="border-l border-slate-200 pl-6 text-right">
                 <p className="mb-0.5 text-xs uppercase tracking-wide text-slate-400">Net Amount</p>
                 <p className="text-xl font-extrabold text-blue-600">{formatDecimal(netAmount)}</p>
+              </div>
+              <div className="border-l border-slate-200 pl-6 text-right">
+                <p className="mb-0.5 text-xs uppercase tracking-wide text-slate-400">Est. COGS</p>
+                <p className="text-base font-bold text-slate-800">{formatDecimal(estimatedCostTotal)}</p>
+              </div>
+              <div className="border-l border-slate-200 pl-6 text-right">
+                <p className="mb-0.5 text-xs uppercase tracking-wide text-slate-400">Est. Profit</p>
+                <p className="text-xl font-extrabold text-emerald-600">{formatDecimal(estimatedProfit)}</p>
               </div>
             </div>
           </div>
@@ -586,6 +623,8 @@ const SalesInvoicePage = () => {
                     <th className="px-4 py-3">Warehouse</th>
                     <th className="px-4 py-3">Gross</th>
                     <th className="px-4 py-3">Net</th>
+                    <th className="px-4 py-3">COGS</th>
+                    <th className="px-4 py-3">Profit</th>
                     <th className="px-4 py-3">Balance</th>
                     <th className="px-4 py-3">Actions</th>
                   </tr>
@@ -604,6 +643,12 @@ const SalesInvoicePage = () => {
                       </td>
                       <td className="px-4 py-3 font-semibold text-blue-600">
                         {formatDecimal(record.netAmount)}
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-slate-700">
+                        {formatDecimal(record.costTotal)}
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-emerald-600">
+                        {formatDecimal(record.profit)}
                       </td>
                       <td className="px-4 py-3 font-semibold text-amber-600">
                         {formatDecimal(record.balanceAmount)}

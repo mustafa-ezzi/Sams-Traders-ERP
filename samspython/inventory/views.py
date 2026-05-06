@@ -4,7 +4,7 @@ from rest_framework.viewsets import ModelViewSet
 from rest_framework.permissions import IsAuthenticated
 from django.utils.timezone import now
 from decimal import Decimal
-from django.db.models import DecimalField, ExpressionWrapper, F, Q, Sum, Value
+from django.db.models import DecimalField, ExpressionWrapper, F, Prefetch, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from rest_framework.decorators import action
 from .models import (
@@ -37,9 +37,16 @@ from .serializers import (
     WarehouseSerializer,
 )
 from .pagination import StandardResultsSetPagination
-from .services import sync_product_stock_quantity, sync_raw_material_stock_quantity
+from .services import (
+    rebuild_product_costing,
+    sync_product_stock_quantity,
+    sync_raw_material_stock_quantity,
+)
 from rest_framework import filters
 from rest_framework.exceptions import ValidationError
+
+from purchase.models import PurchaseInvoiceLine, PurchaseReturnLine
+from sales.models import SalesInvoiceLine, SalesReturnLine
 
 
 def get_raw_material_stock_total(tenant_id, raw_material_ids):
@@ -167,7 +174,7 @@ class RawMaterialViewSet(ModelViewSet):
         tenant_id = self.request.user.tenant_id
         qs = RawMaterial.objects.filter(
             tenant_id=tenant_id, deleted_at__isnull=True
-        ).select_related("brand", "category", "size", "purchase_unit")
+        ).select_related("brand", "category", "purchase_unit")
         qs = qs.annotate(
             quantity=Coalesce(
                 Sum(
@@ -185,15 +192,12 @@ class RawMaterialViewSet(ModelViewSet):
         # optional filtering by brand/category/size/unit IDs via query params
         brand_id = self.request.query_params.get("brand_id")
         category_id = self.request.query_params.get("category_id")
-        size_id = self.request.query_params.get("size_id")
         purchase_unit_id = self.request.query_params.get("purchase_unit_id")
 
         if brand_id:
             qs = qs.filter(brand_id=brand_id)
         if category_id:
             qs = qs.filter(category_id=category_id)
-        if size_id:
-            qs = qs.filter(size_id=size_id)
         if purchase_unit_id:
             qs = qs.filter(purchase_unit_id=purchase_unit_id)
         return qs
@@ -219,9 +223,14 @@ class ProductViewSet(viewsets.ModelViewSet):
     search_fields = ["name"]
 
     def get_queryset(self):
+        active_materials = ProductMaterial.objects.filter(
+            deleted_at__isnull=True
+        ).select_related("raw_material", "uom")
         qs = Product.objects.filter(
             tenant_id=self.request.user.tenant_id, deleted_at__isnull=True
-        ).select_related("unit").prefetch_related("materials")
+        ).select_related("unit").prefetch_related(
+            Prefetch("materials", queryset=active_materials)
+        )
         qs = qs.annotate(
             quantity=Coalesce(
                 Sum(
@@ -241,21 +250,65 @@ class ProductViewSet(viewsets.ModelViewSet):
         serializer.save()
 
     def perform_destroy(self, instance):
-        production_exists = Production.objects.filter(
+        active_production_exists = Production.objects.filter(
             tenant_id=self.request.user.tenant_id,
             product_id=instance.id,
             deleted_at__isnull=True,
         ).exists()
-        product_stock_exists = ProductStock.objects.filter(
+        active_purchase_exists = PurchaseInvoiceLine.objects.filter(
             tenant_id=self.request.user.tenant_id,
             product_id=instance.id,
             deleted_at__isnull=True,
+            invoice__deleted_at__isnull=True,
+        ).exists()
+        active_purchase_return_exists = PurchaseReturnLine.objects.filter(
+            tenant_id=self.request.user.tenant_id,
+            product_id=instance.id,
+            deleted_at__isnull=True,
+            purchase_return__deleted_at__isnull=True,
+        ).exists()
+        active_sales_exists = SalesInvoiceLine.objects.filter(
+            tenant_id=self.request.user.tenant_id,
+            product_id=instance.id,
+            deleted_at__isnull=True,
+            invoice__deleted_at__isnull=True,
+        ).exists()
+        active_sales_return_exists = SalesReturnLine.objects.filter(
+            tenant_id=self.request.user.tenant_id,
+            product_id=instance.id,
+            deleted_at__isnull=True,
+            sales_return__deleted_at__isnull=True,
+        ).exists()
+        non_zero_stock_exists = ProductStock.objects.filter(
+            tenant_id=self.request.user.tenant_id,
+            product_id=instance.id,
+            deleted_at__isnull=True,
+        ).exclude(
+            quantity=0,
         ).exists()
 
-        if production_exists or product_stock_exists:
+        if non_zero_stock_exists:
             raise ValidationError(
-                "Product cannot be deleted because stock records exist."
+                "Product cannot be deleted because it has available stock."
             )
+
+        if (
+            active_production_exists
+            or active_purchase_exists
+            or active_purchase_return_exists
+            or active_sales_exists
+            or active_sales_return_exists
+        ):
+            raise ValidationError(
+                "Product cannot be deleted because active purchase, production, or sales records exist."
+            )
+
+        ProductStock.objects.filter(
+            tenant_id=self.request.user.tenant_id,
+            product_id=instance.id,
+            deleted_at__isnull=True,
+            quantity=0,
+        ).update(deleted_at=now())
 
         instance.deleted_at = now()
         instance.save()
@@ -289,7 +342,6 @@ class OpeningStockViewSet(viewsets.ModelViewSet):
                 "warehouse",
                 "raw_material__brand",
                 "raw_material__category",
-                "raw_material__size",
                 "raw_material__purchase_unit",
             )
             .order_by("-date", "-created_at")
@@ -618,6 +670,7 @@ class ProductionViewSet(viewsets.ModelViewSet):
 
         self._sync_product_stock_quantity(tenant_id, instance.warehouse_id, instance.product_id)
         self._sync_related_raw_material_stock(tenant_id, instance.warehouse_id, instance.product)
+        rebuild_product_costing(tenant_id, [instance.product_id])
 
         self._enriched_data = self._enrich_response_data([instance], tenant_id)
         enriched_serializer = self.get_serializer(instance)
@@ -762,6 +815,7 @@ class ProductionViewSet(viewsets.ModelViewSet):
         ):
             self._sync_product_stock_quantity(tenant_id, old_warehouse_id, old_product_id)
             self._sync_related_raw_material_stock(tenant_id, old_warehouse_id, old_product)
+        rebuild_product_costing(tenant_id, [old_product_id, updated_instance.product_id])
 
         self._enriched_data = self._enrich_response_data([updated_instance], tenant_id)
         enriched_serializer = self.get_serializer(updated_instance)
@@ -780,6 +834,7 @@ class ProductionViewSet(viewsets.ModelViewSet):
         self.perform_destroy(instance)
         self._sync_product_stock_quantity(tenant_id, warehouse_id, product_id)
         self._sync_related_raw_material_stock(tenant_id, warehouse_id, instance.product)
+        rebuild_product_costing(tenant_id, [product_id])
 
         return Response(
             {"data": None, "message": "Production deleted successfully"},

@@ -4,7 +4,6 @@ import { useAuth } from "./context/AuthContext";
 import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
 import UnitsPage from "./pages/masters/UnitsPage";
-import SizesPage from "./pages/masters/SizesPage";
 import CategoriesPage from "./pages/masters/CategoriesPage";
 import BrandsPage from "./pages/masters/BrandsPage";
 import RawMaterialPage from "./pages/rawMaterial/RawMaterialPage";
@@ -83,7 +82,6 @@ const App = () => (
       >
         <Route index element={<DashboardPage />} />
         <Route path="masters/units" element={<UnitsPage />} />
-        <Route path="masters/sizes" element={<SizesPage />} />
         <Route path="masters/categories" element={<CategoriesPage />} />
         <Route path="masters/brands" element={<BrandsPage />} />
         <Route path="raw-materials" element={<RawMaterialPage />} />

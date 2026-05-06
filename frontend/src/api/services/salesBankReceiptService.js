@@ -1,4 +1,5 @@
 import axiosInstance from "../axiosInstance";
+import { createAcrossDimensions } from "../createAcrossDimensions";
 
 const BASE_URL = "/sales/sales-bank-receipts/";
 
@@ -38,10 +39,16 @@ class SalesBankReceiptService {
   }
 
   async create(payload) {
-    const response = await axiosInstance.post(BASE_URL, payload);
+    const { response, isMulti, tenantIds } = await createAcrossDimensions((tenantId) =>
+      axiosInstance.post(BASE_URL, payload, {
+        headers: tenantId ? { "x-tenant-id": tenantId } : {},
+      })
+    );
     return {
       data: mapReceipt(response.data.data || response.data),
-      message: response.data.message || "Sales bank receipt created successfully",
+      message: isMulti
+        ? `Sales bank receipt created in ${tenantIds.join(", ")}`
+        : response.data.message || "Sales bank receipt created successfully",
     };
   }
 

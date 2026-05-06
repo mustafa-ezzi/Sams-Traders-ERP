@@ -3,9 +3,21 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 from types import SimpleNamespace
 
 from accounts.models import Account, User
-from inventory.models import Category, Product, Unit
-from inventory.serializers import ProductSerializer
-from inventory.views import CategoryViewSet
+from inventory.models import (
+    Category,
+    Customer,
+    Product,
+    ProductCostState,
+    ProductStock,
+    Supplier,
+    Unit,
+    Warehouse,
+)
+from inventory.services import rebuild_product_costing
+from inventory.serializers import ProductSerializer, UnitSerializer
+from inventory.views import CategoryViewSet, ProductViewSet
+from purchase.models import PurchaseInvoice, PurchaseInvoiceLine
+from sales.models import SalesInvoice, SalesInvoiceLine
 
 
 class ProductCoaDefaultsTests(TestCase):
@@ -153,6 +165,145 @@ class ProductCoaDefaultsTests(TestCase):
         updated_product = serializer.save()
 
         self.assertEqual(updated_product.unit_id, updated_unit.id)
+
+    def test_unit_duplicate_name_returns_validation_error(self):
+        Unit.objects.create(
+            tenant_id=self.tenant_id,
+            name="Carton",
+            breakdown_unit="Piece",
+        )
+        serializer = UnitSerializer(
+            data={
+                "name": "Carton",
+                "base_quantity": "1",
+                "breakdown_unit": "Piece",
+                "breakdown_quantity": "12",
+            },
+            context={"request": SimpleNamespace(user=self.user)},
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertEqual(
+            serializer.errors["name"][0],
+            "Unit with this name already exists.",
+        )
+
+    def test_product_moving_average_cost_updates_sale_profit(self):
+        warehouse = Warehouse.objects.create(
+            tenant_id=self.tenant_id,
+            name="Main Warehouse",
+            location="Main",
+        )
+        supplier = Supplier.objects.create(
+            tenant_id=self.tenant_id,
+            name="Supplier",
+            business_name="Supplier",
+            phone_number="123",
+            address="Address",
+        )
+        customer = Customer.objects.create(
+            tenant_id=self.tenant_id,
+            name="Customer",
+            business_name="Customer",
+            phone_number="123",
+            address="Address",
+        )
+        product = Product.objects.create(
+            tenant_id=self.tenant_id,
+            name="Finished Item",
+            product_type="FINISHED_GOOD",
+            direct_price="25.00",
+            net_amount="25.00",
+            unit=self.unit,
+        )
+        purchase_invoice = PurchaseInvoice.objects.create(
+            tenant_id=self.tenant_id,
+            invoice_number="PINV-T1",
+            date="2026-05-01",
+            supplier=supplier,
+            warehouse=warehouse,
+            gross_amount="100.00",
+            net_amount="100.00",
+        )
+        PurchaseInvoiceLine.objects.create(
+            tenant_id=self.tenant_id,
+            invoice=purchase_invoice,
+            item_type="FINISHED_GOOD",
+            product=product,
+            quantity="10.00",
+            rate="10.00",
+            amount="100.00",
+            total_amount="100.00",
+        )
+        sales_invoice = SalesInvoice.objects.create(
+            tenant_id=self.tenant_id,
+            invoice_number="SINV-T1",
+            date="2026-05-02",
+            customer=customer,
+            warehouse=warehouse,
+            gross_amount="45.00",
+            net_amount="45.00",
+        )
+        sale_line = SalesInvoiceLine.objects.create(
+            tenant_id=self.tenant_id,
+            invoice=sales_invoice,
+            product=product,
+            quantity="3.00",
+            rate="15.00",
+            amount="45.00",
+            total_amount="45.00",
+        )
+
+        rebuild_product_costing(self.tenant_id, [product.id])
+
+        sale_line.refresh_from_db()
+        state = ProductCostState.objects.get(
+            tenant_id=self.tenant_id,
+            product=product,
+            deleted_at__isnull=True,
+        )
+        self.assertEqual(str(sale_line.cost_used), "10.0000")
+        self.assertEqual(str(sale_line.cost_total), "30.00")
+        self.assertEqual(str(sale_line.profit), "15.00")
+        self.assertEqual(str(state.total_quantity), "7.0000")
+        self.assertEqual(str(state.total_value), "70.00")
+        self.assertEqual(str(state.average_cost), "10.0000")
+
+    def test_product_delete_allows_zero_quantity_stock_row(self):
+        warehouse = Warehouse.objects.create(
+            tenant_id=self.tenant_id,
+            name="Delete Warehouse",
+            location="Main",
+        )
+        product = Product.objects.create(
+            tenant_id=self.tenant_id,
+            name="Unused Product",
+            product_type="FINISHED_GOOD",
+            direct_price="10.00",
+            net_amount="10.00",
+            unit=self.unit,
+        )
+        ProductStock.objects.create(
+            tenant_id=self.tenant_id,
+            warehouse=warehouse,
+            product=product,
+            quantity="0.00",
+        )
+
+        request = self.factory.delete(f"/api/inventory/products/{product.id}/")
+        force_authenticate(request, user=self.user)
+        response = ProductViewSet.as_view({"delete": "destroy"})(request, pk=str(product.id))
+
+        self.assertEqual(response.status_code, 200)
+        product.refresh_from_db()
+        self.assertIsNotNone(product.deleted_at)
+        self.assertFalse(
+            ProductStock.objects.filter(
+                tenant_id=self.tenant_id,
+                product=product,
+                deleted_at__isnull=True,
+            ).exists()
+        )
 
     def test_apply_category_coa_defaults_only_fills_missing_product_fields(self):
         custom_revenue = Account.objects.create(

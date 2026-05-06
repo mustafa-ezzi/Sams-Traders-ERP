@@ -1,10 +1,9 @@
 import { z } from "zod";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import productService from "../../api/services/productService";
 import rawMaterialService from "../../api/services/rawMaterialService";
-import categoryService from "../../api/services/categoryService";
 import accountService from "../../api/services/accountService";
 import unitService from "../../api/services/unitService";
 import StateView from "../../components/StateView";
@@ -24,7 +23,6 @@ const schema = z.object({
   directPrice: z.coerce.number().min(0),
   useCalculatedCost: z.boolean(),
   confirmedUnitCost: z.coerce.number().min(0),
-  category: z.union([z.string().uuid("Category must be a valid UUID"), z.literal("")]),
   unit: z.union([z.string().uuid("Unit must be a valid UUID"), z.literal("")]),
   inventory_account: z.union([z.string().uuid("Inventory account must be a valid UUID"), z.literal("")]),
   cogs_account: z.union([z.string().uuid("COGS account must be a valid UUID"), z.literal("")]),
@@ -40,7 +38,6 @@ const defaultValues = {
   directPrice: 0,
   useCalculatedCost: true,
   confirmedUnitCost: 0,
-  category: "",
   unit: "",
   inventory_account: "",
   cogs_account: "",
@@ -50,11 +47,30 @@ const defaultValues = {
 const selectClassName =
   "w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100";
 
-const coaFields = [
-  { key: "inventory_account", label: "Inventory" },
-  { key: "cogs_account", label: "COGS" },
-  { key: "revenue_account", label: "Revenue" },
-];
+const getRawMaterialOptionLabel = (option) => {
+  const brandName = option?.brand_name || option?.brand?.name;
+  return brandName ? `${option.name} - ${brandName}` : option.name;
+};
+
+const extractErrorMessage = (error) => {
+  const data = error?.response?.data;
+
+  if (!data) return error?.message || "Delete failed";
+  if (typeof data === "string") return data;
+  if (data.message) return data.message;
+  if (typeof data.detail === "string") return data.detail;
+
+  const fieldEntry = Object.entries(data).find(([, value]) =>
+    typeof value === "string" || Array.isArray(value)
+  );
+
+  if (fieldEntry) {
+    const [, value] = fieldEntry;
+    return Array.isArray(value) ? value.join(", ") : value;
+  }
+
+  return "Delete failed";
+};
 
 const ProductPage = () => {
   const [records, setRecords] = useState([]);
@@ -65,7 +81,6 @@ const ProductPage = () => {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [rawMaterialOptions, setRawMaterialOptions] = useState([]);
-  const [categoryOptions, setCategoryOptions] = useState([]);
   const [unitOptions, setUnitOptions] = useState([]);
   const [inventoryAccounts, setInventoryAccounts] = useState([]);
   const [cogsAccounts, setCogsAccounts] = useState([]);
@@ -75,75 +90,7 @@ const ProductPage = () => {
   const toast = useToast();
   const form = useForm({ resolver: zodResolver(schema), defaultValues });
   const productType = form.watch("productType");
-  const selectedCategoryId = form.watch("category");
   const useCalculatedCost = form.watch("useCalculatedCost");
-  const selectedInventoryAccount = form.watch("inventory_account");
-  const selectedCogsAccount = form.watch("cogs_account");
-  const selectedRevenueAccount = form.watch("revenue_account");
-
-  const accountMap = useMemo(() => {
-    const allAccounts = [...inventoryAccounts, ...cogsAccounts, ...revenueAccounts];
-    return Object.fromEntries(allAccounts.map((account) => [account.id, account]));
-  }, [inventoryAccounts, cogsAccounts, revenueAccounts]);
-
-  const selectedCategory = useMemo(
-    () => categoryOptions.find((item) => item.id === selectedCategoryId) || null,
-    [categoryOptions, selectedCategoryId]
-  );
-
-  const categoryMismatchWarnings = useMemo(() => {
-    if (!selectedCategory) {
-      return [];
-    }
-
-    const selectedValues = {
-      inventory_account: selectedInventoryAccount,
-      cogs_account: selectedCogsAccount,
-      revenue_account: selectedRevenueAccount,
-    };
-
-    return coaFields
-      .filter(({ key }) => {
-        const categoryValue = selectedCategory[key];
-        const selectedValue = selectedValues[key];
-        return categoryValue && selectedValue && categoryValue !== selectedValue;
-      })
-      .map(({ key, label }) => {
-        const categoryAccount = accountMap[selectedCategory[key]];
-        return `${label} account differs from category default${categoryAccount ? ` (${formatAccountLabel(categoryAccount)})` : ""}.`;
-      });
-  }, [
-    accountMap,
-    selectedCategory,
-    selectedInventoryAccount,
-    selectedCogsAccount,
-    selectedRevenueAccount,
-  ]);
-
-  const categoryDefaultHints = useMemo(() => {
-    if (!selectedCategory) {
-      return [];
-    }
-
-    const selectedValues = {
-      inventory_account: selectedInventoryAccount,
-      cogs_account: selectedCogsAccount,
-      revenue_account: selectedRevenueAccount,
-    };
-
-    return coaFields
-      .filter(({ key }) => selectedCategory[key] && !selectedValues[key])
-      .map(({ key, label }) => {
-        const categoryAccount = accountMap[selectedCategory[key]];
-        return `${label} will inherit from category on save${categoryAccount ? ` (${formatAccountLabel(categoryAccount)})` : ""}.`;
-      });
-  }, [
-    accountMap,
-    selectedCategory,
-    selectedInventoryAccount,
-    selectedCogsAccount,
-    selectedRevenueAccount,
-  ]);
 
   const load = async (nextPage = page, nextSearch = search) => {
     setLoading(true);
@@ -168,14 +115,12 @@ const ProductPage = () => {
     load(1, "");
     Promise.all([
       rawMaterialService.list({ page: 1, limit: 100, search: "" }),
-      categoryService.list({ page: 1, limit: 100, search: "" }),
       unitService.list({ page: 1, limit: 100, search: "" }),
       accountService.list(),
     ])
-      .then(([rawMaterialRes, categoryRes, unitRes, accountRes]) => {
+      .then(([rawMaterialRes, unitRes, accountRes]) => {
         const flatAccounts = flattenAccountTree(accountRes || []);
         setRawMaterialOptions(rawMaterialRes.data || []);
-        setCategoryOptions(categoryRes.data || []);
         setUnitOptions(unitRes.data || []);
         setInventoryAccounts(
           flatAccounts.filter((account) => account.account_group === "ASSET" && account.is_postable)
@@ -215,7 +160,6 @@ const ProductPage = () => {
         direct_price: values.directPrice,
         use_calculated_cost: values.useCalculatedCost,
         confirmed_unit_cost: values.confirmedUnitCost,
-        category: values.category || null,
         unit: values.unit || null,
         inventory_account: values.inventory_account || null,
         cogs_account: values.cogs_account || null,
@@ -253,16 +197,6 @@ const ProductPage = () => {
     (Number(form.watch("mouldingCharges")) || 0) +
     (Number(form.watch("labourCharges")) || 0) +
     (Number(form.watch("packagingCharges")) || 0);
-
-  const applyCategoryCoasToForm = () => {
-    if (!selectedCategory) {
-      return;
-    }
-
-    form.setValue("inventory_account", selectedCategory.inventory_account || "");
-    form.setValue("cogs_account", selectedCategory.cogs_account || "");
-    form.setValue("revenue_account", selectedCategory.revenue_account || "");
-  };
 
   return (
     <section className="space-y-6">
@@ -308,7 +242,7 @@ const ProductPage = () => {
             </select>
           </div>
 
-          {productType === "FINISHED_GOOD" ? (
+          {productType === "FINISHED_GOOD" && (
             <FormInput
               label="Per Piece Price"
               required
@@ -317,66 +251,7 @@ const ProductPage = () => {
               error={form.formState.errors.directPrice?.message}
               {...form.register("directPrice")}
             />
-          ) : (
-            <FormInput
-              label="Packaging Charges"
-              required
-              type="number"
-              step="0.01"
-              error={form.formState.errors.packagingCharges?.message}
-              {...form.register("packagingCharges")}
-            />
           )}
-
-          {productType === "ASSEMBLY_PRODUCT" && (
-            <>
-              <FormInput
-                label="Moulding Charges"
-                required
-                type="number"
-                step="0.01"
-                error={form.formState.errors.mouldingCharges?.message}
-                {...form.register("mouldingCharges")}
-              />
-              <FormInput
-                label="Labour Charges"
-                required
-                type="number"
-                step="0.01"
-                error={form.formState.errors.labourCharges?.message}
-                {...form.register("labourCharges")}
-              />
-            </>
-          )}
-
-          <div className="space-y-2">
-            <label className="block text-sm font-semibold text-slate-700">Category</label>
-            <select className={selectClassName} {...form.register("category")}>
-              <option value="">Select category</option>
-              {categoryOptions.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-            {selectedCategory && (
-              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="space-y-1">
-                    {categoryDefaultHints.length > 0 ? (
-                      categoryDefaultHints.map((message) => <p key={message}>{message}</p>)
-                    ) : (
-                      <p>Use category COAs as defaults, or keep product-level overrides if needed.</p>
-                    )}
-                    {categoryMismatchWarnings.map((message) => <p key={message}>{message}</p>)}
-                  </div>
-                  <Button type="button" variant="secondary" onClick={applyCategoryCoasToForm}>
-                    Apply Category COAs
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
 
           <div className="space-y-2">
             <label className="block text-sm font-semibold text-slate-700">Unit</label>
@@ -429,30 +304,6 @@ const ProductPage = () => {
             </select>
           </div>
 
-          {productType === "ASSEMBLY_PRODUCT" && (
-            <div className="rounded-[20px] border border-emerald-200 bg-emerald-50/60 p-4 xl:col-span-3">
-              <div className="mb-3 flex items-center justify-between">
-                <p className="text-sm font-semibold text-emerald-900">
-                  Calculated cost per unit: {formatDecimal(autoAssemblyCost)}
-                </p>
-                <label className="inline-flex items-center gap-2 text-sm text-emerald-900">
-                  <input type="checkbox" {...form.register("useCalculatedCost")} />
-                  Use calculated cost
-                </label>
-              </div>
-              {!useCalculatedCost && (
-                <FormInput
-                  label="Confirmed Unit Cost"
-                  required
-                  type="number"
-                  step="0.01"
-                  error={form.formState.errors.confirmedUnitCost?.message}
-                  {...form.register("confirmedUnitCost")}
-                />
-              )}
-            </div>
-          )}
-
           <div className="rounded-[26px] border border-slate-200 bg-slate-50/80 p-4 xl:col-span-3">
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -488,7 +339,7 @@ const ProductPage = () => {
                   return (
                     <div
                       key={index}
-                    className="grid gap-3 rounded-2xl border border-white bg-white p-4 shadow-sm md:grid-cols-[1.3fr_1fr_1fr_1fr_auto]"
+                    className="grid gap-3 rounded-2xl border border-white bg-white p-4 shadow-sm md:grid-cols-[1.3fr_1fr_1fr_1fr_1fr_auto]"
                     >
                       <div className="space-y-2">
                         <label className="text-xs font-semibold text-slate-600">Raw Material</label>
@@ -519,7 +370,7 @@ const ProductPage = () => {
                                 option.id !== row.raw_material_id
                               }
                             >
-                              {option.name}
+                              {getRawMaterialOptionLabel(option)}
                             </option>
                           ))}
                         </select>
@@ -566,7 +417,7 @@ const ProductPage = () => {
                         />
                       </div>
                       <div className="space-y-2">
-                        <label className="text-xs font-semibold text-slate-600">Unit Cost</label>
+                        <label className="text-xs font-semibold text-slate-600">Rate</label>
                         <input
                           type="number"
                           step="0.01"
@@ -583,8 +434,19 @@ const ProductPage = () => {
                           }
                         />
                         {selectedMaterial && (
-                          <p className="text-xs text-slate-500">Purchase price: {selectedMaterial.purchase_price}</p>
+                          <p className="text-xs text-slate-500">
+                            {getRawMaterialOptionLabel(selectedMaterial)} purchase price: {selectedMaterial.purchase_price}
+                          </p>
                         )}
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold text-slate-600">Cost</label>
+                        <input
+                          type="text"
+                          readOnly
+                          className="w-full cursor-not-allowed rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm text-slate-700 outline-none"
+                          value={formatDecimal((Number(row.quantity) || 0) * (Number(row.rate) || 0))}
+                        />
                       </div>
                       <Button
                         type="button"
@@ -603,6 +465,71 @@ const ProductPage = () => {
                     </div>
                   );
                 })}
+
+                <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4">
+                  <div className="grid gap-4 lg:grid-cols-[1.2fr_1.2fr_1.2fr_1fr] lg:items-start">
+                    <FormInput
+                      label="Moulding Charges"
+                      required
+                      type="number"
+                      step="0.01"
+                      error={form.formState.errors.mouldingCharges?.message}
+                      {...form.register("mouldingCharges")}
+                    />
+                    <FormInput
+                      label="Labour Charges"
+                      required
+                      type="number"
+                      step="0.01"
+                      error={form.formState.errors.labourCharges?.message}
+                      {...form.register("labourCharges")}
+                    />
+                    <FormInput
+                      label="Packaging Charges"
+                      required
+                      type="number"
+                      step="0.01"
+                      error={form.formState.errors.packagingCharges?.message}
+                      {...form.register("packagingCharges")}
+                    />
+                    <div className="rounded-2xl border border-emerald-300 bg-white/90 px-4 py-3">
+                      <label className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-900">
+                        <input type="checkbox" {...form.register("useCalculatedCost")} />
+                        Use calculated cost
+                      </label>
+                      <p className="mt-2 text-xs text-emerald-800">
+                        Apply the BOM-based cost automatically for this assembly product.
+                      </p>
+                    </div>
+                  </div>
+
+                  {!useCalculatedCost && (
+                    <div className="mt-4 lg:max-w-sm">
+                      <FormInput
+                        label="Confirmed Unit Cost"
+                        required
+                        type="number"
+                        step="0.01"
+                        error={form.formState.errors.confirmedUnitCost?.message}
+                        {...form.register("confirmedUnitCost")}
+                      />
+                    </div>
+                  )}
+
+                  <div className="mt-4 flex flex-col gap-2 rounded-2xl border border-emerald-300 bg-white px-4 py-4 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                        Final Calculated Amount
+                      </p>
+                      <p className="mt-1 text-2xl font-extrabold text-emerald-950">
+                        {formatDecimal(autoAssemblyCost)}
+                      </p>
+                    </div>
+                    <p className="max-w-md text-sm text-emerald-900">
+                      This total combines raw material cost, moulding, labour, and packaging for one unit.
+                    </p>
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -632,12 +559,11 @@ const ProductPage = () => {
       <StateView loading={loading} error={error} isEmpty={!loading && !error && records.length === 0} emptyMessage="No products found">
         <Card className="overflow-hidden p-0">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-sm">
+            <table className="w-full min-w-[980px] text-sm">
               <thead className="border-b border-slate-100 bg-slate-50 text-left">
                 <tr>
                   <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Name</th>
                   <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Type</th>
-                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Category</th>
                   <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Unit</th>
                   <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Qty</th>
                   <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Materials</th>
@@ -645,6 +571,8 @@ const ProductPage = () => {
                   <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Material Cost</th>
                   <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Packaging</th>
                   <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Net Amount</th>
+                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Avg Cost</th>
+                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Stock Value</th>
                   <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-slate-500">Actions</th>
                 </tr>
               </thead>
@@ -667,9 +595,6 @@ const ProductPage = () => {
                         </span>
                       </td>
 
-                      <td className="px-4 py-3 text-slate-600">
-                        {categoryOptions.find((category) => category.id === row.category)?.name || "-"}
-                      </td>
                       <td className="px-4 py-3 text-slate-600">
                         {unitOptions.find((unit) => unit.id === row.unit)?.name || "-"}
                       </td>
@@ -700,6 +625,12 @@ const ProductPage = () => {
                       <td className="px-4 py-3 tabular-nums text-slate-700">{formatDecimal(totalMaterialCost)}</td>
                       <td className="px-4 py-3 tabular-nums text-slate-700">{formatDecimal(row.packaging_cost)}</td>
                       <td className="px-4 py-3 tabular-nums font-medium text-slate-800">{formatDecimal(row.net_amount)}</td>
+                      <td className="px-4 py-3 tabular-nums font-semibold text-emerald-700">
+                        {formatDecimal(row.average_cost)}
+                      </td>
+                      <td className="px-4 py-3 tabular-nums font-semibold text-slate-800">
+                        {formatDecimal(row.stock_value)}
+                      </td>
 
                       <td className="px-4 py-3 text-right">
                         <button
@@ -721,7 +652,6 @@ const ProductPage = () => {
                               directPrice: Number(row.direct_price || 0),
                               useCalculatedCost: row.use_calculated_cost ?? true,
                               confirmedUnitCost: Number(row.confirmed_unit_cost || 0),
-                              category: row.category || "",
                               unit: row.unit || "",
                               inventory_account: row.inventory_account || "",
                               cogs_account: row.cogs_account || "",
@@ -746,9 +676,15 @@ const ProductPage = () => {
                           className="rounded-md px-2.5 py-1 text-xs font-medium text-rose-600 transition hover:bg-rose-50 hover:text-rose-800"
                           onClick={async () => {
                             if (!window.confirm("Delete this product?")) return;
-                            await productService.remove(row.id);
-                            toast.success("Product deleted");
-                            await load();
+                            try {
+                              await productService.remove(row.id);
+                              toast.success("Product deleted");
+                              await load();
+                            } catch (deleteError) {
+                              const message = extractErrorMessage(deleteError);
+                              setError(message);
+                              toast.error(message);
+                            }
                           }}
                         >
                           Delete

@@ -86,7 +86,7 @@ class RawMaterial(BaseModel):
 
     brand = models.ForeignKey(Brand, on_delete=models.PROTECT)
     category = models.ForeignKey(Category, on_delete=models.PROTECT)
-    size = models.ForeignKey(Size, on_delete=models.PROTECT)
+    size = models.ForeignKey(Size, on_delete=models.PROTECT, null=True, blank=True)
 
     purchase_unit = models.ForeignKey(
         Unit, related_name="purchase_units", on_delete=models.PROTECT
@@ -308,6 +308,49 @@ class ProductStock(BaseModel):
                 condition=models.Q(deleted_at__isnull=True),
                 name="unique_product_stock_per_warehouse",
             )
+        ]
+
+
+class ProductCostState(BaseModel):
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="cost_states")
+    total_quantity = models.DecimalField(max_digits=14, decimal_places=4, default=0)
+    total_value = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    average_cost = models.DecimalField(max_digits=14, decimal_places=4, default=0)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant_id", "product"],
+                condition=models.Q(deleted_at__isnull=True),
+                name="unique_active_product_cost_state",
+            )
+        ]
+
+
+class ProductCostHistory(BaseModel):
+    class SourceType(models.TextChoices):
+        PURCHASE_INVOICE = "PURCHASE_INVOICE", "Purchase Invoice"
+        PURCHASE_RETURN = "PURCHASE_RETURN", "Purchase Return"
+        PRODUCTION = "PRODUCTION", "Production"
+        SALES_INVOICE = "SALES_INVOICE", "Sales Invoice"
+        SALES_RETURN = "SALES_RETURN", "Sales Return"
+
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="cost_history")
+    date = models.DateField()
+    source_type = models.CharField(max_length=40, choices=SourceType.choices)
+    source_id = models.UUIDField()
+    quantity = models.DecimalField(max_digits=14, decimal_places=4)
+    unit_cost = models.DecimalField(max_digits=14, decimal_places=4)
+    total_cost = models.DecimalField(max_digits=14, decimal_places=2)
+    running_quantity = models.DecimalField(max_digits=14, decimal_places=4)
+    running_value = models.DecimalField(max_digits=14, decimal_places=2)
+    average_cost_after = models.DecimalField(max_digits=14, decimal_places=4)
+
+    class Meta:
+        ordering = ["date", "created_at", "id"]
+        indexes = [
+            models.Index(fields=["tenant_id", "product", "date"]),
+            models.Index(fields=["tenant_id", "source_type", "source_id"]),
         ]
 
 
