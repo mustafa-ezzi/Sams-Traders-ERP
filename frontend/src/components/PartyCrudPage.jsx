@@ -7,6 +7,7 @@ import Card from "./ui/Card";
 import Button from "./ui/Button";
 import FormInput from "./ui/FormInput";
 import ConfirmModal from "./ui/ConfirmModal";
+import IconButton from "./ui/IconButton";
 import { useToast } from "../context/ToastContext";
 import { formatAccountLabel } from "../utils/accounts";
 
@@ -296,20 +297,18 @@ const PartyCrudPage = ({
                     </td>
                     <td className="px-5 py-4 text-slate-600">{record.address}</td>
                     <td className="px-5 py-4 text-right">
-                      <button
-                        className="mr-3 font-semibold text-blue-600 transition hover:text-blue-800"
-                        onClick={() => onEdit(record.id)}
-                        type="button"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        className="font-semibold text-rose-600 transition hover:text-rose-800"
-                        onClick={() => setDeleteId(record.id)}
-                        type="button"
-                      >
-                        Delete
-                      </button>
+                      <div className="flex justify-end gap-2">
+                        <IconButton
+                          icon="edit"
+                          label={`Edit ${singularTitle}`}
+                          onClick={() => onEdit(record.id)}
+                        />
+                        <IconButton
+                          icon="delete"
+                          label={`Delete ${singularTitle}`}
+                          onClick={() => setDeleteId(record.id)}
+                        />
+                      </div>
                     </td>
                   </tr>
                 ))}

@@ -131,12 +131,10 @@ class AccountSerializer(serializers.ModelSerializer):
         code_str = str(code or "").strip()
         if not code_str.isdigit():
             raise serializers.ValidationError({"code": "Account code must contain only digits."})
-        return code_str if len(code_str) >= 5 else code_str.ljust(5, "0")
+        return code_str
 
     def _generate_next_child_code(self, parent, tenant_id):
         normalized_parent_code = self._normalize_code_for_generation(parent.code)
-        step = 10 if normalized_parent_code.endswith("00") else 1
-        branch_limit = int(normalized_parent_code) + (100 if step == 10 else 10)
 
         child_codes = Account.objects.filter(
             tenant_id=tenant_id,
@@ -144,10 +142,32 @@ class AccountSerializer(serializers.ModelSerializer):
             deleted_at__isnull=True,
         ).values_list("code", flat=True)
 
-        normalized_existing_codes = [
-            int(self._normalize_code_for_generation(code))
-            for code in child_codes
-        ]
+        normalized_existing_codes = []
+        child_code_width = len(normalized_parent_code)
+        for code in child_codes:
+            normalized_child_code = self._normalize_code_for_generation(code)
+            normalized_existing_codes.append(int(normalized_child_code))
+            child_code_width = max(child_code_width, len(normalized_child_code))
+
+        if normalized_existing_codes:
+            step = 10 ** max(child_code_width - len(normalized_parent_code), 0)
+            if child_code_width == len(normalized_parent_code):
+                step = max(1, 10 ** max(3 - parent.level, 0))
+            base_code = int(normalized_parent_code) * (
+                10 ** max(child_code_width - len(normalized_parent_code), 0)
+            )
+            branch_limit = base_code + (step * 10)
+        else:
+            if parent.level <= 1:
+                step = 100
+                branch_limit = int(normalized_parent_code) + 1000
+            elif parent.level == 2:
+                step = 10
+                branch_limit = int(normalized_parent_code) + 100
+            else:
+                step = 1
+                branch_limit = int(normalized_parent_code) + 10
+
         next_code_value = (
             max(normalized_existing_codes) + step
             if normalized_existing_codes
@@ -159,7 +179,7 @@ class AccountSerializer(serializers.ModelSerializer):
                 {"code": f"No more child account codes are available under parent {parent.code}."}
             )
 
-        return str(next_code_value).zfill(len(normalized_parent_code))
+        return str(next_code_value).zfill(child_code_width)
 
     def _ensure_parent_is_header(self, parent):
         if parent and parent.is_postable:

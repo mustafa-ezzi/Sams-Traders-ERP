@@ -8,6 +8,7 @@ import CategoriesPage from "./pages/masters/CategoriesPage";
 import BrandsPage from "./pages/masters/BrandsPage";
 import RawMaterialPage from "./pages/rawMaterial/RawMaterialPage";
 import ProductPage from "./pages/product/ProductPage";
+import ProductFormPage from "./pages/product/ProductFormPage";
 import WarehousePage from "./pages/warehouse/WarehousePage";
 import OpeningStockPage from "./pages/inventory/OpeningStockPage";
 import ProductionPage from "./pages/inventory/ProductionPage";
@@ -86,6 +87,8 @@ const App = () => (
         <Route path="masters/brands" element={<BrandsPage />} />
         <Route path="raw-materials" element={<RawMaterialPage />} />
         <Route path="products" element={<ProductPage />} />
+        <Route path="products/create" element={<ProductFormPage />} />
+        <Route path="products/:id/edit" element={<ProductFormPage />} />
         <Route path="accounts" element={<AccountsPage />} />
         <Route path="users/dimensions" element={<DimensionsPage />} />
         <Route path="expenses" element={<ExpensePage />} />

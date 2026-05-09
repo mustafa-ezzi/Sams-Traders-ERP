@@ -1,60 +1,19 @@
-import { z } from "zod";
 import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { useNavigate } from "react-router-dom";
 import productService from "../../api/services/productService";
-import rawMaterialService from "../../api/services/rawMaterialService";
 import accountService from "../../api/services/accountService";
 import unitService from "../../api/services/unitService";
 import StateView from "../../components/StateView";
 import { formatDecimal } from "../../utils/format";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
-import FormInput from "../../components/ui/FormInput";
+import ConfirmModal from "../../components/ui/ConfirmModal";
+import IconButton from "../../components/ui/IconButton";
 import { useToast } from "../../context/ToastContext";
-import { flattenAccountTree, formatAccountLabel } from "../../utils/accounts";
-
-const schema = z.object({
-  name: z.string().trim().min(1, "Name is required"),
-  productType: z.enum(["ASSEMBLY_PRODUCT", "FINISHED_GOOD"]),
-  mouldingCharges: z.coerce.number().min(0),
-  labourCharges: z.coerce.number().min(0),
-  packagingCharges: z.coerce.number().min(0),
-  directPrice: z.coerce.number().min(0),
-  useCalculatedCost: z.boolean(),
-  confirmedUnitCost: z.coerce.number().min(0),
-  unit: z.union([z.string().uuid("Unit must be a valid UUID"), z.literal("")]),
-  inventory_account: z.union([z.string().uuid("Inventory account must be a valid UUID"), z.literal("")]),
-  cogs_account: z.union([z.string().uuid("COGS account must be a valid UUID"), z.literal("")]),
-  revenue_account: z.union([z.string().uuid("Revenue account must be a valid UUID"), z.literal("")]),
-});
-
-const defaultValues = {
-  name: "",
-  productType: "FINISHED_GOOD",
-  mouldingCharges: 0,
-  labourCharges: 0,
-  packagingCharges: 0,
-  directPrice: 0,
-  useCalculatedCost: true,
-  confirmedUnitCost: 0,
-  unit: "",
-  inventory_account: "",
-  cogs_account: "",
-  revenue_account: "",
-};
-
-const selectClassName =
-  "w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100";
-
-const getRawMaterialOptionLabel = (option) => {
-  const brandName = option?.brand_name || option?.brand?.name;
-  return brandName ? `${option.name} - ${brandName}` : option.name;
-};
+import { flattenAccountTree, getPostableInventoryAccounts } from "../../utils/accounts";
 
 const extractErrorMessage = (error) => {
   const data = error?.response?.data;
-
   if (!data) return error?.message || "Delete failed";
   if (typeof data === "string") return data;
   if (data.message) return data.message;
@@ -63,34 +22,28 @@ const extractErrorMessage = (error) => {
   const fieldEntry = Object.entries(data).find(([, value]) =>
     typeof value === "string" || Array.isArray(value)
   );
-
   if (fieldEntry) {
     const [, value] = fieldEntry;
     return Array.isArray(value) ? value.join(", ") : value;
   }
-
   return "Delete failed";
 };
 
 const ProductPage = () => {
+  const navigate = useNavigate();
+  const toast = useToast();
   const [records, setRecords] = useState([]);
-  const [editingId, setEditingId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
-  const [rawMaterialOptions, setRawMaterialOptions] = useState([]);
   const [unitOptions, setUnitOptions] = useState([]);
   const [inventoryAccounts, setInventoryAccounts] = useState([]);
   const [cogsAccounts, setCogsAccounts] = useState([]);
   const [revenueAccounts, setRevenueAccounts] = useState([]);
-  const [materialRows, setMaterialRows] = useState([{ raw_material_id: "", uom_id: "", quantity: 1, rate: 0 }]);
+  const [deleteId, setDeleteId] = useState("");
   const limit = 10;
-  const toast = useToast();
-  const form = useForm({ resolver: zodResolver(schema), defaultValues });
-  const productType = form.watch("productType");
-  const useCalculatedCost = form.watch("useCalculatedCost");
 
   const load = async (nextPage = page, nextSearch = search) => {
     setLoading(true);
@@ -114,17 +67,13 @@ const ProductPage = () => {
   useEffect(() => {
     load(1, "");
     Promise.all([
-      rawMaterialService.list({ page: 1, limit: 100, search: "" }),
       unitService.list({ page: 1, limit: 100, search: "" }),
       accountService.list(),
     ])
-      .then(([rawMaterialRes, unitRes, accountRes]) => {
+      .then(([unitRes, accountRes]) => {
         const flatAccounts = flattenAccountTree(accountRes || []);
-        setRawMaterialOptions(rawMaterialRes.data || []);
         setUnitOptions(unitRes.data || []);
-        setInventoryAccounts(
-          flatAccounts.filter((account) => account.account_group === "ASSET" && account.is_postable)
-        );
+        setInventoryAccounts(getPostableInventoryAccounts(flatAccounts));
         setCogsAccounts(
           flatAccounts.filter((account) => account.account_group === "COGS" && account.is_postable)
         );
@@ -135,71 +84,33 @@ const ProductPage = () => {
       .catch(() => toast.error("Failed to load product setup options"));
   }, []);
 
-  const onSubmit = form.handleSubmit(async (values) => {
-    try {
-      const sanitizedRows = materialRows
-        .filter((row) => row.raw_material_id)
-        .map((row) => ({
-          raw_material_id: row.raw_material_id,
-          uom_id: row.uom_id || null,
-          quantity: Number(row.quantity),
-          rate: Number(row.rate),
-        }));
-
-      if (values.productType === "ASSEMBLY_PRODUCT" && sanitizedRows.length === 0) {
-        toast.error("Assembly product must include at least one raw material line.");
-        return;
-      }
-
-      const payload = {
-        name: values.name,
-        product_type: values.productType,
-        moulding_charges: values.mouldingCharges,
-        labour_charges: values.labourCharges,
-        packaging_cost: values.packagingCharges,
-        direct_price: values.directPrice,
-        use_calculated_cost: values.useCalculatedCost,
-        confirmed_unit_cost: values.confirmedUnitCost,
-        unit: values.unit || null,
-        inventory_account: values.inventory_account || null,
-        cogs_account: values.cogs_account || null,
-        revenue_account: values.revenue_account || null,
-        materials: values.productType === "ASSEMBLY_PRODUCT" ? sanitizedRows : [],
-      };
-
-      if (editingId) {
-        await productService.update(editingId, payload);
-        toast.success("Product updated");
-      } else {
-        await productService.create(payload);
-        toast.success("Product created");
-      }
-
-      setEditingId("");
-      form.reset(defaultValues);
-      setMaterialRows([{ raw_material_id: "", uom_id: "", quantity: 1, rate: 0 }]);
-      await load();
-    } catch (submitError) {
-      const msg = submitError?.response?.data?.message || submitError.message || "Save failed";
-      setError(msg);
-      toast.error(msg);
-    }
-  });
-
   const totalPages = Math.max(1, Math.ceil(total / limit));
-  const selectedMaterialIds = materialRows.map((row) => row.raw_material_id).filter(Boolean);
-  const materialCost = materialRows.reduce(
-    (sum, row) => sum + (Number(row.quantity) || 0) * (Number(row.rate) || 0),
-    0
-  );
-  const autoAssemblyCost =
-    materialCost +
-    (Number(form.watch("mouldingCharges")) || 0) +
-    (Number(form.watch("labourCharges")) || 0) +
-    (Number(form.watch("packagingCharges")) || 0);
+  const onDelete = async (id) => {
+    try {
+      await productService.remove(id);
+      toast.success("Product deleted");
+      await load();
+    } catch (deleteError) {
+      const message = extractErrorMessage(deleteError);
+      setError(message);
+      toast.error(message);
+    }
+  };
 
   return (
     <section className="space-y-6">
+      <ConfirmModal
+        open={Boolean(deleteId)}
+        title="Delete Product"
+        description="This action will soft delete the product if it has no active stock references. Continue?"
+        onCancel={() => setDeleteId("")}
+        onConfirm={async () => {
+          const selectedId = deleteId;
+          setDeleteId("");
+          await onDelete(selectedId);
+        }}
+      />
+
       <Card className="bg-[linear-gradient(135deg,rgba(255,255,255,0.92),rgba(240,248,255,0.96))]">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
@@ -217,343 +128,9 @@ const ProductPage = () => {
             <Button variant="secondary" onClick={() => load(1, search)}>
               Search
             </Button>
+            <Button onClick={() => navigate("/products/create")}>Create Product</Button>
           </div>
         </div>
-      </Card>
-
-      <Card>
-        <form className="grid gap-4 xl:grid-cols-3" onSubmit={onSubmit}>
-          <FormInput
-            label="Product Name"
-            required
-            placeholder="Enter product name"
-            error={form.formState.errors.name?.message}
-            {...form.register("name")}
-          />
-
-          <div className="space-y-2">
-            <label className="block text-sm font-semibold text-slate-700">Product Type</label>
-            <select
-              className="w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
-              {...form.register("productType")}
-            >
-              <option value="FINISHED_GOOD">Finished Good</option>
-              <option value="ASSEMBLY_PRODUCT">Assembly Product</option>
-            </select>
-          </div>
-
-          {productType === "FINISHED_GOOD" && (
-            <FormInput
-              label="Per Piece Price"
-              required
-              type="number"
-              step="0.01"
-              error={form.formState.errors.directPrice?.message}
-              {...form.register("directPrice")}
-            />
-          )}
-
-          <div className="space-y-2">
-            <label className="block text-sm font-semibold text-slate-700">Unit</label>
-            <select className={selectClassName} {...form.register("unit")}>
-              <option value="">Select unit</option>
-              {unitOptions.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-            {form.formState.errors.unit?.message ? (
-              <p className="text-sm text-rose-500">{form.formState.errors.unit.message}</p>
-            ) : null}
-          </div>
-
-          <div className="space-y-2">
-            <label className="block text-sm font-semibold text-slate-700">Inventory Account</label>
-            <select className={selectClassName} {...form.register("inventory_account")}>
-              <option value="">Select inventory account</option>
-              {inventoryAccounts.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {formatAccountLabel(item)}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="space-y-2">
-            <label className="block text-sm font-semibold text-slate-700">COGS Account</label>
-            <select className={selectClassName} {...form.register("cogs_account")}>
-              <option value="">Select COGS account</option>
-              {cogsAccounts.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {formatAccountLabel(item)}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="space-y-2">
-            <label className="block text-sm font-semibold text-slate-700">Revenue Account</label>
-            <select className={selectClassName} {...form.register("revenue_account")}>
-              <option value="">Select revenue account</option>
-              {revenueAccounts.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {formatAccountLabel(item)}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="rounded-[26px] border border-slate-200 bg-slate-50/80 p-4 xl:col-span-3">
-            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-sm font-bold text-slate-800">Material Lines</p>
-                <p className="text-sm text-slate-500">
-                  Server-side amount and net amount calculation stays intact.
-                </p>
-              </div>
-              {productType === "ASSEMBLY_PRODUCT" && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() =>
-                    setMaterialRows((prev) => [
-                      ...prev,
-                      { raw_material_id: "", uom_id: "", quantity: 1, rate: 0 },
-                    ])
-                  }
-                >
-                  Add Line
-                </Button>
-              )}
-            </div>
-
-            {productType === "FINISHED_GOOD" ? (
-              <div className="rounded-2xl border border-dashed border-slate-300 bg-white/70 px-4 py-5 text-sm text-slate-500">
-                Finished goods do not require raw material lines.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {materialRows.map((row, index) => {
-                  const selectedMaterial = rawMaterialOptions.find(m => m.id === row.raw_material_id);
-                  return (
-                    <div
-                      key={index}
-                    className="grid gap-3 rounded-2xl border border-white bg-white p-4 shadow-sm md:grid-cols-[1.3fr_1fr_1fr_1fr_1fr_auto]"
-                    >
-                      <div className="space-y-2">
-                        <label className="text-xs font-semibold text-slate-600">Raw Material</label>
-                        <select
-                          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
-                          value={row.raw_material_id}
-                          onChange={(event) => {
-                            const materialId = event.target.value;
-                            const material = rawMaterialOptions.find(m => m.id === materialId);
-                            setMaterialRows((prev) =>
-                              prev.map((item, i) =>
-                                i === index ? {
-                                  ...item,
-                                  raw_material_id: materialId,
-                                  rate: material ? Number(material.purchase_price) : 0
-                                } : item
-                              )
-                            );
-                          }}
-                        >
-                          <option value="">Select raw material</option>
-                          {rawMaterialOptions.map((option) => (
-                            <option
-                              key={option.id}
-                              value={option.id}
-                              disabled={
-                                selectedMaterialIds.includes(option.id) &&
-                                option.id !== row.raw_material_id
-                              }
-                            >
-                              {getRawMaterialOptionLabel(option)}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-xs font-semibold text-slate-600">UOM</label>
-                        <select
-                          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
-                          value={row.uom_id}
-                          onChange={(event) =>
-                            setMaterialRows((prev) =>
-                              prev.map((item, i) =>
-                                i === index ? { ...item, uom_id: event.target.value } : item
-                              )
-                            )
-                          }
-                        >
-                          <option value="">Select UOM</option>
-                          {unitOptions.map((unit) => (
-                            <option key={unit.id} value={unit.id}>
-                              {unit.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-xs font-semibold text-slate-600">Quantity (Units)</label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
-                          placeholder="0.00"
-                          value={row.quantity}
-                          onChange={(event) =>
-                            setMaterialRows((prev) =>
-                              prev.map((item, i) =>
-                                i === index
-                                  ? { ...item, quantity: Number(event.target.value || 0) }
-                                  : item
-                              )
-                            )
-                          }
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-xs font-semibold text-slate-600">Rate</label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
-                          placeholder="0.00"
-                          value={row.rate}
-                          onChange={(event) =>
-                            setMaterialRows((prev) =>
-                              prev.map((item, i) =>
-                                i === index ? { ...item, rate: Number(event.target.value || 0) } : item
-                              )
-                            )
-                          }
-                        />
-                        {selectedMaterial && (
-                          <p className="text-xs text-slate-500">
-                            {getRawMaterialOptionLabel(selectedMaterial)} purchase price: {selectedMaterial.purchase_price}
-                          </p>
-                        )}
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-xs font-semibold text-slate-600">Cost</label>
-                        <input
-                          type="text"
-                          readOnly
-                          className="w-full cursor-not-allowed rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm text-slate-700 outline-none"
-                          value={formatDecimal((Number(row.quantity) || 0) * (Number(row.rate) || 0))}
-                        />
-                      </div>
-                      <Button
-                        type="button"
-                        variant="danger"
-                        className="h-fit md:mt-[34px]"
-                        onClick={() =>
-                          setMaterialRows((prev) =>
-                            prev.length === 1
-                              ? [{ raw_material_id: "", uom_id: "", quantity: 1, rate: 0 }]
-                              : prev.filter((_, i) => i !== index)
-                          )
-                        }
-                      >
-                        Remove
-                      </Button>
-                    </div>
-                  );
-                })}
-
-                <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4">
-                  <div className="grid gap-4 lg:grid-cols-[1.2fr_1.2fr_1.2fr_1fr] lg:items-start">
-                    <FormInput
-                      label="Moulding Charges"
-                      required
-                      type="number"
-                      step="0.01"
-                      error={form.formState.errors.mouldingCharges?.message}
-                      {...form.register("mouldingCharges")}
-                    />
-                    <FormInput
-                      label="Labour Charges"
-                      required
-                      type="number"
-                      step="0.01"
-                      error={form.formState.errors.labourCharges?.message}
-                      {...form.register("labourCharges")}
-                    />
-                    <FormInput
-                      label="Packaging Charges"
-                      required
-                      type="number"
-                      step="0.01"
-                      error={form.formState.errors.packagingCharges?.message}
-                      {...form.register("packagingCharges")}
-                    />
-                    <div className="rounded-2xl border border-emerald-300 bg-white/90 px-4 py-3">
-                      <label className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-900">
-                        <input type="checkbox" {...form.register("useCalculatedCost")} />
-                        Use calculated cost
-                      </label>
-                      <p className="mt-2 text-xs text-emerald-800">
-                        Apply the BOM-based cost automatically for this assembly product.
-                      </p>
-                    </div>
-                  </div>
-
-                  {!useCalculatedCost && (
-                    <div className="mt-4 lg:max-w-sm">
-                      <FormInput
-                        label="Confirmed Unit Cost"
-                        required
-                        type="number"
-                        step="0.01"
-                        error={form.formState.errors.confirmedUnitCost?.message}
-                        {...form.register("confirmedUnitCost")}
-                      />
-                    </div>
-                  )}
-
-                  <div className="mt-4 flex flex-col gap-2 rounded-2xl border border-emerald-300 bg-white px-4 py-4 sm:flex-row sm:items-end sm:justify-between">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
-                        Final Calculated Amount
-                      </p>
-                      <p className="mt-1 text-2xl font-extrabold text-emerald-950">
-                        {formatDecimal(autoAssemblyCost)}
-                      </p>
-                    </div>
-                    <p className="max-w-md text-sm text-emerald-900">
-                      This total combines raw material cost, moulding, labour, and packaging for one unit.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="flex flex-col gap-3 sm:flex-row xl:col-span-3">
-            <Button className="w-full sm:w-fit" type="submit">
-              {editingId ? "Update" : "Create"}
-            </Button>
-            {editingId && (
-              <Button
-                type="button"
-                variant="secondary"
-                className="w-full sm:w-auto"
-                onClick={() => {
-                  setEditingId("");
-                  form.reset(defaultValues);
-                  setMaterialRows([{ raw_material_id: "", uom_id: "", quantity: 1, rate: 0 }]);
-                }}
-              >
-                Cancel
-              </Button>
-            )}
-          </div>
-        </form>
       </Card>
 
       <StateView loading={loading} error={error} isEmpty={!loading && !error && records.length === 0} emptyMessage="No products found">
@@ -582,7 +159,6 @@ const ProductPage = () => {
                   return (
                     <tr key={row.id} className="bg-white transition-colors hover:bg-slate-50">
                       <td className="px-4 py-3 font-medium text-slate-800">{row.name}</td>
-
                       <td className="px-4 py-3">
                         <span className={`inline-block rounded-md border px-2 py-0.5 text-xs font-medium ${
                           (row.product_type === "ASSEMBLY_PRODUCT" || row.product_type === "MANUFACTURED")
@@ -594,12 +170,10 @@ const ProductPage = () => {
                             : "Finished Good"}
                         </span>
                       </td>
-
                       <td className="px-4 py-3 text-slate-600">
                         {unitOptions.find((unit) => unit.id === row.unit)?.name || "-"}
                       </td>
                       <td className="px-4 py-3 tabular-nums text-slate-700">{formatDecimal(row.quantity)}</td>
-
                       <td className="px-4 py-3">
                         {row.materials?.length ? (
                           <div className="flex flex-wrap gap-1">
@@ -613,10 +187,9 @@ const ProductPage = () => {
                             ))}
                           </div>
                         ) : (
-                          <span className="text-xs text-slate-400">—</span>
+                          <span className="text-xs text-slate-400">-</span>
                         )}
                       </td>
-
                       <td className="px-4 py-3 text-xs text-slate-600">
                         <div>Inv: {inventoryAccounts.find((account) => account.id === row.inventory_account)?.code || "-"}</div>
                         <div>COGS: {cogsAccounts.find((account) => account.id === row.cogs_account)?.code || "-"}</div>
@@ -625,70 +198,21 @@ const ProductPage = () => {
                       <td className="px-4 py-3 tabular-nums text-slate-700">{formatDecimal(totalMaterialCost)}</td>
                       <td className="px-4 py-3 tabular-nums text-slate-700">{formatDecimal(row.packaging_cost)}</td>
                       <td className="px-4 py-3 tabular-nums font-medium text-slate-800">{formatDecimal(row.net_amount)}</td>
-                      <td className="px-4 py-3 tabular-nums font-semibold text-emerald-700">
-                        {formatDecimal(row.average_cost)}
-                      </td>
-                      <td className="px-4 py-3 tabular-nums font-semibold text-slate-800">
-                        {formatDecimal(row.stock_value)}
-                      </td>
-
+                      <td className="px-4 py-3 tabular-nums font-semibold text-emerald-700">{formatDecimal(row.average_cost)}</td>
+                      <td className="px-4 py-3 tabular-nums font-semibold text-slate-800">{formatDecimal(row.stock_value)}</td>
                       <td className="px-4 py-3 text-right">
-                        <button
-                          type="button"
-                          className="mr-1 rounded-md px-2.5 py-1 text-xs font-medium text-blue-600 transition hover:bg-blue-50 hover:text-blue-800"
-                          onClick={() => {
-                            setEditingId(row.id);
-                            form.reset({
-                              name: row.name,
-                              productType:
-                                row.product_type === "MANUFACTURED"
-                                  ? "ASSEMBLY_PRODUCT"
-                                  : row.product_type === "READY_MADE"
-                                    ? "FINISHED_GOOD"
-                                    : row.product_type,
-                              mouldingCharges: Number(row.moulding_charges || 0),
-                              labourCharges: Number(row.labour_charges || 0),
-                              packagingCharges: Number(row.packaging_cost || 0),
-                              directPrice: Number(row.direct_price || 0),
-                              useCalculatedCost: row.use_calculated_cost ?? true,
-                              confirmedUnitCost: Number(row.confirmed_unit_cost || 0),
-                              unit: row.unit || "",
-                              inventory_account: row.inventory_account || "",
-                              cogs_account: row.cogs_account || "",
-                              revenue_account: row.revenue_account || "",
-                            });
-                            setMaterialRows(
-                              row.materials?.length
-                                ? row.materials.map((m) => ({
-                                    raw_material_id: m.raw_material_id,
-                                    uom_id: m.uom_id || "",
-                                    quantity: Number(m.quantity),
-                                    rate: Number(m.rate),
-                                  }))
-                                : [{ raw_material_id: "", uom_id: "", quantity: 1, rate: 0 }]
-                            );
-                          }}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          className="rounded-md px-2.5 py-1 text-xs font-medium text-rose-600 transition hover:bg-rose-50 hover:text-rose-800"
-                          onClick={async () => {
-                            if (!window.confirm("Delete this product?")) return;
-                            try {
-                              await productService.remove(row.id);
-                              toast.success("Product deleted");
-                              await load();
-                            } catch (deleteError) {
-                              const message = extractErrorMessage(deleteError);
-                              setError(message);
-                              toast.error(message);
-                            }
-                          }}
-                        >
-                          Delete
-                        </button>
+                        <span className="inline-flex gap-2">
+                          <IconButton
+                            icon="edit"
+                            label="Edit product"
+                            onClick={() => navigate(`/products/${row.id}/edit`)}
+                          />
+                          <IconButton
+                            icon="delete"
+                            label="Delete product"
+                            onClick={() => setDeleteId(row.id)}
+                          />
+                        </span>
                       </td>
                     </tr>
                   );

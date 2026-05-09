@@ -19,3 +19,11 @@ export const flattenAccountTree = (accounts = []) => {
 
 export const formatAccountLabel = (account) =>
   `${"  ".repeat(account.depth || 0)}${account.code} - ${account.name}`;
+
+export const getPostableInventoryAccounts = (accounts = []) =>
+  accounts.filter(
+    (account) =>
+      account.account_group === "ASSET" &&
+      account.account_type === "INVENTORY" &&
+      account.is_active
+  );

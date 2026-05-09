@@ -12,8 +12,10 @@ import { formatDecimal } from "../../utils/format";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import FormInput from "../../components/ui/FormInput";
+import ConfirmModal from "../../components/ui/ConfirmModal";
+import IconButton from "../../components/ui/IconButton";
 import { useToast } from "../../context/ToastContext";
-import { flattenAccountTree, formatAccountLabel } from "../../utils/accounts";
+import { flattenAccountTree, formatAccountLabel, getPostableInventoryAccounts } from "../../utils/accounts";
 
 const schema = z.object({
   name: z.string().trim().min(1, "Name is required"),
@@ -49,6 +51,7 @@ const RawMaterialPage = () => {
   const [units, setUnits] = useState([]);
   const [inventoryAccounts, setInventoryAccounts] = useState([]);
   const [loadingOptions, setLoadingOptions] = useState(false);
+  const [deleteId, setDeleteId] = useState("");
   const limit = 10;
   const toast = useToast();
   const form = useForm({ resolver: zodResolver(schema), defaultValues });
@@ -96,11 +99,7 @@ const RawMaterialPage = () => {
       setBrands(brandRes.data || []);
       setCategories(categoryRes.data || []);
       setUnits(unitRes.data || []);
-      setInventoryAccounts(
-        flattenAccountTree(accountRes || []).filter(
-          (account) => account.account_group === "ASSET" && account.is_postable
-        )
-      );
+      setInventoryAccounts(getPostableInventoryAccounts(flattenAccountTree(accountRes || [])));
     } catch {
       toast.error("Failed to load master dropdown data");
     } finally {
@@ -147,9 +146,32 @@ const RawMaterialPage = () => {
   });
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
+  const onDelete = async (id) => {
+    try {
+      await rawMaterialService.remove(id);
+      toast.success("Raw material deleted");
+      await load();
+    } catch (deleteError) {
+      const message = deleteError?.response?.data?.message || "Delete failed";
+      setError(message);
+      toast.error(message);
+    }
+  };
 
   return (
     <section className="space-y-6">
+      <ConfirmModal
+        open={Boolean(deleteId)}
+        title="Delete Raw Material"
+        description="This action will soft delete the raw material. Continue?"
+        onCancel={() => setDeleteId("")}
+        onConfirm={async () => {
+          const selectedId = deleteId;
+          setDeleteId("");
+          await onDelete(selectedId);
+        }}
+      />
+
       <Card className="bg-[linear-gradient(135deg,rgba(255,255,255,0.92),rgba(240,248,255,0.96))]">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
@@ -305,35 +327,28 @@ const RawMaterialPage = () => {
                     <td className="px-5 py-4 text-slate-600">{row.purchase_unit?.name || "-"}</td>
                     <td className="px-5 py-4 text-slate-600">{formatDecimal(row.purchase_price)}</td>
                     <td className="px-5 py-4 text-right">
-                      <button
-                        type="button"
-                        className="mr-3 font-semibold text-blue-600 transition hover:text-blue-800"
-                        onClick={() => {
-                          setEditingId(row.id);
-                          form.reset({
-                            name: row.name,
-                            brand: row.brand?.id || row.brand,
-                            category: row.category?.id || row.category,
-                            purchase_unit: row.purchase_unit?.id || row.purchase_unit,
-                            inventory_account: row.inventory_account || "",
-                            purchase_price: Number(row.purchase_price),
-                          });
-                        }}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        className="font-semibold text-rose-600 transition hover:text-rose-800"
-                        onClick={async () => {
-                          if (!window.confirm("Delete this raw material?")) return;
-                          await rawMaterialService.remove(row.id);
-                          toast.success("Raw material deleted");
-                          await load();
-                        }}
-                      >
-                        Delete
-                      </button>
+                      <span className="inline-flex gap-2">
+                        <IconButton
+                          icon="edit"
+                          label="Edit raw material"
+                          onClick={() => {
+                            setEditingId(row.id);
+                            form.reset({
+                              name: row.name,
+                              brand: row.brand?.id || row.brand,
+                              category: row.category?.id || row.category,
+                              purchase_unit: row.purchase_unit?.id || row.purchase_unit,
+                              inventory_account: row.inventory_account || "",
+                              purchase_price: Number(row.purchase_price),
+                            });
+                          }}
+                        />
+                        <IconButton
+                          icon="delete"
+                          label="Delete raw material"
+                          onClick={() => setDeleteId(row.id)}
+                        />
+                      </span>
                     </td>
                   </tr>
                 ))}

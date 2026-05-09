@@ -7,6 +7,9 @@ import StateView from "../../components/StateView";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import FormInput from "../../components/ui/FormInput";
+import ConfirmModal from "../../components/ui/ConfirmModal";
+import IconButton from "../../components/ui/IconButton";
+import { useToast } from "../../context/ToastContext";
 
 const schema = z.object({
   name: z.string().trim().min(1, "Name is required"),
@@ -18,6 +21,8 @@ const WarehousePage = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [editingId, setEditingId] = useState("");
+  const [deleteId, setDeleteId] = useState("");
+  const toast = useToast();
   const form = useForm({
     resolver: zodResolver(schema),
     defaultValues: { name: "", location: "" },
@@ -44,8 +49,10 @@ const WarehousePage = () => {
     try {
       if (editingId) {
         await warehouseService.update(editingId, values);
+        toast.success("Warehouse updated");
       } else {
         await warehouseService.create(values);
+        toast.success("Warehouse created");
       }
       setEditingId("");
       form.reset({ name: "", location: "" });
@@ -55,8 +62,32 @@ const WarehousePage = () => {
     }
   });
 
+  const onDelete = async (id) => {
+    try {
+      await warehouseService.remove(id);
+      toast.success("Warehouse deleted");
+      await loadRecords();
+    } catch (deleteError) {
+      const message = deleteError?.response?.data?.message || "Delete failed";
+      setError(message);
+      toast.error(message);
+    }
+  };
+
   return (
     <section className="space-y-6">
+      <ConfirmModal
+        open={Boolean(deleteId)}
+        title="Delete Warehouse"
+        description="This action will soft delete the warehouse if no active stock records depend on it. Continue?"
+        onCancel={() => setDeleteId("")}
+        onConfirm={async () => {
+          const selectedId = deleteId;
+          setDeleteId("");
+          await onDelete(selectedId);
+        }}
+      />
+
       <Card className="bg-[linear-gradient(135deg,rgba(255,255,255,0.92),rgba(240,248,255,0.96))]">
         
         <h2 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900">
@@ -92,12 +123,21 @@ const WarehousePage = () => {
                     <td className="px-5 py-4 font-semibold text-slate-800">{row.name}</td>
                     <td className="px-5 py-4 text-slate-600">{row.location}</td>
                     <td className="px-5 py-4 text-right">
-                      <button type="button" className="mr-3 font-semibold text-blue-600 transition hover:text-blue-800" onClick={() => { setEditingId(row.id); form.reset({ name: row.name, location: row.location }); }}>
-                        Edit
-                      </button>
-                      <button type="button" className="font-semibold text-rose-600 transition hover:text-rose-800" onClick={async () => { await warehouseService.remove(row.id); await loadRecords(); }}>
-                        Delete
-                      </button>
+                      <span className="inline-flex gap-2">
+                        <IconButton
+                          icon="edit"
+                          label="Edit warehouse"
+                          onClick={() => {
+                            setEditingId(row.id);
+                            form.reset({ name: row.name, location: row.location });
+                          }}
+                        />
+                        <IconButton
+                          icon="delete"
+                          label="Delete warehouse"
+                          onClick={() => setDeleteId(row.id)}
+                        />
+                      </span>
                     </td>
                   </tr>
                 ))}

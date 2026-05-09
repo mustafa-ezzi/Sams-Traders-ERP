@@ -18,7 +18,14 @@ from .models import (
 )
 
 
-def validate_account_mapping(account, tenant_id, field_name, allowed_groups):
+def validate_account_mapping(
+    account,
+    tenant_id,
+    field_name,
+    allowed_groups,
+    allowed_types=None,
+    require_postable=True,
+):
     if account is None:
         return
 
@@ -32,7 +39,7 @@ def validate_account_mapping(account, tenant_id, field_name, allowed_groups):
             {field_name: "Selected account is inactive."}
         )
 
-    if not account.is_postable:
+    if require_postable and not account.is_postable:
         raise serializers.ValidationError(
             {field_name: "Selected account must be postable."}
         )
@@ -42,6 +49,15 @@ def validate_account_mapping(account, tenant_id, field_name, allowed_groups):
             {
                 field_name: (
                     f"Selected account must belong to: {', '.join(allowed_groups)}."
+                )
+            }
+        )
+
+    if allowed_types and account.account_type not in allowed_types:
+        raise serializers.ValidationError(
+            {
+                field_name: (
+                    f"Selected account must have account type: {', '.join(allowed_types)}."
                 )
             }
         )
@@ -106,6 +122,8 @@ class CategorySerializer(TenantUniqueNameSerializer):
             tenant_id,
             "inventory_account",
             [Account.AccountGroup.ASSET],
+            [Account.AccountType.INVENTORY],
+            require_postable=False,
         )
         validate_account_mapping(
             attrs.get("cogs_account"),
@@ -163,20 +181,33 @@ class UnitSerializer(TenantUniqueNameSerializer):
 
 class ProductMaterialSerializer(serializers.ModelSerializer):
     raw_material_id = serializers.PrimaryKeyRelatedField(
-        source="raw_material", queryset=RawMaterial.objects.all()
+        source="raw_material",
+        queryset=RawMaterial.objects.all(),
+        allow_null=True,
+        required=False,
+    )
+    component_product_id = serializers.PrimaryKeyRelatedField(
+        source="component_product",
+        queryset=Product.objects.all(),
+        allow_null=True,
+        required=False,
     )
     uom_id = serializers.PrimaryKeyRelatedField(
         source="uom", queryset=Unit.objects.all(), allow_null=True, required=False
     )
     raw_material_name = serializers.ReadOnlyField(source="raw_material.name")
+    component_product_name = serializers.ReadOnlyField(source="component_product.name")
     uom_name = serializers.ReadOnlyField(source="uom.name")
 
     class Meta:
         model = ProductMaterial
         fields = [
             "id",
+            "component_type",
             "raw_material_id",
             "raw_material_name",
+            "component_product_id",
+            "component_product_name",
             "uom_id",
             "uom_name",
             "quantity",
@@ -188,12 +219,28 @@ class ProductMaterialSerializer(serializers.ModelSerializer):
     def validate(self, data):
         quantity = data.get("quantity", 0)
         rate = data.get("rate", 0)
+        component_type = data.get("component_type", "RAW_MATERIAL")
+        raw_material = data.get("raw_material")
+        component_product = data.get("component_product")
 
         if quantity <= 0:
             raise serializers.ValidationError("Quantity must be greater than 0")
 
         if rate < 0:
             raise serializers.ValidationError("Rate cannot be negative")
+
+        if component_type == "RAW_MATERIAL":
+            if raw_material is None:
+                raise serializers.ValidationError({"raw_material_id": "Raw material is required."})
+            if component_product is not None:
+                raise serializers.ValidationError({"component_product_id": "Do not select finished good for raw material line."})
+        elif component_type == "FINISHED_GOOD":
+            if component_product is None:
+                raise serializers.ValidationError({"component_product_id": "Finished good is required."})
+            if raw_material is not None:
+                raise serializers.ValidationError({"raw_material_id": "Do not select raw material for finished good line."})
+        else:
+            raise serializers.ValidationError({"component_type": "Invalid component type."})
 
         data["amount"] = round(quantity * rate, 2)
         return data
@@ -269,11 +316,11 @@ class ProductSerializer(serializers.ModelSerializer):
 
         if normalized_product_type == "FINISHED_GOOD" and materials:
             raise serializers.ValidationError(
-                "Finished goods cannot have raw material line items"
+                "Finished goods cannot have component line items"
             )
         if normalized_product_type == "ASSEMBLY_PRODUCT" and not materials:
             raise serializers.ValidationError(
-                "Assembly products must include at least one raw material line item"
+                "Assembly products must include at least one component line item"
             )
 
         if normalized_product_type == "FINISHED_GOOD" and data.get("direct_price", 0) <= 0:
@@ -294,15 +341,33 @@ class ProductSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {"confirmed_unit_cost": "Provide confirmed unit cost when calculated cost is disabled."}
                 )
-        material_ids = [m["raw_material"].id for m in materials]
-        if len(set(material_ids)) != len(material_ids):
-            raise serializers.ValidationError("Duplicate raw materials are not allowed")
-
+        component_keys = []
         for material in materials:
-            if material["raw_material"].tenant_id != tenant_id:
-                raise serializers.ValidationError(
-                    "Raw materials must belong to the current tenant."
-                )
+            if material["component_type"] == "RAW_MATERIAL":
+                raw_material = material["raw_material"]
+                if raw_material.tenant_id != tenant_id:
+                    raise serializers.ValidationError(
+                        "Raw materials must belong to the current tenant."
+                    )
+                component_keys.append(f"RAW_MATERIAL:{raw_material.id}")
+            elif material["component_type"] == "FINISHED_GOOD":
+                component_product = material["component_product"]
+                if component_product.tenant_id != tenant_id:
+                    raise serializers.ValidationError(
+                        "Finished goods must belong to the current tenant."
+                    )
+                if component_product.product_type not in {"FINISHED_GOOD", "READY_MADE"}:
+                    raise serializers.ValidationError(
+                        "Only finished goods can be selected as finished good components."
+                    )
+                if self.instance and component_product.id == self.instance.id:
+                    raise serializers.ValidationError(
+                        "Assembly product cannot use itself as a component."
+                    )
+                component_keys.append(f"FINISHED_GOOD:{component_product.id}")
+
+        if len(set(component_keys)) != len(component_keys):
+            raise serializers.ValidationError("Duplicate assembly components are not allowed")
 
         if unit and (unit.tenant_id != tenant_id or unit.deleted_at is not None):
             raise serializers.ValidationError(
@@ -316,6 +381,8 @@ class ProductSerializer(serializers.ModelSerializer):
             tenant_id,
             "inventory_account",
             [Account.AccountGroup.ASSET],
+            [Account.AccountType.INVENTORY],
+            require_postable=False,
         )
         validate_account_mapping(
             data.get("cogs_account"),
@@ -339,23 +406,25 @@ class ProductSerializer(serializers.ModelSerializer):
 
         product = Product.objects.create(tenant_id=tenant_id, **validated_data)
 
-        raw_material_total = Decimal("0.00")
+        component_total = Decimal("0.00")
 
         for material in materials_data:
             material_obj = ProductMaterial.objects.create(
                 tenant_id=tenant_id,
                 product=product,  # ✅ FIX
-                raw_material=material["raw_material"],
+                component_type=material["component_type"],
+                raw_material=material.get("raw_material"),
+                component_product=material.get("component_product"),
                 uom=material.get("uom"),
                 quantity=material["quantity"],
                 rate=material["rate"],
                 amount=material["amount"],
             )
-            raw_material_total += Decimal(str(material_obj.amount or 0))
+            component_total += Decimal(str(material_obj.amount or 0))
 
         if product.product_type == "ASSEMBLY_PRODUCT":
             calculated = (
-                raw_material_total
+                component_total
                 + Decimal(str(product.packaging_cost or 0))
                 + Decimal(str(product.moulding_charges or 0))
                 + Decimal(str(product.labour_charges or 0))
@@ -369,7 +438,7 @@ class ProductSerializer(serializers.ModelSerializer):
             product.confirmed_unit_cost = Decimal(str(product.direct_price or 0))
             product.net_amount = round(Decimal(str(product.direct_price or 0)), 2)
         else:
-            product.net_amount = round(raw_material_total, 2)
+            product.net_amount = round(component_total, 2)
         product.save()
 
         return product
@@ -411,24 +480,26 @@ class ProductSerializer(serializers.ModelSerializer):
         instance.revenue_account = validated_data.get(
             "revenue_account", instance.revenue_account
         )
-        raw_material_total = Decimal("0.00")
+        component_total = Decimal("0.00")
         instance.save()
 
         for material in materials_data:
             material_obj = ProductMaterial.objects.create(
                 tenant_id=tenant_id,
                 product=instance,
+                component_type=material.get("component_type", "RAW_MATERIAL"),
                 raw_material=material.get("raw_material"),
+                component_product=material.get("component_product"),
                 uom=material.get("uom"),
                 quantity=material.get("quantity"),
                 rate=material.get("rate"),
                 amount=material.get("amount"),
             )
-            raw_material_total += Decimal(str(material_obj.amount or 0))
+            component_total += Decimal(str(material_obj.amount or 0))
 
         if instance.product_type == "ASSEMBLY_PRODUCT":
             calculated = (
-                raw_material_total
+                component_total
                 + Decimal(str(instance.packaging_cost or 0))
                 + Decimal(str(instance.moulding_charges or 0))
                 + Decimal(str(instance.labour_charges or 0))
@@ -442,7 +513,7 @@ class ProductSerializer(serializers.ModelSerializer):
             instance.confirmed_unit_cost = Decimal(str(instance.direct_price or 0))
             instance.net_amount = round(Decimal(str(instance.direct_price or 0)), 2)
         else:
-            instance.net_amount = round(raw_material_total, 2)
+            instance.net_amount = round(component_total, 2)
         instance.save()
         return instance
 
@@ -551,6 +622,8 @@ class RawMaterialSerializer(serializers.ModelSerializer):
             tenant_id,
             "inventory_account",
             [Account.AccountGroup.ASSET],
+            [Account.AccountType.INVENTORY],
+            require_postable=False,
         )
         return attrs
 

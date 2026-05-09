@@ -183,11 +183,28 @@ class Product(BaseModel):
 # =========================
 
 class ProductMaterial(BaseModel):
+    COMPONENT_TYPE_CHOICES = [
+        ("RAW_MATERIAL", "Raw Material"),
+        ("FINISHED_GOOD", "Finished Good"),
+    ]
+
     product = models.ForeignKey(
         Product, on_delete=models.CASCADE, related_name="materials", null=True, blank=True
     )
+    component_type = models.CharField(
+        max_length=20,
+        choices=COMPONENT_TYPE_CHOICES,
+        default="RAW_MATERIAL",
+    )
     raw_material = models.ForeignKey(
-        RawMaterial, on_delete=models.PROTECT
+        RawMaterial, on_delete=models.PROTECT, null=True, blank=True
+    )
+    component_product = models.ForeignKey(
+        Product,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="used_in_assemblies",
     )
     uom = models.ForeignKey(Unit, on_delete=models.PROTECT, null=True, blank=True)
 

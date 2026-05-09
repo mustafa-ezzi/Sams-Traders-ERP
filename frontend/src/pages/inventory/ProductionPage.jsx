@@ -11,6 +11,7 @@ import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import FormInput from "../../components/ui/FormInput";
 import ConfirmModal from "../../components/ui/ConfirmModal";
+import IconButton from "../../components/ui/IconButton";
 import { useToast } from "../../context/ToastContext";
 
 const schema = z.object({
@@ -343,7 +344,8 @@ const ProductionPage = () => {
             <table className="w-full min-w-[720px] text-sm">
               <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                 <tr>
-                  <th className="px-4 py-3">Raw Material Used</th>
+                  <th className="px-4 py-3">Type</th>
+                  <th className="px-4 py-3">Component Used</th>
                   <th className="px-4 py-3">UOM</th>
                   <th className="px-4 py-3">Quantity Per Unit</th>
                   <th className="px-4 py-3">Rate</th>
@@ -352,9 +354,18 @@ const ProductionPage = () => {
               </thead>
               <tbody>
                 {(selectedProduct.materials || []).map((material) => (
-                  <tr key={material.id || material.raw_material_id} className="border-t border-slate-100">
+                  <tr key={material.id || material.raw_material_id || material.component_product_id} className="border-t border-slate-100">
+                    <td className="px-4 py-3">
+                      <span className={`rounded-full px-2 py-1 text-[11px] font-bold ${
+                        material.component_type === "FINISHED_GOOD"
+                          ? "bg-blue-50 text-blue-700"
+                          : "bg-emerald-50 text-emerald-700"
+                      }`}>
+                        {material.component_type === "FINISHED_GOOD" ? "Finished Good" : "Raw Material"}
+                      </span>
+                    </td>
                     <td className="px-4 py-3 font-semibold text-slate-800">
-                      {material.raw_material_name || "Raw material"}
+                      {material.component_product_name || material.raw_material_name || "Component"}
                     </td>
                     <td className="px-4 py-3 text-slate-600">{material.uom_name || "-"}</td>
                     <td className="px-4 py-3 text-slate-600">{formatDecimal(material.quantity)}</td>
@@ -441,14 +452,15 @@ const ProductionPage = () => {
             <p className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
               Producing {formatDecimal(preview.production_quantity)} finished goods will increase finished stock
               from {formatDecimal(preview.current_finished_stock)} to {formatDecimal(preview.projected_finished_stock)}.
-              The raw material quantities below will be deducted from inventory.
+              The component quantities below will be deducted from inventory.
             </p>
 
             <div className="mt-3 overflow-x-auto">
               <table className="w-full min-w-[680px] text-xs">
                 <thead className="bg-slate-50 text-left text-slate-600">
                   <tr>
-                    <th className="px-3 py-2">Raw Material</th>
+                    <th className="px-3 py-2">Type</th>
+                    <th className="px-3 py-2">Component</th>
                     <th className="px-3 py-2">UOM</th>
                     <th className="px-3 py-2">Qty/Unit</th>
                     <th className="px-3 py-2">Required Qty</th>
@@ -459,8 +471,17 @@ const ProductionPage = () => {
                 </thead>
                 <tbody>
                   {(preview.material_requirements || []).map((item) => (
-                    <tr key={item.raw_material_id} className="border-t border-slate-100">
-                      <td className="px-3 py-2 text-slate-800">{item.raw_material_name}</td>
+                    <tr key={`${item.component_type || "RAW_MATERIAL"}-${item.component_id || item.raw_material_id}`} className="border-t border-slate-100">
+                      <td className="px-3 py-2">
+                        <span className={`rounded-full px-2 py-1 text-[11px] font-bold ${
+                          item.component_type === "FINISHED_GOOD"
+                            ? "bg-blue-50 text-blue-700"
+                            : "bg-emerald-50 text-emerald-700"
+                        }`}>
+                          {item.component_type === "FINISHED_GOOD" ? "Finished Good" : "Raw Material"}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-slate-800">{item.component_name || item.raw_material_name}</td>
                       <td className="px-3 py-2 text-slate-600">{item.uom || "-"}</td>
                       <td className="px-3 py-2 text-slate-600">{formatDecimal(item.quantity_per_unit)}</td>
                       <td className="px-3 py-2 text-slate-600">{formatDecimal(item.required_quantity)}</td>
@@ -504,28 +525,26 @@ const ProductionPage = () => {
                     </td>
                     <td className="px-5 py-4 text-slate-600">{formatDecimal(row.availableQuantity)}</td>
                     <td className="px-5 py-4 text-right">
-                      <button
-                        type="button"
-                        className="mr-3 font-semibold text-blue-600 transition hover:text-blue-800"
-                        onClick={() => {
-                          setEditingId(row.id);
-                          form.reset({
-                            date: String(row.date).slice(0, 10),
-                            warehouseId: row.warehouseId,
-                            productId: row.productId,
-                            quantity: Number(row.quantity),
-                          });
-                        }}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        className="font-semibold text-rose-600 transition hover:text-rose-800"
-                        onClick={() => setDeleteId(row.id)}
-                      >
-                        Delete
-                      </button>
+                      <span className="inline-flex gap-2">
+                        <IconButton
+                          icon="edit"
+                          label="Edit production"
+                          onClick={() => {
+                            setEditingId(row.id);
+                            form.reset({
+                              date: String(row.date).slice(0, 10),
+                              warehouseId: row.warehouseId,
+                              productId: row.productId,
+                              quantity: Number(row.quantity),
+                            });
+                          }}
+                        />
+                        <IconButton
+                          icon="delete"
+                          label="Delete production"
+                          onClick={() => setDeleteId(row.id)}
+                        />
+                      </span>
                     </td>
                   </tr>
                 ))}

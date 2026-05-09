@@ -225,7 +225,7 @@ class ProductViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         active_materials = ProductMaterial.objects.filter(
             deleted_at__isnull=True
-        ).select_related("raw_material", "uom")
+        ).select_related("raw_material", "component_product", "uom")
         qs = Product.objects.filter(
             tenant_id=self.request.user.tenant_id, deleted_at__isnull=True
         ).select_related("unit").prefetch_related(
@@ -557,10 +557,15 @@ class ProductionViewSet(viewsets.ModelViewSet):
         if product.product_type not in {"ASSEMBLY_PRODUCT", "MANUFACTURED"}:
             return {}
 
-        requirements = {}
-        materials = product.materials.filter(deleted_at__isnull=True).select_related("raw_material")
+        requirements = {"raw_materials": {}, "finished_goods": {}}
+        materials = product.materials.filter(deleted_at__isnull=True).select_related(
+            "raw_material", "component_product"
+        )
         for material in materials:
-            requirements[material.raw_material_id] = material.quantity * quantity
+            if material.component_type == "RAW_MATERIAL":
+                requirements["raw_materials"][material.raw_material_id] = material.quantity * quantity
+            elif material.component_type == "FINISHED_GOOD":
+                requirements["finished_goods"][material.component_product_id] = material.quantity * quantity
         return requirements
 
     def _validate_material_availability(self, tenant_id, warehouse_id, product, quantity, instance=None):
@@ -576,7 +581,7 @@ class ProductionViewSet(viewsets.ModelViewSet):
         if instance and instance.warehouse_id == warehouse_id:
             old_requirements = self._get_material_requirements(instance.product, instance.quantity)
 
-        for raw_material_id, required_qty in new_requirements.items():
+        for raw_material_id, required_qty in new_requirements["raw_materials"].items():
             if required_qty <= 0:
                 continue
 
@@ -592,13 +597,46 @@ class ProductionViewSet(viewsets.ModelViewSet):
                 or Decimal("0")
             )
             effective_available = Decimal(str(current_stock)) + Decimal(
-                str(old_requirements.get(raw_material_id, 0))
+                str(old_requirements.get("raw_materials", {}).get(raw_material_id, 0))
             )
 
             if Decimal(str(required_qty)) > effective_available:
                 raw_material_name = (
                     RawMaterial.objects.filter(id=raw_material_id).values_list("name", flat=True).first()
                     or "Raw material"
+                )
+
+        for component_product_id, required_qty in new_requirements["finished_goods"].items():
+            if required_qty <= 0:
+                continue
+
+            current_stock = (
+                ProductStock.objects.filter(
+                    tenant_id=tenant_id,
+                    warehouse_id=warehouse_id,
+                    product_id=component_product_id,
+                    deleted_at__isnull=True,
+                )
+                .values_list("quantity", flat=True)
+                .first()
+                or Decimal("0")
+            )
+            effective_available = Decimal(str(current_stock)) + Decimal(
+                str(old_requirements.get("finished_goods", {}).get(component_product_id, 0))
+            )
+
+            if Decimal(str(required_qty)) > effective_available:
+                product_name = (
+                    Product.objects.filter(id=component_product_id).values_list("name", flat=True).first()
+                    or "Finished good"
+                )
+                raise ValidationError(
+                    {
+                        "quantity": (
+                            f"Not enough stock for {product_name}. "
+                            f"Required: {required_qty}, available: {effective_available}."
+                        )
+                    }
                 )
                 raise ValidationError(
                     {
@@ -614,11 +652,25 @@ class ProductionViewSet(viewsets.ModelViewSet):
             return
 
         raw_material_ids = list(
-            product.materials.filter(deleted_at__isnull=True).values_list("raw_material_id", flat=True)
+            product.materials.filter(
+                component_type="RAW_MATERIAL", deleted_at__isnull=True
+            ).values_list("raw_material_id", flat=True)
         )
         for raw_material_id in raw_material_ids:
             opening_stock_view = OpeningStockViewSet()
             opening_stock_view._sync_stock_quantity(tenant_id, warehouse_id, raw_material_id)
+
+    def _sync_related_finished_good_stock(self, tenant_id, warehouse_id, product):
+        if not product or product.product_type not in {"ASSEMBLY_PRODUCT", "MANUFACTURED"}:
+            return
+
+        component_product_ids = list(
+            product.materials.filter(
+                component_type="FINISHED_GOOD", deleted_at__isnull=True
+            ).values_list("component_product_id", flat=True)
+        )
+        for component_product_id in component_product_ids:
+            sync_product_stock_quantity(tenant_id, warehouse_id, component_product_id)
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
@@ -670,6 +722,7 @@ class ProductionViewSet(viewsets.ModelViewSet):
 
         self._sync_product_stock_quantity(tenant_id, instance.warehouse_id, instance.product_id)
         self._sync_related_raw_material_stock(tenant_id, instance.warehouse_id, instance.product)
+        self._sync_related_finished_good_stock(tenant_id, instance.warehouse_id, instance.product)
         rebuild_product_costing(tenant_id, [instance.product_id])
 
         self._enriched_data = self._enrich_response_data([instance], tenant_id)
@@ -702,7 +755,9 @@ class ProductionViewSet(viewsets.ModelViewSet):
 
         product = Product.objects.filter(
             id=product_id, tenant_id=tenant_id, deleted_at__isnull=True
-        ).prefetch_related("materials__raw_material", "materials__uom").first()
+        ).prefetch_related(
+            "materials__raw_material", "materials__component_product", "materials__uom"
+        ).first()
         if not product:
             raise ValidationError("Product not found for this tenant.")
         if product.product_type not in {"ASSEMBLY_PRODUCT", "MANUFACTURED"}:
@@ -715,21 +770,42 @@ class ProductionViewSet(viewsets.ModelViewSet):
         rows = []
         for material in materials:
             required_qty = Decimal(str(material.quantity or 0)) * quantity_decimal
-            current_stock = (
-                Stock.objects.filter(
-                    tenant_id=tenant_id,
-                    warehouse_id=warehouse_id,
-                    raw_material_id=material.raw_material_id,
-                    deleted_at__isnull=True,
+            if material.component_type == "RAW_MATERIAL":
+                current_stock = (
+                    Stock.objects.filter(
+                        tenant_id=tenant_id,
+                        warehouse_id=warehouse_id,
+                        raw_material_id=material.raw_material_id,
+                        deleted_at__isnull=True,
+                    )
+                    .values_list("quantity", flat=True)
+                    .first()
+                    or Decimal("0")
                 )
-                .values_list("quantity", flat=True)
-                .first()
-                or Decimal("0")
-            )
+                component_id = str(material.raw_material_id)
+                component_name = material.raw_material.name
+            else:
+                current_stock = (
+                    ProductStock.objects.filter(
+                        tenant_id=tenant_id,
+                        warehouse_id=warehouse_id,
+                        product_id=material.component_product_id,
+                        deleted_at__isnull=True,
+                    )
+                    .values_list("quantity", flat=True)
+                    .first()
+                    or Decimal("0")
+                )
+                component_id = str(material.component_product_id)
+                component_name = material.component_product.name
+
             rows.append(
                 {
-                    "raw_material_id": str(material.raw_material_id),
-                    "raw_material_name": material.raw_material.name,
+                    "component_type": material.component_type,
+                    "component_id": component_id,
+                    "raw_material_id": component_id,
+                    "raw_material_name": component_name,
+                    "component_name": component_name,
                     "uom": material.uom.name if material.uom else "",
                     "quantity_per_unit": material.quantity,
                     "required_quantity": round(required_qty, 4),
@@ -809,12 +885,16 @@ class ProductionViewSet(viewsets.ModelViewSet):
         self._sync_related_raw_material_stock(
             tenant_id, updated_instance.warehouse_id, updated_instance.product
         )
+        self._sync_related_finished_good_stock(
+            tenant_id, updated_instance.warehouse_id, updated_instance.product
+        )
         if (
             old_product_id != updated_instance.product_id
             or old_warehouse_id != updated_instance.warehouse_id
         ):
             self._sync_product_stock_quantity(tenant_id, old_warehouse_id, old_product_id)
             self._sync_related_raw_material_stock(tenant_id, old_warehouse_id, old_product)
+            self._sync_related_finished_good_stock(tenant_id, old_warehouse_id, old_product)
         rebuild_product_costing(tenant_id, [old_product_id, updated_instance.product_id])
 
         self._enriched_data = self._enrich_response_data([updated_instance], tenant_id)
@@ -834,6 +914,7 @@ class ProductionViewSet(viewsets.ModelViewSet):
         self.perform_destroy(instance)
         self._sync_product_stock_quantity(tenant_id, warehouse_id, product_id)
         self._sync_related_raw_material_stock(tenant_id, warehouse_id, instance.product)
+        self._sync_related_finished_good_stock(tenant_id, warehouse_id, instance.product)
         rebuild_product_costing(tenant_id, [product_id])
 
         return Response(

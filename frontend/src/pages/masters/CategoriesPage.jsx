@@ -9,8 +9,9 @@ import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import FormInput from "../../components/ui/FormInput";
 import ConfirmModal from "../../components/ui/ConfirmModal";
+import IconButton from "../../components/ui/IconButton";
 import { useToast } from "../../context/ToastContext";
-import { flattenAccountTree, formatAccountLabel } from "../../utils/accounts";
+import { flattenAccountTree, formatAccountLabel, getPostableInventoryAccounts } from "../../utils/accounts";
 
 const schema = z.object({
   name: z.string().trim().min(1, "Name is required"),
@@ -49,9 +50,7 @@ const CategoriesPage = () => {
   });
 
   const flattenedAccounts = useMemo(() => flattenAccountTree(accounts), [accounts]);
-  const inventoryAccounts = flattenedAccounts.filter(
-    (account) => account.account_group === "ASSET" && account.is_postable
-  );
+  const inventoryAccounts = getPostableInventoryAccounts(flattenedAccounts);
   const cogsAccounts = flattenedAccounts.filter(
     (account) => account.account_group === "COGS" && account.is_postable
   );
@@ -318,28 +317,26 @@ const CategoriesPage = () => {
                       >
                         Apply Category COAs
                       </button>
-                      <button
-                        className="mr-3 font-semibold text-blue-600 transition hover:text-blue-800"
-                        onClick={() => {
-                          setEditingId(record.id);
-                          form.reset({
-                            name: record.name,
-                            inventory_account: record.inventory_account || "",
-                            cogs_account: record.cogs_account || "",
-                            revenue_account: record.revenue_account || "",
-                          });
-                        }}
-                        type="button"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        className="font-semibold text-rose-600 transition hover:text-rose-800"
-                        onClick={() => setDeleteId(record.id)}
-                        type="button"
-                      >
-                        Delete
-                      </button>
+                      <span className="inline-flex gap-2">
+                        <IconButton
+                          icon="edit"
+                          label="Edit category"
+                          onClick={() => {
+                            setEditingId(record.id);
+                            form.reset({
+                              name: record.name,
+                              inventory_account: record.inventory_account || "",
+                              cogs_account: record.cogs_account || "",
+                              revenue_account: record.revenue_account || "",
+                            });
+                          }}
+                        />
+                        <IconButton
+                          icon="delete"
+                          label="Delete category"
+                          onClick={() => setDeleteId(record.id)}
+                        />
+                      </span>
                     </td>
                   </tr>
                 ))}

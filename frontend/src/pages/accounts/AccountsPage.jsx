@@ -8,6 +8,7 @@ import Button from "../../components/ui/Button";
 import FormInput from "../../components/ui/FormInput";
 import StateView from "../../components/StateView";
 import ConfirmModal from "../../components/ui/ConfirmModal";
+import IconButton from "../../components/ui/IconButton";
 import { useToast } from "../../context/ToastContext";
 import { flattenAccountTree, formatAccountLabel } from "../../utils/accounts";
 import OpeningAccountsTab from "./OpeningAccountsTab";
@@ -65,7 +66,7 @@ const normalizeCodeForGeneration = (code) => {
   if (!/^\d+$/.test(codeText)) {
     return "";
   }
-  return codeText.length >= 5 ? codeText : codeText.padEnd(5, "0");
+  return codeText;
 };
 
 const getNextChildCode = (parentAccount, allAccounts) => {
@@ -78,17 +79,48 @@ const getNextChildCode = (parentAccount, allAccounts) => {
     return "";
   }
 
-  const step = normalizedParentCode.endsWith("00") ? 10 : 1;
+  let childCodeWidth = normalizedParentCode.length;
   const childCodes = allAccounts
     .filter((account) => account.parent === parentAccount.id)
-    .map((account) => Number(normalizeCodeForGeneration(account.code)))
+    .map((account) => normalizeCodeForGeneration(account.code))
+    .filter(Boolean)
+    .map((code) => {
+      childCodeWidth = Math.max(childCodeWidth, code.length);
+      return Number(code);
+    })
     .filter((value) => Number.isFinite(value) && value > 0);
+
+  let step;
+  let branchLimit;
+  if (childCodes.length > 0) {
+    step = 10 ** Math.max(childCodeWidth - normalizedParentCode.length, 0);
+    if (childCodeWidth === normalizedParentCode.length) {
+      step = Math.max(1, 10 ** Math.max(3 - Number(parentAccount.level || 1), 0));
+    }
+    const baseCode =
+      Number(normalizedParentCode) *
+      10 ** Math.max(childCodeWidth - normalizedParentCode.length, 0);
+    branchLimit = baseCode + step * 10;
+  } else if (Number(parentAccount.level || 1) <= 1) {
+    step = 100;
+    branchLimit = Number(normalizedParentCode) + 1000;
+  } else if (Number(parentAccount.level || 1) === 2) {
+    step = 10;
+    branchLimit = Number(normalizedParentCode) + 100;
+  } else {
+    step = 1;
+    branchLimit = Number(normalizedParentCode) + 10;
+  }
 
   const nextValue = childCodes.length > 0
     ? Math.max(...childCodes) + step
     : Number(normalizedParentCode) + step;
 
-  return String(nextValue).padStart(normalizedParentCode.length, "0");
+  if (nextValue >= branchLimit) {
+    return "";
+  }
+
+  return String(nextValue).padStart(childCodeWidth, "0");
 };
 
 const AccountsPage = () => {
@@ -506,33 +538,31 @@ const AccountsPage = () => {
                     <td className="px-5 py-4 text-slate-600">{account.level}</td>
                     <td className="px-5 py-4 text-slate-600">{account.is_postable ? "Yes" : "No"}</td>
                     <td className="px-5 py-4 text-right">
-                      <button
-                        type="button"
-                        className="mr-3 font-semibold text-blue-600 transition hover:text-blue-800"
-                        onClick={() => {
-                          setEditingId(account.id);
-                          form.reset({
-                            code: account.code,
-                            name: account.name,
-                            parent: account.parent || "",
-                            account_group: account.account_group,
-                            account_type: account.account_type || "GENERAL",
-                            account_nature: account.account_nature,
-                            is_postable: account.is_postable,
-                            is_active: account.is_active,
-                            sort_order: account.sort_order,
-                          });
-                        }}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        className="font-semibold text-rose-600 transition hover:text-rose-800"
-                        onClick={() => setDeleteId(account.id)}
-                      >
-                        Delete
-                      </button>
+                      <span className="inline-flex gap-2">
+                        <IconButton
+                          icon="edit"
+                          label="Edit account"
+                          onClick={() => {
+                            setEditingId(account.id);
+                            form.reset({
+                              code: account.code,
+                              name: account.name,
+                              parent: account.parent || "",
+                              account_group: account.account_group,
+                              account_type: account.account_type || "GENERAL",
+                              account_nature: account.account_nature,
+                              is_postable: account.is_postable,
+                              is_active: account.is_active,
+                              sort_order: account.sort_order,
+                            });
+                          }}
+                        />
+                        <IconButton
+                          icon="delete"
+                          label="Delete account"
+                          onClick={() => setDeleteId(account.id)}
+                        />
+                      </span>
                     </td>
                   </tr>
                 ))}

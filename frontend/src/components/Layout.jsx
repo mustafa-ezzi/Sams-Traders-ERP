@@ -20,21 +20,21 @@ const Icon = ({ children, className = "" }) => (
 ───────────────────────────────────────────────────────────────── */
 const icons = {
   dashboard: <Icon className="h-4 w-4"><path d="M3 13.5 12 4l9 9.5" /><path d="M5 11.5V20h14v-8.5" /></Icon>,
-  raw:       <Icon className="h-4 w-4"><path d="M5 12h14" /><path d="M7 7h10v10H7z" /></Icon>,
-  products:  <Icon className="h-4 w-4"><path d="M4 7.5 12 3l8 4.5-8 4.5L4 7.5Z" /><path d="M4 7.5V16.5L12 21l8-4.5V7.5" /><path d="M12 12v9" /></Icon>,
+  raw: <Icon className="h-4 w-4"><path d="M5 12h14" /><path d="M7 7h10v10H7z" /></Icon>,
+  products: <Icon className="h-4 w-4"><path d="M4 7.5 12 3l8 4.5-8 4.5L4 7.5Z" /><path d="M4 7.5V16.5L12 21l8-4.5V7.5" /><path d="M12 12v9" /></Icon>,
   warehouse: <Icon className="h-4 w-4"><path d="M3 21h18" /><path d="M5 21V8l7-4 7 4v13" /><path d="M9 21v-6h6v6" /></Icon>,
-  stock:     <Icon className="h-4 w-4"><path d="M12 3v18" /><path d="m7 8 5-5 5 5" /><path d="M5 21h14" /></Icon>,
-  masters:   <Icon className="h-4 w-4"><path d="M12 3 4 7v10l8 4 8-4V7l-8-4Z" /><path d="M4 7l8 4 8-4" /><path d="M12 11v10" /></Icon>,
-  parties:   <Icon className="h-4 w-4"><path d="M16 20v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="10" cy="7" r="4" /><path d="M20 8v6" /><path d="M17 11h6" /></Icon>,
-  accounts:  <Icon className="h-4 w-4"><path d="M4 6h16" /><path d="M4 12h16" /><path d="M4 18h16" /><circle cx="7" cy="6" r="1.2" /><circle cx="12" cy="12" r="1.2" /><circle cx="17" cy="18" r="1.2" /></Icon>,
-  reports:   <Icon className="h-4 w-4"><path d="M5 19V5" /><path d="M10 19V9" /><path d="M15 19v-6" /><path d="M20 19V7" /></Icon>,
-  users:     <Icon className="h-4 w-4"><path d="M16 20v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="10" cy="7" r="4" /><path d="M20 8v6" /><path d="M17 11h6" /></Icon>,
-  support:   <Icon className="h-4 w-4"><path d="M21 11.5a8.5 8.5 0 1 1-3.45-6.85" /><path d="M9 9h.01M12 9h.01M15 9h.01" /><path d="M8 14h8" /></Icon>,
-  chevron:   <Icon className="h-3 w-3"><path d="m9 18 6-6-6-6" /></Icon>,
-  menu:      <Icon className="h-4 w-4"><path d="M4 7h16M4 12h16M4 17h16" /></Icon>,
-  close:     <Icon className="h-4 w-4"><path d="M6 6l12 12M18 6 6 18" /></Icon>,
-  bell:      <Icon className="h-4 w-4"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></Icon>,
-  check:     <svg className="h-2.5 w-2.5" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 6l3 3 5-5" /></svg>,
+  stock: <Icon className="h-4 w-4"><path d="M12 3v18" /><path d="m7 8 5-5 5 5" /><path d="M5 21h14" /></Icon>,
+  masters: <Icon className="h-4 w-4"><path d="M12 3 4 7v10l8 4 8-4V7l-8-4Z" /><path d="M4 7l8 4 8-4" /><path d="M12 11v10" /></Icon>,
+  parties: <Icon className="h-4 w-4"><path d="M16 20v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="10" cy="7" r="4" /><path d="M20 8v6" /><path d="M17 11h6" /></Icon>,
+  accounts: <Icon className="h-4 w-4"><path d="M4 6h16" /><path d="M4 12h16" /><path d="M4 18h16" /><circle cx="7" cy="6" r="1.2" /><circle cx="12" cy="12" r="1.2" /><circle cx="17" cy="18" r="1.2" /></Icon>,
+  reports: <Icon className="h-4 w-4"><path d="M5 19V5" /><path d="M10 19V9" /><path d="M15 19v-6" /><path d="M20 19V7" /></Icon>,
+  users: <Icon className="h-4 w-4"><path d="M16 20v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="10" cy="7" r="4" /><path d="M20 8v6" /><path d="M17 11h6" /></Icon>,
+  support: <Icon className="h-4 w-4"><path d="M21 11.5a8.5 8.5 0 1 1-3.45-6.85" /><path d="M9 9h.01M12 9h.01M15 9h.01" /><path d="M8 14h8" /></Icon>,
+  chevron: <Icon className="h-3 w-3"><path d="m9 18 6-6-6-6" /></Icon>,
+  menu: <Icon className="h-4 w-4"><path d="M4 7h16M4 12h16M4 17h16" /></Icon>,
+  close: <Icon className="h-4 w-4"><path d="M6 6l12 12M18 6 6 18" /></Icon>,
+  bell: <Icon className="h-4 w-4"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></Icon>,
+  check: <svg className="h-2.5 w-2.5" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 6l3 3 5-5" /></svg>,
 };
 
 /* ─────────────────────────────────────────────────────────────────
@@ -47,9 +47,11 @@ const navigation = [
     color: "from-blue-500 to-cyan-500",
     dot: "bg-blue-400",
     items: [
-      { to: "/purchase-invoices", label: "Invoices",      icon: icons.stock },
-      { to: "/purchase-returns",  label: "Returns",       icon: icons.stock },
-      { to: "/opening-stock",     label: "Opening Stock", icon: icons.stock },
+      { to: "/purchase-invoices", label: "Invoices", icon: icons.stock },
+      { to: "/purchase-returns", label: "Returns", icon: icons.stock },
+      { to: "/opening-stock", label: "Opening Stock", icon: icons.stock },
+      { to: "/suppliers", label: "Suppliers", icon: icons.parties },
+
     ],
   },
   {
@@ -59,7 +61,9 @@ const navigation = [
     dot: "bg-emerald-400",
     items: [
       { to: "/sales-invoices", label: "Invoices", icon: icons.stock },
-      { to: "/sales-returns",  label: "Returns",  icon: icons.stock },
+      { to: "/sales-returns", label: "Returns", icon: icons.stock },
+      { to: "/customers", label: "Customers", icon: icons.parties },
+
     ],
   },
   {
@@ -69,8 +73,8 @@ const navigation = [
     dot: "bg-violet-400",
     items: [
       { to: "/purchase-bank-payments", label: "Bank Payments", icon: icons.accounts },
-      { to: "/sales-bank-receipts",    label: "Bank Receipts", icon: icons.accounts },
-      { to: "/expenses",               label: "Expenses",      icon: icons.accounts },
+      { to: "/sales-bank-receipts", label: "Bank Receipts", icon: icons.accounts },
+      { to: "/expenses", label: "Expenses", icon: icons.accounts },
     ],
   },
   {
@@ -79,9 +83,9 @@ const navigation = [
     color: "from-amber-500 to-orange-500",
     dot: "bg-amber-400",
     items: [
-      { to: "/reports/balance-sheet",  label: "Balance Sheet",  icon: icons.reports },
-      { to: "/reports/ledger",         label: "Ledger Reports", icon: icons.reports },
-      { to: "/reports/party-ledger",   label: "Party Ledger",   icon: icons.reports },
+      { to: "/reports/balance-sheet", label: "Balance Sheet", icon: icons.reports },
+      { to: "/reports/ledger", label: "Ledger Reports", icon: icons.reports },
+      { to: "/reports/party-ledger", label: "Party Ledger", icon: icons.reports },
     ],
   },
   {
@@ -90,16 +94,15 @@ const navigation = [
     color: "from-rose-500 to-pink-500",
     dot: "bg-rose-400",
     items: [
-      { to: "/masters/units",      label: "Units",           icon: icons.masters },
-      { to: "/masters/brands",     label: "Brands",          icon: icons.masters },
-      { to: "/masters/categories", label: "Categories",      icon: icons.masters },
-      { to: "/customers",          label: "Customers",       icon: icons.parties },
-      { to: "/suppliers",          label: "Suppliers",       icon: icons.parties },
-      { to: "/warehouses",         label: "Warehouses",      icon: icons.warehouse },
-      { to: "/raw-materials",      label: "Raw Materials",   icon: icons.raw },
-      { to: "/products",           label: "Products",        icon: icons.products },
-      { to: "/production",         label: "Production",      icon: icons.products },
-      { to: "/accounts",           label: "Chart Of Accounts", icon: icons.accounts },
+      { to: "/masters/units", label: "Units", icon: icons.masters },
+      { to: "/masters/brands", label: "Brands", icon: icons.masters },
+      { to: "/masters/categories", label: "Categories", icon: icons.masters },
+
+      { to: "/warehouses", label: "Warehouses", icon: icons.warehouse },
+      { to: "/raw-materials", label: "Raw Materials", icon: icons.raw },
+      { to: "/products", label: "Products", icon: icons.products },
+      { to: "/production", label: "Production", icon: icons.products },
+      { to: "/accounts", label: "Chart Of Accounts", icon: icons.accounts },
     ],
   },
   {
@@ -109,7 +112,7 @@ const navigation = [
     dot: "bg-slate-400",
     items: [
       { to: "/users/dimensions", label: "Dimensions", icon: icons.users },
-      { to: "/support",          label: "Support",    icon: icons.support },
+      { to: "/support", label: "Support", icon: icons.support },
     ],
   },
 ];
@@ -118,6 +121,7 @@ const pageTitles = {
   "/": { title: "Dashboard", eyebrow: "Overview" },
   "/raw-materials": { title: "Raw Materials", eyebrow: "Inventory" },
   "/products": { title: "Products", eyebrow: "Inventory" },
+  "/products/create": { title: "Create Product", eyebrow: "Inventory" },
   "/accounts": { title: "Chart of Accounts", eyebrow: "Accounting" },
   "/users/dimensions": { title: "Dimensions", eyebrow: "Users" },
   "/reports/balance-sheet": { title: "Balance Sheet", eyebrow: "Reports" },
@@ -133,8 +137,6 @@ const pageTitles = {
   "/sales-invoices": { title: "Sales Invoices", eyebrow: "Sales" },
   "/sales-returns": { title: "Sales Returns", eyebrow: "Sales" },
   "/sales-bank-receipts": { title: "Bank Receipts", eyebrow: "Bank" },
-  "/customers": { title: "Customers", eyebrow: "Parties" },
-  "/suppliers": { title: "Suppliers", eyebrow: "Parties" },
   "/masters/units": { title: "Units", eyebrow: "Masters" },
   "/masters/categories": { title: "Categories", eyebrow: "Masters" },
   "/masters/brands": { title: "Brands", eyebrow: "Masters" },
@@ -181,19 +183,17 @@ const NavSection = ({ section, onNavigate }) => {
               to={item.to}
               onClick={onNavigate}
               className={({ isActive }) =>
-                `group flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px] transition-all duration-150 ${
-                  isActive
-                    ? "bg-white/[0.1] text-white font-semibold"
-                    : "text-slate-400 hover:bg-white/[0.05] hover:text-slate-200 font-medium"
+                `group flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px] transition-all duration-150 ${isActive
+                  ? "bg-white/[0.1] text-white font-semibold"
+                  : "text-slate-400 hover:bg-white/[0.05] hover:text-slate-200 font-medium"
                 }`
               }
             >
               {({ isActive }) => (
                 <>
                   <span
-                    className={`shrink-0 transition-colors ${
-                      isActive ? "text-blue-400" : "text-slate-600 group-hover:text-slate-400"
-                    }`}
+                    className={`shrink-0 transition-colors ${isActive ? "text-blue-400" : "text-slate-600 group-hover:text-slate-400"
+                      }`}
                   >
                     {item.icon}
                   </span>
@@ -216,25 +216,22 @@ const NavSection = ({ section, onNavigate }) => {
 ───────────────────────────────────────────────────────────────── */
 const CheckPill = ({ label, checked, onChange, disabled, isCurrent, isAll }) => (
   <label
-    className={`inline-flex select-none items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold tracking-wide transition-all duration-150 ${
-      disabled ? "cursor-default" : "cursor-pointer"
-    } ${
-      isAll && checked
+    className={`inline-flex select-none items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold tracking-wide transition-all duration-150 ${disabled ? "cursor-default" : "cursor-pointer"
+      } ${isAll && checked
         ? "border-emerald-200 bg-emerald-50 text-emerald-700 shadow-sm"
         : checked
-        ? "border-blue-200 bg-blue-50 text-blue-700 shadow-sm"
-        : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700"
-    }`}
+          ? "border-blue-200 bg-blue-50 text-blue-700 shadow-sm"
+          : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700"
+      }`}
     title={disabled ? "Current dimension is always included" : `Create in ${label}`}
   >
     <span
-      className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border transition-all duration-150 ${
-        isAll && checked
+      className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border transition-all duration-150 ${isAll && checked
           ? "border-emerald-500 bg-emerald-500"
           : checked
-          ? "border-blue-500 bg-blue-500"
-          : "border-slate-300 bg-white"
-      }`}
+            ? "border-blue-500 bg-blue-500"
+            : "border-slate-300 bg-white"
+        }`}
     >
       {checked && icons.check}
     </span>
@@ -257,7 +254,12 @@ const Layout = () => {
   const isOnboardingOnly = !allowedDimensions?.length;
 
   const pageMeta = useMemo(
-    () => pageTitles[pathname] || { title: "Workspace", eyebrow: "ERP" },
+    () => {
+      if (pathname.startsWith("/products/") && pathname.endsWith("/edit")) {
+        return { title: "Edit Product", eyebrow: "Inventory" };
+      }
+      return pageTitles[pathname] || { title: "Workspace", eyebrow: "ERP" };
+    },
     [pathname]
   );
 
@@ -275,9 +277,9 @@ const Layout = () => {
     if (nextSelected.join("|") !== createTenantIds.join("|")) setCreateTenants(nextSelected);
   }, [allowedDimensions, createTenantIds, dimensions, isOnboardingOnly, setCreateTenants, tenantId]);
 
-  const activeDimension   = dimensions.find((i) => i.code === tenantId);
+  const activeDimension = dimensions.find((i) => i.code === tenantId);
   const creationDimensions = dimensions.length ? dimensions : allowedDimensions || [];
-  const creationCodes      = creationDimensions.map((d) => d.code);
+  const creationCodes = creationDimensions.map((d) => d.code);
   const selectedCreateTenantIds = [...new Set([tenantId, ...createTenantIds].filter((c) => creationCodes.includes(c)))];
   const allSelected = creationCodes.length > 0 && creationCodes.every((c) => selectedCreateTenantIds.includes(c));
 
@@ -320,8 +322,7 @@ const Layout = () => {
             to="/users/dimensions"
             onClick={() => setMobileOpen(false)}
             className={({ isActive }) =>
-              `flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] font-semibold transition-all ${
-                isActive ? "bg-white/[0.1] text-white" : "text-slate-400 hover:bg-white/[0.05] hover:text-slate-200"
+              `flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] font-semibold transition-all ${isActive ? "bg-white/[0.1] text-white" : "text-slate-400 hover:bg-white/[0.05] hover:text-slate-200"
               }`
             }
           >
@@ -336,16 +337,14 @@ const Layout = () => {
             end
             onClick={() => setMobileOpen(false)}
             className={({ isActive }) =>
-              `flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] font-semibold transition-all ${
-                isActive ? "bg-white/[0.1] text-white" : "text-slate-400 hover:bg-white/[0.05] hover:text-slate-200"
+              `flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] font-semibold transition-all ${isActive ? "bg-white/[0.1] text-white" : "text-slate-400 hover:bg-white/[0.05] hover:text-slate-200"
               }`
             }
           >
             {({ isActive }) => (
               <>
-                <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors ${
-                  isActive ? "bg-blue-500/20 text-blue-300" : "text-slate-500"
-                }`}>
+                <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors ${isActive ? "bg-blue-500/20 text-blue-300" : "text-slate-500"
+                  }`}>
                   {icons.dashboard}
                 </span>
                 <span>Dashboard</span>
@@ -397,9 +396,8 @@ const Layout = () => {
           SIDEBAR
       ═══════════════════════════════════════════ */}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 w-[220px] transform transition-transform duration-300 ease-out lg:translate-x-0 ${
-          mobileOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
+        className={`fixed inset-y-0 left-0 z-40 w-[220px] transform transition-transform duration-300 ease-out lg:translate-x-0 ${mobileOpen ? "translate-x-0" : "-translate-x-full"
+          }`}
       >
         {/* Glass-dark sidebar surface */}
         <div className="flex h-full flex-col bg-[#0d1424] border-r border-white/[0.05]">
@@ -486,14 +484,6 @@ const Layout = () => {
                 </div>
               )}
 
-              {/* Notification bell */}
-              <button
-                type="button"
-                className="relative flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:bg-slate-50 hover:text-slate-700"
-              >
-                {icons.bell}
-                <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-rose-500 ring-1 ring-white" />
-              </button>
 
               {/* Avatar */}
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 text-[11px] font-bold text-white shadow-sm">
