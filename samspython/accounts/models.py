@@ -12,6 +12,15 @@ class User(AbstractUser):
     business_name = models.CharField(max_length=255, blank=True, default="")
     phone_number = models.CharField(max_length=50, blank=True, default="")
     tenant_limit = models.PositiveIntegerField(default=1)
+    parent_user = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="tenant_children",
+    )
+    tenant_role = models.CharField(max_length=120, blank=True, default="")
+    ui_permissions = models.JSONField(default=list, blank=True)
     allowed_dimensions = models.ManyToManyField(
         "Dimension",
         blank=True,

@@ -49,6 +49,9 @@ class DimensionSerializer(serializers.ModelSerializer):
 
 class AdminUserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=6, required=False)
+    parent_user_id = serializers.UUIDField(read_only=True, allow_null=True)
+    parent_email = serializers.SerializerMethodField()
+    account_kind = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -63,11 +66,24 @@ class AdminUserSerializer(serializers.ModelSerializer):
             "password",
             "is_active",
             "date_joined",
+            "parent_user_id",
+            "parent_email",
+            "tenant_role",
+            "ui_permissions",
+            "account_kind",
         ]
-        read_only_fields = ["id", "date_joined"]
+        read_only_fields = ["id", "date_joined", "tenant_role", "ui_permissions"]
         extra_kwargs = {
             "tenant_id": {"read_only": True},
         }
+
+    def get_parent_email(self, obj):
+        if obj.parent_user_id and getattr(obj, "parent_user", None):
+            return obj.parent_user.email or ""
+        return ""
+
+    def get_account_kind(self, obj):
+        return "child" if obj.parent_user_id else "tenant_admin"
 
     def validate(self, attrs):
         is_create = self.instance is None
@@ -98,6 +114,80 @@ class AdminUserSerializer(serializers.ModelSerializer):
         for field in ["username", "email", "phone_number", "business_name", "tenant_limit", "is_active"]:
             if field in validated_data:
                 setattr(instance, field, validated_data[field])
+        instance.save()
+        return instance
+
+
+class TenantStaffSerializer(serializers.ModelSerializer):
+    """Child users under a tenant org admin (not God panel)."""
+
+    password = serializers.CharField(write_only=True, min_length=6, required=False)
+
+    class Meta:
+        model = User
+        fields = [
+            "id",
+            "username",
+            "email",
+            "password",
+            "tenant_role",
+            "ui_permissions",
+            "is_active",
+            "date_joined",
+        ]
+        read_only_fields = ["id", "date_joined"]
+
+    def validate(self, attrs):
+        if self.instance is None and not attrs.get("password"):
+            raise serializers.ValidationError({"password": "Password is required for new staff users."})
+        return attrs
+
+    def validate_ui_permissions(self, value):
+        from accounts.tenant_ui_permissions import normalize_ui_permissions
+
+        normalized = normalize_ui_permissions(value)
+        if not normalized:
+            raise serializers.ValidationError("Select at least one allowed module.")
+        return normalized
+
+    def create(self, validated_data):
+        from accounts.tenant_ui_permissions import normalize_ui_permissions
+
+        parent = self.context["parent_user"]
+        password = validated_data.pop("password")
+        perms = normalize_ui_permissions(validated_data.pop("ui_permissions", []))
+        if not perms:
+            raise serializers.ValidationError({"ui_permissions": "Select at least one allowed module."})
+        child = User.objects.create_user(
+            username=validated_data["username"],
+            email=validated_data["email"],
+            password=password,
+            tenant_id=parent.tenant_id or "",
+            phone_number="",
+            business_name="",
+            tenant_limit=1,
+            parent_user=parent,
+            tenant_role=(validated_data.get("tenant_role") or "").strip(),
+            ui_permissions=perms,
+            is_active=validated_data.get("is_active", True),
+        )
+        child.allowed_dimensions.set(parent.allowed_dimensions.all())
+        return child
+
+    def update(self, instance, validated_data):
+        from accounts.tenant_ui_permissions import normalize_ui_permissions
+
+        password = validated_data.pop("password", None)
+        if "ui_permissions" in validated_data:
+            perms = normalize_ui_permissions(validated_data.pop("ui_permissions"))
+            if not perms:
+                raise serializers.ValidationError({"ui_permissions": "Select at least one allowed module."})
+            instance.ui_permissions = perms
+        for field in ["username", "email", "tenant_role", "is_active"]:
+            if field in validated_data:
+                setattr(instance, field, validated_data[field])
+        if password:
+            instance.set_password(password)
         instance.save()
         return instance
 

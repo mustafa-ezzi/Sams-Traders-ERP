@@ -39,7 +39,7 @@ const LoginPage = () => {
   const onSubmit = form.handleSubmit((values) => {
     setError("");
     const activeTenant = localStorage.getItem("tenantId") || "SAMS_TRADERS";
-    login(values.token, activeTenant);
+    login({ token: values.token, tenantId: activeTenant, allowedDimensions: [] });
     toast.success("Login successful");
     navigate("/");
   });
@@ -69,7 +69,14 @@ const LoginPage = () => {
       localStorage.setItem("refreshToken", refreshToken);
       localStorage.setItem("tenantId", loginTenant);
 
-      login(accessToken, loginTenant, allowedDimensions);
+      login({
+        token: accessToken,
+        tenantId: loginTenant,
+        allowedDimensions,
+        isTenantChild: Boolean(user?.is_tenant_child ?? user?.isTenantChild),
+        uiPermissions: user?.ui_permissions ?? user?.uiPermissions ?? [],
+        tenantRole: user?.tenant_role ?? user?.tenantRole ?? "",
+      });
 
       toast.success(`Welcome ${user.email}!`);
       navigate("/");

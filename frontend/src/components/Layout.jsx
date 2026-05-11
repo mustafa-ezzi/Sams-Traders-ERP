@@ -47,11 +47,10 @@ const navigation = [
     color: "from-blue-500 to-cyan-500",
     dot: "bg-blue-400",
     items: [
-      { to: "/purchase-invoices", label: "Invoices", icon: icons.stock },
-      { to: "/purchase-returns", label: "Returns", icon: icons.stock },
-      { to: "/opening-stock", label: "Opening Stock", icon: icons.stock },
-      { to: "/suppliers", label: "Suppliers", icon: icons.parties },
-
+      { to: "/purchase-invoices", label: "Invoices", icon: icons.stock, perm: "purchase_invoices" },
+      { to: "/purchase-returns", label: "Returns", icon: icons.stock, perm: "purchase_returns" },
+      { to: "/opening-stock", label: "Opening Stock", icon: icons.stock, perm: "opening_stock" },
+      { to: "/suppliers", label: "Suppliers", icon: icons.parties, perm: "suppliers" },
     ],
   },
   {
@@ -60,10 +59,9 @@ const navigation = [
     color: "from-emerald-500 to-teal-500",
     dot: "bg-emerald-400",
     items: [
-      { to: "/sales-invoices", label: "Invoices", icon: icons.stock },
-      { to: "/sales-returns", label: "Returns", icon: icons.stock },
-      { to: "/customers", label: "Customers", icon: icons.parties },
-
+      { to: "/sales-invoices", label: "Invoices", icon: icons.stock, perm: "sales_invoices" },
+      { to: "/sales-returns", label: "Returns", icon: icons.stock, perm: "sales_returns" },
+      { to: "/customers", label: "Customers", icon: icons.parties, perm: "customers" },
     ],
   },
   {
@@ -72,9 +70,9 @@ const navigation = [
     color: "from-violet-500 to-purple-500",
     dot: "bg-violet-400",
     items: [
-      { to: "/purchase-bank-payments", label: "Bank Payments", icon: icons.accounts },
-      { to: "/sales-bank-receipts", label: "Bank Receipts", icon: icons.accounts },
-      { to: "/expenses", label: "Expenses", icon: icons.accounts },
+      { to: "/purchase-bank-payments", label: "Bank Payments", icon: icons.accounts, perm: "purchase_bank_payments" },
+      { to: "/sales-bank-receipts", label: "Bank Receipts", icon: icons.accounts, perm: "sales_bank_receipts" },
+      { to: "/expenses", label: "Expenses", icon: icons.accounts, perm: "expenses" },
     ],
   },
   {
@@ -83,9 +81,10 @@ const navigation = [
     color: "from-amber-500 to-orange-500",
     dot: "bg-amber-400",
     items: [
-      { to: "/reports/balance-sheet", label: "Balance Sheet", icon: icons.reports },
-      { to: "/reports/ledger", label: "Ledger Reports", icon: icons.reports },
-      { to: "/reports/party-ledger", label: "Party Ledger", icon: icons.reports },
+      { to: "/reports/balance-sheet", label: "Balance Sheet", icon: icons.reports, perm: "reports_balance_sheet" },
+      { to: "/reports/ledger", label: "Ledger Reports", icon: icons.reports, perm: "reports_ledger" },
+      { to: "/reports/party-ledger", label: "Party Ledger", icon: icons.reports, perm: "reports_party_ledger" },
+      { to: "/reports/coa-completeness", label: "COA Completeness", icon: icons.reports, perm: "reports_coa_completeness" },
     ],
   },
   {
@@ -94,15 +93,15 @@ const navigation = [
     color: "from-rose-500 to-pink-500",
     dot: "bg-rose-400",
     items: [
-      { to: "/masters/units", label: "Units", icon: icons.masters },
-      { to: "/masters/brands", label: "Brands", icon: icons.masters },
-      { to: "/masters/categories", label: "Categories", icon: icons.masters },
-
-      { to: "/warehouses", label: "Warehouses", icon: icons.warehouse },
-      { to: "/raw-materials", label: "Raw Materials", icon: icons.raw },
-      { to: "/products", label: "Products", icon: icons.products },
-      { to: "/production", label: "Production", icon: icons.products },
-      { to: "/accounts", label: "Chart Of Accounts", icon: icons.accounts },
+      { to: "/masters/units", label: "Units", icon: icons.masters, perm: "masters_units" },
+      { to: "/masters/brands", label: "Brands", icon: icons.masters, perm: "masters_brands" },
+      { to: "/masters/categories", label: "Categories", icon: icons.masters, perm: "masters_categories" },
+      { to: "/warehouses", label: "Warehouses", icon: icons.warehouse, perm: "warehouses" },
+      { to: "/raw-materials", label: "Raw Materials", icon: icons.raw, perm: "raw_materials" },
+      { to: "/products", label: "Products", icon: icons.products, perm: "products" },
+      { to: "/production", label: "Production", icon: icons.products, perm: "production" },
+      { to: "/accounts", label: "Chart Of Accounts", icon: icons.accounts, perm: "accounts" },
+      { to: "/settings/staff", label: "Staff access", icon: icons.users, orgAdminOnly: true },
     ],
   },
   {
@@ -111,8 +110,8 @@ const navigation = [
     color: "from-slate-500 to-slate-400",
     dot: "bg-slate-400",
     items: [
-      { to: "/users/dimensions", label: "Dimensions", icon: icons.users },
-      { to: "/support", label: "Support", icon: icons.support },
+      { to: "/users/dimensions", label: "Dimensions", icon: icons.users, perm: "dimensions" },
+      { to: "/support", label: "Support", icon: icons.support, perm: "support" },
     ],
   },
 ];
@@ -141,6 +140,8 @@ const pageTitles = {
   "/masters/categories": { title: "Categories", eyebrow: "Masters" },
   "/masters/brands": { title: "Brands", eyebrow: "Masters" },
   "/support": { title: "Support", eyebrow: "Users" },
+  "/settings/staff": { title: "Staff access", eyebrow: "Admin" },
+  "/reports/coa-completeness": { title: "COA Completeness", eyebrow: "Reports" },
 };
 
 /* ─────────────────────────────────────────────────────────────────
@@ -248,10 +249,39 @@ const CheckPill = ({ label, checked, onChange, disabled, isCurrent, isAll }) => 
 ───────────────────────────────────────────────────────────────── */
 const Layout = () => {
   const { pathname } = useLocation();
-  const { tenantId, setTenant, logout, allowedDimensions, createTenantIds, setCreateTenants } = useAuth();
+  const {
+    tenantId,
+    setTenant,
+    logout,
+    allowedDimensions,
+    createTenantIds,
+    setCreateTenants,
+    isTenantChild,
+    uiPermissions,
+    tenantRole,
+  } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [dimensions, setDimensions] = useState([]);
-  const isOnboardingOnly = !allowedDimensions?.length;
+  const isOnboardingOnly = !isTenantChild && !allowedDimensions?.length;
+
+  const perms = Array.isArray(uiPermissions) ? uiPermissions : [];
+
+  const filteredNavigation = useMemo(() => {
+    return navigation
+      .map((section) => {
+        if (isTenantChild && section.id === "users") return null;
+        const items = section.items.filter((item) => {
+          if (item.orgAdminOnly) return !isTenantChild;
+          if (!isTenantChild) return true;
+          return Boolean(item.perm && perms.includes(item.perm));
+        });
+        if (!items.length) return null;
+        return { ...section, items };
+      })
+      .filter(Boolean);
+  }, [isTenantChild, perms]);
+
+  const showDashboardNav = !isTenantChild || perms.includes("dashboard");
 
   const pageMeta = useMemo(
     () => {
@@ -304,11 +334,25 @@ const Layout = () => {
             alt="CoreLedger"
             className="h-10 w-10 shrink-0 rounded-xl object-contain shadow-lg shadow-blue-900/20"
           />
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="truncate text-[15px] font-bold text-white leading-tight">
               {activeDimension?.name || tenantId}
             </p>
-            <p className="text-[10px] text-slate-500 tracking-wide">CoreLedger</p>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <p className="text-[10px] text-slate-500 tracking-wide">CoreLedger</p>
+              {!isTenantChild ? (
+                <span className="inline-flex shrink-0 rounded-md bg-amber-500/25 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-200 ring-1 ring-amber-400/25">
+                  Admin
+                </span>
+              ) : (
+                <span
+                  className="inline-flex max-w-[9.5rem] truncate rounded-md bg-white/[0.08] px-2 py-0.5 text-[9px] font-semibold tracking-wide text-slate-300 ring-1 ring-white/10"
+                  title={(tenantRole || "Staff").trim() || "Staff"}
+                >
+                  {(tenantRole || "Staff").trim() || "Staff"}
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -331,7 +375,7 @@ const Layout = () => {
             </span>
             Create First Dimension
           </NavLink>
-        ) : (
+        ) : showDashboardNav ? (
           <NavLink
             to="/"
             end
@@ -352,13 +396,13 @@ const Layout = () => {
               </>
             )}
           </NavLink>
-        )}
+        ) : null}
       </div>
 
       {/* ── Nav sections ── */}
       {!isOnboardingOnly && (
         <nav className="mt-3 flex-1 overflow-y-auto px-2 pb-2 scrollbar-thin">
-          {navigation.map((section) => (
+          {filteredNavigation.map((section) => (
             <NavSection
               key={section.id}
               section={section}

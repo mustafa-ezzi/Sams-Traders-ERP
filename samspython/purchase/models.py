@@ -8,6 +8,7 @@ from inventory.models import Product, RawMaterial, Supplier, Unit, Warehouse
 class PurchaseInvoice(BaseModel):
     invoice_number = models.CharField(max_length=50)
     date = models.DateField()
+    due_date = models.DateField(null=True, blank=True)
     supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name="purchase_invoices")
     warehouse = models.ForeignKey(Warehouse, on_delete=models.PROTECT, related_name="purchase_invoices")
     remarks = models.TextField(blank=True, default="")

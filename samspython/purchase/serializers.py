@@ -35,6 +35,7 @@ class PurchaseInvoiceMiniSerializer(serializers.Serializer):
     id = serializers.UUIDField()
     invoice_number = serializers.CharField()
     date = serializers.DateField()
+    due_date = serializers.DateField(allow_null=True, required=False)
 
 
 class AccountMiniSerializer(serializers.Serializer):
@@ -191,6 +192,7 @@ class PurchaseInvoiceSerializer(serializers.ModelSerializer):
             "id",
             "invoice_number",
             "date",
+            "due_date",
             "supplier",
             "supplier_id",
             "warehouse",
@@ -334,6 +336,7 @@ class PurchaseInvoiceSerializer(serializers.ModelSerializer):
         instance.supplier_id = supplier_id
         instance.warehouse_id = warehouse_id
         instance.date = validated_data.get("date", instance.date)
+        instance.due_date = validated_data.get("due_date", instance.due_date)
         instance.remarks = validated_data.get("remarks", instance.remarks)
         instance.invoice_discount = validated_data.get(
             "invoice_discount",

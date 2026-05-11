@@ -20,6 +20,22 @@ const isTokenExpired = (token) => {
   return Date.now() >= expiration;
 };
 
+/** When present on the JWT, these override localStorage (keeps nav in sync after deploy / refresh). */
+const readTenantClaimsFromToken = (token) => {
+  if (!token) return null;
+  try {
+    const p = JSON.parse(atob(token.split(".")[1]));
+    if (!("is_tenant_child" in p)) return null;
+    return {
+      isTenantChild: Boolean(p.is_tenant_child),
+      uiPermissions: Array.isArray(p.ui_permissions) ? p.ui_permissions : [],
+      tenantRole: typeof p.tenant_role === "string" ? p.tenant_role : "",
+    };
+  } catch {
+    return null;
+  }
+};
+
 const storedToken = localStorage.getItem("token") || "";
 const storedTenantId = localStorage.getItem("tenantId") || "";
 const storedAllowedDimensions = (() => {
@@ -41,40 +57,91 @@ const storedCreateTenantIds = (() => {
   return storedTenantId ? [storedTenantId] : [];
 })();
 
+const storedIsTenantChild = localStorage.getItem("isTenantChild") === "true";
+const storedUiPermissions = (() => {
+  try {
+    return JSON.parse(localStorage.getItem("uiPermissions") || "[]");
+  } catch {
+    return [];
+  }
+})();
+const storedTenantRole = localStorage.getItem("tenantRole") || "";
+
+const jwtTenantClaims = readTenantClaimsFromToken(storedToken);
+
 const initialState = {
   token: storedToken,
   tenantId: storedTenantId,
   allowedDimensions: storedAllowedDimensions,
   createTenantIds: storedCreateTenantIds,
+  isTenantChild: jwtTenantClaims ? jwtTenantClaims.isTenantChild : storedIsTenantChild,
+  uiPermissions: jwtTenantClaims ? jwtTenantClaims.uiPermissions : storedUiPermissions,
+  tenantRole: jwtTenantClaims ? jwtTenantClaims.tenantRole : storedTenantRole,
 };
 
 const reducer = (state, action) => {
   switch (action.type) {
-    case "LOGIN":
-      localStorage.setItem("token", action.payload.token);
-      localStorage.setItem("tenantId", action.payload.tenantId);
-      localStorage.setItem(
-        "allowedDimensions",
-        JSON.stringify(action.payload.allowedDimensions || [])
-      );
+    case "LOGIN": {
+      const {
+        token,
+        tenantId,
+        allowedDimensions = [],
+        createTenantIds = [],
+        isTenantChild = false,
+        uiPermissions = [],
+        tenantRole = "",
+      } = action.payload;
+      localStorage.setItem("token", token);
+      localStorage.setItem("tenantId", tenantId);
+      localStorage.setItem("allowedDimensions", JSON.stringify(allowedDimensions || []));
       localStorage.setItem(
         "createTenantIds",
         JSON.stringify(
-          action.payload.createTenantIds?.length
-            ? [...new Set(action.payload.createTenantIds.filter(Boolean))]
-            : action.payload.tenantId
-              ? [action.payload.tenantId]
+          createTenantIds?.length
+            ? [...new Set(createTenantIds.filter(Boolean))]
+            : tenantId
+              ? [tenantId]
               : []
         )
       );
-      return { ...state, ...action.payload };
+      localStorage.setItem("isTenantChild", isTenantChild ? "true" : "false");
+      localStorage.setItem("uiPermissions", JSON.stringify(uiPermissions || []));
+      localStorage.setItem("tenantRole", tenantRole || "");
+      return {
+        ...state,
+        token,
+        tenantId: tenantId || "",
+        allowedDimensions: allowedDimensions || [],
+        createTenantIds:
+          createTenantIds?.length
+            ? [...new Set(createTenantIds.filter(Boolean))]
+            : tenantId
+              ? [tenantId]
+              : [],
+        isTenantChild: Boolean(isTenantChild),
+        uiPermissions: uiPermissions || [],
+        tenantRole: tenantRole || "",
+      };
+    }
     case "LOGOUT":
       localStorage.removeItem("token");
       localStorage.removeItem("refreshToken");
       localStorage.removeItem("tenantId");
       localStorage.removeItem("allowedDimensions");
       localStorage.removeItem("createTenantIds");
-      return { ...state, token: "", tenantId: "", allowedDimensions: [], createTenantIds: [] };
+      localStorage.removeItem("isTenantChild");
+      localStorage.removeItem("uiPermissions");
+      localStorage.removeItem("tenantRole");
+      return {
+        ...state,
+        token: "",
+        tenantId: "",
+        allowedDimensions: [],
+        createTenantIds: [],
+        isTenantChild: false,
+        uiPermissions: [],
+        tenantRole: "",
+      };
     case "SET_TENANT":
       localStorage.setItem("tenantId", action.payload);
       {
@@ -116,8 +183,33 @@ export const AuthProvider = ({ children }) => {
       tenantId: state.tenantId,
       allowedDimensions: state.allowedDimensions,
       createTenantIds: state.createTenantIds,
+      isTenantChild: state.isTenantChild,
+      uiPermissions: state.uiPermissions,
+      tenantRole: state.tenantRole,
       isAuthenticated: !!state.token && !isTokenExpired(state.token),
-      login: (token, tenantId, allowedDimensions = [], createTenantIds = []) => {
+      login: ({
+        token,
+        tenantId,
+        allowedDimensions = [],
+        createTenantIds = [],
+        isTenantChild,
+        uiPermissions,
+        tenantRole,
+      }) => {
+        const fromJwt = readTenantClaimsFromToken(token);
+        const resolvedChild =
+          typeof isTenantChild === "boolean"
+            ? isTenantChild
+            : (fromJwt?.isTenantChild ?? false);
+        const resolvedPerms =
+          Array.isArray(uiPermissions) && uiPermissions.length
+            ? uiPermissions
+            : (fromJwt?.uiPermissions ?? uiPermissions ?? []);
+        const resolvedRole =
+          (tenantRole !== undefined && tenantRole !== null && tenantRole !== "")
+            ? tenantRole
+            : (fromJwt?.tenantRole ?? tenantRole ?? "");
+
         dispatch({
           type: "LOGIN",
           payload: {
@@ -125,11 +217,14 @@ export const AuthProvider = ({ children }) => {
             tenantId: tenantId || "",
             allowedDimensions,
             createTenantIds:
-              createTenantIds.length
+              createTenantIds?.length
                 ? [...new Set(createTenantIds.filter(Boolean))]
                 : tenantId
                   ? [tenantId]
                   : [],
+            isTenantChild: resolvedChild,
+            uiPermissions: Array.isArray(resolvedPerms) ? resolvedPerms : [],
+            tenantRole: resolvedRole || "",
           },
         });
       },
@@ -141,7 +236,15 @@ export const AuthProvider = ({ children }) => {
       setCreateTenants: (items) =>
         dispatch({ type: "SET_CREATE_TENANTS", payload: items || [] }),
     }),
-    [state.token, state.tenantId, state.allowedDimensions, state.createTenantIds]
+    [
+      state.token,
+      state.tenantId,
+      state.allowedDimensions,
+      state.createTenantIds,
+      state.isTenantChild,
+      state.uiPermissions,
+      state.tenantRole,
+    ]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

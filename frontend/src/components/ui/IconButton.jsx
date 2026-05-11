@@ -30,11 +30,24 @@ const icons = {
       />
     </svg>
   ),
+  print: (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4">
+      <path
+        d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2"
+      />
+    </svg>
+  ),
 };
 
 const styles = {
   edit: "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 hover:text-blue-900",
   delete: "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 hover:text-rose-900",
+  print: "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-slate-900",
 };
 
 const IconButton = ({ icon, label, className = "", ...props }) => (

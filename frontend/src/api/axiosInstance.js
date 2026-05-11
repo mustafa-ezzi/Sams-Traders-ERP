@@ -35,6 +35,9 @@ axiosInstance.interceptors.response.use(
       localStorage.removeItem("refreshToken");
       localStorage.removeItem("tenantId");
       localStorage.removeItem("createTenantIds");
+      localStorage.removeItem("isTenantChild");
+      localStorage.removeItem("uiPermissions");
+      localStorage.removeItem("tenantRole");
       // Redirect to login page
       window.location.href = "/login";
     }

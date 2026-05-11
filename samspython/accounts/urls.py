@@ -9,6 +9,7 @@ from .views import (
     ExpenseViewSet,
     InquiryViewSet,
     LoginView,
+    TenantStaffViewSet,
 )
 from rest_framework.routers import DefaultRouter
 
@@ -17,6 +18,7 @@ router.register(r"accounts", AccountViewSet, basename="accounts")
 router.register(r"expenses", ExpenseViewSet, basename="expenses")
 router.register(r"dimensions", DimensionViewSet, basename="dimensions")
 router.register(r"inquiries", InquiryViewSet, basename="inquiries")
+router.register(r"tenant-staff", TenantStaffViewSet, basename="tenant-staff")
 router.register(r"admin/users", AdminUserViewSet, basename="admin-users")
 router.register(r"admin/dimensions", AdminDimensionViewSet, basename="admin-dimensions")
 router.register(r"admin/inquiries", AdminInquiryViewSet, basename="admin-inquiries")

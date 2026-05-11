@@ -14,7 +14,7 @@ import { formatAccountLabel } from "../utils/accounts";
 const schema = z.object({
   name: z.string().trim().min(1, "Name is required"),
   email: z.union([z.string().trim().email("Email must be valid"), z.literal("")]),
-  phone_number: z.string().trim().min(1, "Phone number is required"),
+  phone_number: z.string().trim(),
   business_name: z.string().trim().min(1, "Business name is required"),
   address: z.string().trim().min(1, "Address is required"),
   account: z.union([z.string().uuid("Account must be a valid UUID"), z.literal("")]),
@@ -205,8 +205,7 @@ const PartyCrudPage = ({
           />
           <FormInput
             label="Phone Number"
-            required
-            placeholder="Enter phone number"
+            placeholder="Enter phone number (optional)"
             error={form.formState.errors.phone_number?.message}
             {...form.register("phone_number")}
           />

@@ -225,7 +225,7 @@ class Customer(BaseModel):
     business_name = models.CharField(max_length=255)
 
     email = models.EmailField(null=True, blank=True)
-    phone_number = models.CharField(max_length=50)
+    phone_number = models.CharField(max_length=50, blank=True, default="")
     address = models.TextField()
 
     # 🔥 Receivable account
@@ -252,7 +252,7 @@ class Supplier(BaseModel):
     business_name = models.CharField(max_length=255)
 
     email = models.EmailField(null=True, blank=True)
-    phone_number = models.CharField(max_length=50)
+    phone_number = models.CharField(max_length=50, blank=True, default="")
     address = models.TextField()
 
     # 🔥 Payable account

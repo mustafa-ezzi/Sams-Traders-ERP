@@ -164,8 +164,11 @@ const AdminUsersPage = () => {
             <table className="w-full min-w-[840px] text-sm">
               <thead className="bg-[linear-gradient(180deg,#edf4ff,#e1ebff)] text-left">
                 <tr>
+                  <th className="px-5 py-4 font-bold text-slate-700">Type</th>
                   <th className="px-5 py-4 font-bold text-slate-700">Username</th>
                   <th className="px-5 py-4 font-bold text-slate-700">Email</th>
+                  <th className="px-5 py-4 font-bold text-slate-700">Parent admin</th>
+                  <th className="px-5 py-4 font-bold text-slate-700">Role</th>
                   <th className="px-5 py-4 font-bold text-slate-700">Business</th>
                   <th className="px-5 py-4 font-bold text-slate-700">Tenant Limit</th>
                   <th className="px-5 py-4 text-right font-bold text-slate-700">Actions</th>
@@ -174,8 +177,21 @@ const AdminUsersPage = () => {
               <tbody>
                 {users.map((user) => (
                   <tr key={user.id} className="border-t border-slate-100 bg-white">
+                    <td className="px-5 py-4 text-slate-700">
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs font-bold ${
+                          user.account_kind === "child"
+                            ? "bg-blue-100 text-blue-800"
+                            : "bg-slate-100 text-slate-700"
+                        }`}
+                      >
+                        {user.account_kind === "child" ? "Child" : "Tenant admin"}
+                      </span>
+                    </td>
                     <td className="px-5 py-4 font-semibold text-slate-800">{user.username}</td>
                     <td className="px-5 py-4 text-slate-700">{user.email}</td>
+                    <td className="px-5 py-4 text-slate-700">{user.parent_email || "—"}</td>
+                    <td className="px-5 py-4 text-slate-700">{user.tenant_role || "—"}</td>
                     <td className="px-5 py-4 text-slate-700">{user.business_name || "-"}</td>
                     <td className="px-5 py-4 text-slate-700">{user.tenant_limit}</td>
                     <td className="px-5 py-4 text-right">

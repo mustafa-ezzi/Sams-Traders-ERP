@@ -31,19 +31,34 @@ import AdminLoginPage from "./pages/admin/AdminLoginPage";
 import AdminUsersPage from "./pages/admin/AdminUsersPage";
 import AdminInquiriesPage from "./pages/admin/AdminInquiriesPage";
 import SupportPage from "./pages/SupportPage";
+import TenantStaffPage from "./pages/settings/TenantStaffPage";
+import { childHomePath, childMayAccessPath } from "./utils/tenantAccess";
 
 const Protected = ({ children }) => {
-  const { token, allowedDimensions } = useAuth();
+  const { token, allowedDimensions, isTenantChild, uiPermissions } = useAuth();
   const location = useLocation();
 
   if (!token) {
     return <Navigate to="/login" replace />;
   }
 
-  const needsOnboarding = !allowedDimensions?.length;
+  const needsOnboarding = !isTenantChild && !allowedDimensions?.length;
   if (needsOnboarding && location.pathname !== "/users/dimensions") {
     return <Navigate to="/users/dimensions" replace />;
   }
+
+  if (
+    isTenantChild &&
+    location.pathname === "/" &&
+    !uiPermissions.includes("dashboard")
+  ) {
+    return <Navigate to={childHomePath(uiPermissions)} replace />;
+  }
+
+  if (isTenantChild && !childMayAccessPath(true, uiPermissions, location.pathname)) {
+    return <Navigate to={childHomePath(uiPermissions)} replace />;
+  }
+
   return children;
 };
 
@@ -108,6 +123,7 @@ const App = () => (
         <Route path="customers" element={<CustomersPage />} />
         <Route path="suppliers" element={<SuppliersPage />} />
         <Route path="support" element={<SupportPage />} />
+        <Route path="settings/staff" element={<TenantStaffPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

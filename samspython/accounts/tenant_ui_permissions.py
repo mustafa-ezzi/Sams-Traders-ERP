@@ -1,0 +1,37 @@
+"""UI module keys assignable to tenant child users. Dimensions & support are intentionally excluded."""
+
+TENANT_UI_PERMISSION_KEYS = frozenset(
+    {
+        "dashboard",
+        "purchase_invoices",
+        "purchase_returns",
+        "opening_stock",
+        "suppliers",
+        "sales_invoices",
+        "sales_returns",
+        "customers",
+        "purchase_bank_payments",
+        "sales_bank_receipts",
+        "expenses",
+        "reports_balance_sheet",
+        "reports_ledger",
+        "reports_party_ledger",
+        "reports_coa_completeness",
+        "masters_units",
+        "masters_brands",
+        "masters_categories",
+        "warehouses",
+        "raw_materials",
+        "products",
+        "production",
+        "accounts",
+    }
+)
+
+
+def normalize_ui_permissions(raw):
+    if not raw:
+        return []
+    if not isinstance(raw, (list, tuple)):
+        return []
+    return [str(x).strip() for x in raw if str(x).strip() in TENANT_UI_PERMISSION_KEYS]

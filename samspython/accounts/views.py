@@ -10,7 +10,7 @@ from django.utils.timezone import now
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
@@ -36,7 +36,13 @@ from sales.models import SalesBankReceipt, SalesInvoice, SalesInvoiceLine, Sales
 from sales.services import get_sales_invoice_financials
 
 from .serializers import AccountSerializer, DimensionSerializer, ExpenseSerializer, LoginSerializer
-from .serializers import AdminInquirySerializer, AdminLoginSerializer, AdminUserSerializer, InquirySerializer
+from .serializers import (
+    AdminInquirySerializer,
+    AdminLoginSerializer,
+    AdminUserSerializer,
+    InquirySerializer,
+    TenantStaffSerializer,
+)
 from .services import admin_login_service, login_service
 from .models import Dimension, Expense, Inquiry, JournalEntry, JournalLine, User
 from .journal import delete_journal_entry, sync_expense_journal
@@ -112,7 +118,45 @@ class AdminUserViewSet(ModelViewSet):
     serializer_class = AdminUserSerializer
     permission_classes = [IsAuthenticated]
     authentication_classes = [AdminJWTAuthentication]
-    queryset = User.objects.filter(is_staff=False).order_by("-date_joined")
+    queryset = User.objects.filter(is_staff=False).select_related("parent_user").order_by(
+        "-date_joined"
+    )
+
+
+class IsTenantOrgAdmin(BasePermission):
+    """Tenant owner: not staff, not a child user, has at least one active dimension."""
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_staff:
+            return False
+        if user.parent_user_id:
+            return False
+        return bool(get_user_active_dimension_codes(user))
+
+
+class TenantStaffViewSet(ModelViewSet):
+    """Org admin creates child users with UI module permissions (same tenant)."""
+
+    serializer_class = TenantStaffSerializer
+    permission_classes = [IsAuthenticated, IsTenantOrgAdmin]
+    http_method_names = ["get", "post", "put", "patch", "delete"]
+
+    def get_queryset(self):
+        return (
+            User.objects.filter(
+                parent_user=self.request.user,
+                tenant_id=self.request.tenant_id,
+            )
+            .order_by("-date_joined")
+        )
+
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        ctx["parent_user"] = self.request.user
+        return ctx
 
 
 class AdminDimensionViewSet(ModelViewSet):

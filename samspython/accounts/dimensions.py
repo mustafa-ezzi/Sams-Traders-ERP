@@ -27,6 +27,10 @@ def get_active_dimension_codes():
 
 def get_user_active_dimension_codes(user):
     user_codes = list(user.allowed_dimensions.values_list("code", flat=True))
+    if not user_codes and user.parent_user_id:
+        user_codes = list(
+            user.parent_user.allowed_dimensions.values_list("code", flat=True)
+        )
     return list(
         Dimension.objects.filter(
             code__in=user_codes,

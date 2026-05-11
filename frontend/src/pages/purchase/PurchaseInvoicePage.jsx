@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import FormInput from "../../components/ui/FormInput";
@@ -9,6 +10,8 @@ import warehouseService from "../../api/services/warehouseService";
 import purchaseInvoiceService from "../../api/services/purchaseInvoiceService";
 import { formatDecimal } from "../../utils/format";
 import { useToast } from "../../context/ToastContext";
+import IconButton from "../../components/ui/IconButton";
+import PurchaseInvoicePrintModal from "../../components/purchase/PurchaseInvoicePrintModal";
 
 const selectClassName =
   "w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100";
@@ -59,6 +62,183 @@ const extractErrorMessage = (error) => {
   return "Something went wrong";
 };
 
+const AMOUNT_EPS = 0.01;
+
+/** Parse YYYY-MM-DD (or ISO prefix) as local calendar date (no UTC shift). */
+const parseDateOnly = (value) => {
+  if (value == null || value === "") return null;
+  const s = String(value).slice(0, 10);
+  const parts = s.split("-").map((x) => parseInt(x, 10));
+  if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) return null;
+  const [y, m, d] = parts;
+  return new Date(y, m - 1, d);
+};
+
+const startOfTodayLocal = () => {
+  const n = new Date();
+  return new Date(n.getFullYear(), n.getMonth(), n.getDate());
+};
+
+const formatDisplayDate = (iso) => {
+  if (!iso) return "—";
+  const p = parseDateOnly(iso);
+  if (!p) return String(iso).slice(0, 10);
+  const dd = String(p.getDate()).padStart(2, "0");
+  const mm = String(p.getMonth() + 1).padStart(2, "0");
+  const yyyy = p.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+};
+
+/** DUE: nothing paid; PARTIAL: some payment, balance left; COMPLETED: settled. */
+const getPaymentStatus = (record) => {
+  const paid = toNumber(record.paidAmount);
+  const balance = toNumber(record.balanceAmount);
+  if (balance <= AMOUNT_EPS) return "COMPLETED";
+  if (paid > AMOUNT_EPS && balance > AMOUNT_EPS) return "PARTIAL";
+  return "DUE";
+};
+
+/** Blink when there is balance due and due date is tomorrow or already passed. */
+const isDuePaymentAlertRow = (record) => {
+  if (toNumber(record.balanceAmount) <= AMOUNT_EPS) return false;
+  const due = parseDateOnly(record.dueDate);
+  if (!due) return false;
+  const today = startOfTodayLocal();
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const dueT = due.getTime();
+  if (dueT === tomorrow.getTime()) return true;
+  if (dueT <= today.getTime()) return true;
+  return false;
+};
+
+const statusMeta = {
+  DUE: {
+    label: "Due",
+    rowClass: "text-rose-700",
+    iconWrap: "border-rose-200 bg-rose-50 text-rose-600",
+    Icon: (
+      <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+        <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="2" />
+        <path d="M12 7v6M12 16h.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  PARTIAL: {
+    label: "Partial",
+    rowClass: "text-blue-700",
+    iconWrap: "border-blue-200 bg-blue-50 text-blue-600",
+    Icon: (
+      <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+        <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="2" />
+        <path
+          d="M12 3a9 9 0 0 1 0 18V12H3a9 9 0 0 1 9-9Z"
+          fill="currentColor"
+          opacity="0.35"
+        />
+      </svg>
+    ),
+  },
+  COMPLETED: {
+    label: "Completed",
+    rowClass: "text-emerald-700",
+    iconWrap: "border-emerald-200 bg-emerald-50 text-emerald-600",
+    Icon: (
+      <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+        <path
+          d="M5 13l4 4L19 7"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    ),
+  },
+};
+
+const PaymentDetailsEye = ({ record }) => {
+  const net = toNumber(record.netAmount);
+  const paid = toNumber(record.paidAmount);
+  const balance = toNumber(record.balanceAmount);
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const hideTimer = useRef(null);
+
+  const clearHide = () => {
+    if (hideTimer.current) {
+      window.clearTimeout(hideTimer.current);
+      hideTimer.current = null;
+    }
+  };
+
+  const scheduleHide = () => {
+    clearHide();
+    hideTimer.current = window.setTimeout(() => setOpen(false), 140);
+  };
+
+  const showFromButton = (event) => {
+    clearHide();
+    const r = event.currentTarget.getBoundingClientRect();
+    setPos({ top: r.bottom + 8, left: r.left + r.width / 2 });
+    setOpen(true);
+  };
+
+  useEffect(() => () => clearHide(), []);
+
+  const tooltip =
+    open &&
+    createPortal(
+      <div
+        role="tooltip"
+        className="fixed z-[9999] w-56 -translate-x-1/2 rounded-xl border border-rose-200 bg-white px-3 py-2.5 text-left text-xs shadow-lg"
+        style={{ top: pos.top, left: pos.left }}
+        onMouseEnter={clearHide}
+        onMouseLeave={scheduleHide}
+      >
+        <p className="mb-1.5 border-b border-rose-100 pb-1 font-bold uppercase tracking-wide text-rose-700">
+          Payment details
+        </p>
+        <p className="text-slate-600">
+          <span className="font-semibold text-slate-800">Net amount:</span> {formatDecimal(net)}
+        </p>
+        <p className="text-slate-600">
+          <span className="font-semibold text-slate-800">Payment:</span> {formatDecimal(paid)}
+        </p>
+        <p className="text-slate-600">
+          <span className="font-semibold text-slate-800">Balance:</span> {formatDecimal(balance)}
+        </p>
+      </div>,
+      document.body
+    );
+
+  return (
+    <>
+      <button
+        type="button"
+        title={`Net ${formatDecimal(net)} · Paid ${formatDecimal(paid)} · Balance ${formatDecimal(balance)}`}
+        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 focus:outline-none focus:ring-2 focus:ring-rose-100"
+        aria-label="Payment details"
+        onMouseEnter={showFromButton}
+        onMouseLeave={scheduleHide}
+      >
+        <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+          <path
+            d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinejoin="round"
+          />
+          <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" strokeWidth="2" />
+        </svg>
+      </button>
+      {tooltip}
+    </>
+  );
+};
+
 const PurchaseInvoicePage = () => {
   const toast = useToast();
   const [records, setRecords] = useState([]);
@@ -67,6 +247,7 @@ const PurchaseInvoicePage = () => {
   const [productOptions, setProductOptions] = useState([]);
   const [form, setForm] = useState({
     date: new Date().toISOString().slice(0, 10),
+    dueDate: "",
     supplierId: "",
     warehouseId: "",
     remarks: "",
@@ -81,6 +262,8 @@ const PurchaseInvoicePage = () => {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [deleteId, setDeleteId] = useState("");
+  const [printInvoice, setPrintInvoice] = useState(null);
+  const [printLoadingId, setPrintLoadingId] = useState("");
   const limit = 10;
 
   const itemMap = useMemo(
@@ -116,6 +299,12 @@ const PurchaseInvoicePage = () => {
   const netAmount = useMemo(
     () => Math.max(grossAmount - toNumber(form.invoiceDiscount), 0),
     [grossAmount, form.invoiceDiscount]
+  );
+
+  const unpaidPageTotal = useMemo(
+    () =>
+      records.reduce((sum, row) => sum + Math.max(0, toNumber(row.balanceAmount)), 0),
+    [records]
   );
 
   const loadInvoices = async (nextPage = page, nextSearch = search) => {
@@ -232,6 +421,7 @@ const PurchaseInvoicePage = () => {
 
   const buildPayload = () => ({
     date: form.date,
+    due_date: form.dueDate || null,
     supplier_id: form.supplierId,
     warehouse_id: form.warehouseId,
     remarks: form.remarks,
@@ -304,6 +494,7 @@ const PurchaseInvoicePage = () => {
       setEditingId(invoice.id);
       setForm({
         date: invoice.date,
+        dueDate: invoice.dueDate ? String(invoice.dueDate).slice(0, 10) : "",
         supplierId: invoice.supplierId,
         warehouseId: invoice.warehouseId,
         remarks: invoice.remarks || "",
@@ -323,6 +514,18 @@ const PurchaseInvoicePage = () => {
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (editError) {
       toast.error(extractErrorMessage(editError) || "Failed to load invoice");
+    }
+  };
+
+  const handleOpenPrint = async (recordId) => {
+    setPrintLoadingId(recordId);
+    try {
+      const inv = await purchaseInvoiceService.getById(recordId);
+      setPrintInvoice(inv);
+    } catch (printError) {
+      toast.error(extractErrorMessage(printError) || "Could not load invoice for printing");
+    } finally {
+      setPrintLoadingId("");
     }
   };
 
@@ -361,13 +564,20 @@ const PurchaseInvoicePage = () => {
   <form className="space-y-5" onSubmit={handleSubmit}>
 
     {/* ROW 1 — 5 columns: Date, Supplier, Warehouse, Validity, Company Ref */}
-    <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
+    <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
       <FormInput
         label="Invoice Date *"
         type="date"
         required
         value={form.date}
         onChange={(e) => handleChange("date", e.target.value)}
+      />
+
+      <FormInput
+        label="Due Date"
+        type="date"
+        value={form.dueDate}
+        onChange={(e) => handleChange("dueDate", e.target.value)}
       />
 
       <div className="space-y-1">
@@ -595,6 +805,16 @@ const PurchaseInvoicePage = () => {
           isEmpty={!loading && !error && records.length === 0}
           emptyMessage="No purchase invoices found yet."
         >
+          {!loading && !error && records.length > 0 ? (
+            <p className="rounded-2xl border border-indigo-100 bg-indigo-50/80 px-4 py-3 text-sm font-semibold text-indigo-900">
+              Unpaid balance (this page):{" "}
+              <span className="text-indigo-700">{formatDecimal(unpaidPageTotal)}</span>
+              <span className="ml-2 font-normal text-indigo-600/90">
+                Rows with outstanding balance blink red when the due date is tomorrow or overdue.
+              </span>
+            </p>
+          ) : null}
+
           <div className="overflow-hidden rounded-[24px] border border-slate-200">
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-slate-200 text-sm">
@@ -602,46 +822,70 @@ const PurchaseInvoicePage = () => {
                   <tr>
                     <th className="px-4 py-3">Invoice</th>
                     <th className="px-4 py-3">Date</th>
+                    <th className="px-4 py-3">Due</th>
                     <th className="px-4 py-3">Supplier</th>
                     <th className="px-4 py-3">Warehouse</th>
-                    <th className="px-4 py-3">Gross</th>
-                    <th className="px-4 py-3">Net</th>
-                    <th className="px-4 py-3">Balance</th>
-                    <th className="px-4 py-3">Actions</th>
+                    <th className="px-4 py-3">Status</th>
+                   
+                    <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
-                  {records.map((record) => (
-                    <tr key={record.id}>
-                      <td className="px-4 py-3 font-semibold text-slate-900">
-                        {record.invoice_number}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">{record.date}</td>
-                      <td className="px-4 py-3 text-slate-600">
-                        {record.supplier?.business_name}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">{record.warehouse?.name}</td>
-                      <td className="px-4 py-3 text-slate-600">
-                        {formatDecimal(record.grossAmount)}
-                      </td>
-                      <td className="px-4 py-3 font-semibold text-blue-600">
-                        {formatDecimal(record.netAmount)}
-                      </td>
-                      <td className="px-4 py-3 font-semibold text-amber-600">
-                        {formatDecimal(record.balanceAmount)}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex gap-2">
-                          <Button variant="secondary" onClick={() => handleEdit(record.id)}>
-                            Edit
-                          </Button>
-                          <Button variant="danger" onClick={() => setDeleteId(record.id)}>
-                            Delete
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {records.map((record) => {
+                    const status = getPaymentStatus(record);
+                    const meta = statusMeta[status];
+                    const alertRow = isDuePaymentAlertRow(record);
+                    return (
+                      <tr
+                        key={record.id}
+                        className={alertRow ? "invoice-due-alert-row" : undefined}
+                      >
+                        <td className="px-4 py-3 font-semibold text-slate-900">
+                          {record.invoice_number}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">{formatDisplayDate(record.date)}</td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {record.dueDate ? formatDisplayDate(record.dueDate) : "—"}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {record.supplier?.business_name}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">{record.warehouse?.name}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span
+                              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold ${meta.iconWrap}`}
+                            >
+                              {meta.Icon}
+                              <span className={meta.rowClass}>{meta.label}</span>
+                            </span>
+                            <PaymentDetailsEye record={record} />
+                          </div>
+                        </td>
+                      
+                        <td className="px-4 py-3 text-right">
+                          <div className="inline-flex justify-end gap-1">
+                            <IconButton
+                              icon="print"
+                              label="Print receipt"
+                              disabled={printLoadingId === record.id}
+                              onClick={() => handleOpenPrint(record.id)}
+                            />
+                            <IconButton
+                              icon="edit"
+                              label="Edit invoice"
+                              onClick={() => handleEdit(record.id)}
+                            />
+                            <IconButton
+                              icon="delete"
+                              label="Delete invoice"
+                              onClick={() => setDeleteId(record.id)}
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -678,6 +922,14 @@ const PurchaseInvoicePage = () => {
         onCancel={() => setDeleteId("")}
         onConfirm={confirmDelete}
       />
+
+      {printInvoice ? (
+        <PurchaseInvoicePrintModal
+          invoice={printInvoice}
+          onClose={() => setPrintInvoice(null)}
+          formatDisplayDate={formatDisplayDate}
+        />
+      ) : null}
     </div>
   );
 };
