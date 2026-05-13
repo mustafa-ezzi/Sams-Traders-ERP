@@ -330,7 +330,7 @@ const Layout = () => {
       <div className="px-4 pt-1 pb-5">
         <div className="flex items-center gap-3">
           <img
-            src="/logo.png"
+            src="/logo-side.png"
             alt="CoreLedger"
             className="h-10 w-10 shrink-0 rounded-xl object-contain shadow-lg shadow-blue-900/20"
           />

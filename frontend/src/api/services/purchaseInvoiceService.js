@@ -1,5 +1,4 @@
 import axiosInstance from "../axiosInstance";
-import { createAcrossDimensions } from "../createAcrossDimensions";
 
 const BASE_URL = "/purchase/purchase-invoices/";
 
@@ -47,16 +46,10 @@ class PurchaseInvoiceService {
   }
 
   async create(payload) {
-    const { response, isMulti, tenantIds } = await createAcrossDimensions((tenantId) =>
-      axiosInstance.post(BASE_URL, payload, {
-        headers: tenantId ? { "x-tenant-id": tenantId } : {},
-      })
-    );
+    const response = await axiosInstance.post(BASE_URL, payload);
     return {
       data: mapInvoice(response.data.data || response.data),
-      message: isMulti
-        ? `Purchase invoice created in ${tenantIds.join(", ")}`
-        : response.data.message || "Purchase invoice created successfully",
+      message: response.data.message || "Purchase invoice created successfully",
     };
   }
 
