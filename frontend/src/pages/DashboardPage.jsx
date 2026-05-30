@@ -39,7 +39,7 @@ const moneyShort = (value) => {
 
 const count = (value) =>
   new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(
-    Number(value || 0)
+    Number(value || 0),
   );
 
 const extractErrorMessage = (error) => {
@@ -58,9 +58,12 @@ const useInView = (threshold = 0.15) => {
     if (!el) return;
     const obs = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting) { setInView(true); obs.disconnect(); }
+        if (entry.isIntersecting) {
+          setInView(true);
+          obs.disconnect();
+        }
       },
-      { threshold }
+      { threshold },
     );
     obs.observe(el);
     return () => obs.disconnect();
@@ -128,7 +131,10 @@ const MoneyTooltip = ({ active, payload, label }) => {
     <div style={TOOLTIP_STYLE}>
       <p style={TOOLTIP_LABEL_STYLE}>{label}</p>
       {payload.map((entry) => (
-        <p key={entry.name} style={{ ...TOOLTIP_ITEM_STYLE, color: entry.color }}>
+        <p
+          key={entry.name}
+          style={{ ...TOOLTIP_ITEM_STYLE, color: entry.color }}
+        >
           {entry.name}: {money(entry.value)}
         </p>
       ))}
@@ -150,21 +156,56 @@ const RevenueAreaChart = ({ data }) => (
           <stop offset="95%" stopColor="#2563eb" stopOpacity={0.02} />
         </linearGradient>
       </defs>
-      <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.15)" vertical={false} />
-      <XAxis dataKey="month" tick={{ fill: "#64748b", fontSize: 12, fontWeight: 500 }} axisLine={false} tickLine={false} />
-      <YAxis tickFormatter={moneyShort} tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} width={68} />
+      <CartesianGrid
+        strokeDasharray="3 3"
+        stroke="rgba(148,163,184,0.15)"
+        vertical={false}
+      />
+      <XAxis
+        dataKey="month"
+        tick={{ fill: "#64748b", fontSize: 12, fontWeight: 500 }}
+        axisLine={false}
+        tickLine={false}
+      />
+      <YAxis
+        tickFormatter={moneyShort}
+        tick={{ fill: "#64748b", fontSize: 11 }}
+        axisLine={false}
+        tickLine={false}
+        width={68}
+      />
       <Tooltip content={<MoneyTooltip />} />
-      <Legend wrapperStyle={{ paddingTop: 12, fontSize: 13, color: "#64748b" }} formatter={(val) => <span style={{ color: "#64748b", fontWeight: 500 }}>{val}</span>} />
+      <Legend
+        wrapperStyle={{ paddingTop: 12, fontSize: 13, color: "#64748b" }}
+        formatter={(val) => (
+          <span style={{ color: "#64748b", fontWeight: 500 }}>{val}</span>
+        )}
+      />
       <Area
-        isAnimationActive animationDuration={1200} animationEasing="ease-out"
-        type="monotone" dataKey="sales" name="Sales" stroke="#0f766e" strokeWidth={3}
-        fill="url(#gradSales)" dot={{ r: 4, fill: "#fff", stroke: "#0f766e", strokeWidth: 2.5 }}
+        isAnimationActive
+        animationDuration={1200}
+        animationEasing="ease-out"
+        type="monotone"
+        dataKey="sales"
+        name="Sales"
+        stroke="#0f766e"
+        strokeWidth={3}
+        fill="url(#gradSales)"
+        dot={{ r: 4, fill: "#fff", stroke: "#0f766e", strokeWidth: 2.5 }}
         activeDot={{ r: 6, fill: "#0f766e", stroke: "#fff", strokeWidth: 2 }}
       />
       <Area
-        isAnimationActive animationDuration={1400} animationEasing="ease-out" animationBegin={200}
-        type="monotone" dataKey="purchases" name="Purchases" stroke="#2563eb" strokeWidth={3}
-        fill="url(#gradPurchases)" dot={{ r: 4, fill: "#fff", stroke: "#2563eb", strokeWidth: 2.5 }}
+        isAnimationActive
+        animationDuration={1400}
+        animationEasing="ease-out"
+        animationBegin={200}
+        type="monotone"
+        dataKey="purchases"
+        name="Purchases"
+        stroke="#2563eb"
+        strokeWidth={3}
+        fill="url(#gradPurchases)"
+        dot={{ r: 4, fill: "#fff", stroke: "#2563eb", strokeWidth: 2.5 }}
         activeDot={{ r: 6, fill: "#2563eb", stroke: "#fff", strokeWidth: 2 }}
       />
     </AreaChart>
@@ -185,21 +226,56 @@ const ProfitAreaChart = ({ data }) => (
           <stop offset="95%" stopColor="#16a34a" stopOpacity={0.02} />
         </linearGradient>
       </defs>
-      <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.15)" vertical={false} />
-      <XAxis dataKey="month" tick={{ fill: "#64748b", fontSize: 12, fontWeight: 500 }} axisLine={false} tickLine={false} />
-      <YAxis tickFormatter={moneyShort} tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} width={68} />
+      <CartesianGrid
+        strokeDasharray="3 3"
+        stroke="rgba(148,163,184,0.15)"
+        vertical={false}
+      />
+      <XAxis
+        dataKey="month"
+        tick={{ fill: "#64748b", fontSize: 12, fontWeight: 500 }}
+        axisLine={false}
+        tickLine={false}
+      />
+      <YAxis
+        tickFormatter={moneyShort}
+        tick={{ fill: "#64748b", fontSize: 11 }}
+        axisLine={false}
+        tickLine={false}
+        width={68}
+      />
       <Tooltip content={<MoneyTooltip />} />
-      <Legend wrapperStyle={{ paddingTop: 12, fontSize: 13, color: "#64748b" }} formatter={(val) => <span style={{ color: "#64748b", fontWeight: 500 }}>{val}</span>} />
+      <Legend
+        wrapperStyle={{ paddingTop: 12, fontSize: 13, color: "#64748b" }}
+        formatter={(val) => (
+          <span style={{ color: "#64748b", fontWeight: 500 }}>{val}</span>
+        )}
+      />
       <Area
-        isAnimationActive animationDuration={1200} animationEasing="ease-out"
-        type="monotone" dataKey="sales" name="Sales" stroke="#2563eb" strokeWidth={3}
-        fill="url(#gradSales2)" dot={{ r: 4, fill: "#fff", stroke: "#2563eb", strokeWidth: 2.5 }}
+        isAnimationActive
+        animationDuration={1200}
+        animationEasing="ease-out"
+        type="monotone"
+        dataKey="sales"
+        name="Sales"
+        stroke="#2563eb"
+        strokeWidth={3}
+        fill="url(#gradSales2)"
+        dot={{ r: 4, fill: "#fff", stroke: "#2563eb", strokeWidth: 2.5 }}
         activeDot={{ r: 6, fill: "#2563eb", stroke: "#fff", strokeWidth: 2 }}
       />
       <Area
-        isAnimationActive animationDuration={1400} animationEasing="ease-out" animationBegin={200}
-        type="monotone" dataKey="profit" name="Profit" stroke="#16a34a" strokeWidth={3}
-        fill="url(#gradProfit)" dot={{ r: 4, fill: "#fff", stroke: "#16a34a", strokeWidth: 2.5 }}
+        isAnimationActive
+        animationDuration={1400}
+        animationEasing="ease-out"
+        animationBegin={200}
+        type="monotone"
+        dataKey="profit"
+        name="Profit"
+        stroke="#16a34a"
+        strokeWidth={3}
+        fill="url(#gradProfit)"
+        dot={{ r: 4, fill: "#fff", stroke: "#16a34a", strokeWidth: 2.5 }}
         activeDot={{ r: 6, fill: "#16a34a", stroke: "#fff", strokeWidth: 2 }}
       />
     </AreaChart>
@@ -209,14 +285,57 @@ const ProfitAreaChart = ({ data }) => (
 /* ─── Cash Movement ─────────────────────────────────────────── */
 const CashBarChart = ({ data }) => (
   <ResponsiveContainer width="100%" height={240}>
-    <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barCategoryGap="28%">
-      <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.15)" vertical={false} />
-      <XAxis dataKey="month" tick={{ fill: "#64748b", fontSize: 12, fontWeight: 500 }} axisLine={false} tickLine={false} />
-      <YAxis tickFormatter={moneyShort} tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} width={68} />
+    <BarChart
+      data={data}
+      margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+      barCategoryGap="28%"
+    >
+      <CartesianGrid
+        strokeDasharray="3 3"
+        stroke="rgba(148,163,184,0.15)"
+        vertical={false}
+      />
+      <XAxis
+        dataKey="month"
+        tick={{ fill: "#64748b", fontSize: 12, fontWeight: 500 }}
+        axisLine={false}
+        tickLine={false}
+      />
+      <YAxis
+        tickFormatter={moneyShort}
+        tick={{ fill: "#64748b", fontSize: 11 }}
+        axisLine={false}
+        tickLine={false}
+        width={68}
+      />
       <Tooltip content={<MoneyTooltip />} />
-      <Legend wrapperStyle={{ paddingTop: 12, fontSize: 13, color: "#64748b" }} formatter={(val) => <span style={{ color: "#64748b", fontWeight: 500 }}>{val}</span>} />
-      <Bar isAnimationActive animationDuration={1000} animationEasing="ease-out" dataKey="receipts" name="Receipts" fill="#0891b2" radius={[6, 6, 0, 0]} maxBarSize={28} />
-      <Bar isAnimationActive animationDuration={1200} animationEasing="ease-out" animationBegin={150} dataKey="payments" name="Payments" fill="#e11d48" radius={[6, 6, 0, 0]} maxBarSize={28} />
+      <Legend
+        wrapperStyle={{ paddingTop: 12, fontSize: 13, color: "#64748b" }}
+        formatter={(val) => (
+          <span style={{ color: "#64748b", fontWeight: 500 }}>{val}</span>
+        )}
+      />
+      <Bar
+        isAnimationActive
+        animationDuration={1000}
+        animationEasing="ease-out"
+        dataKey="receipts"
+        name="Receipts"
+        fill="#0891b2"
+        radius={[6, 6, 0, 0]}
+        maxBarSize={28}
+      />
+      <Bar
+        isAnimationActive
+        animationDuration={1200}
+        animationEasing="ease-out"
+        animationBegin={150}
+        dataKey="payments"
+        name="Payments"
+        fill="#e11d48"
+        radius={[6, 6, 0, 0]}
+        maxBarSize={28}
+      />
     </BarChart>
   </ResponsiveContainer>
 );
@@ -226,25 +345,36 @@ const PIE_COLORS = ["#0f766e", "#2563eb", "#a855f7", "#64748b"];
 
 const FinancialMixPie = ({ kpis }) => {
   const data = [
-    { name: "Sales",       value: Math.abs(Number(kpis?.total_sales             || 0)) },
-    { name: "Purchases",   value: Math.abs(Number(kpis?.total_purchases          || 0)) },
-    { name: "Receivables", value: Math.abs(Number(kpis?.receivables_outstanding || 0)) },
-    { name: "Payables",    value: Math.abs(Number(kpis?.payables_outstanding     || 0)) },
+    { name: "Sales", value: Math.abs(Number(kpis?.total_sales || 0)) },
+    { name: "Purchases", value: Math.abs(Number(kpis?.total_purchases || 0)) },
+    {
+      name: "Receivables",
+      value: Math.abs(Number(kpis?.receivables_outstanding || 0)),
+    },
+    {
+      name: "Payables",
+      value: Math.abs(Number(kpis?.payables_outstanding || 0)),
+    },
   ];
   return (
     <ResponsiveContainer width="100%" height={180}>
       <PieChart>
         <Pie
           data={data}
-          cx="50%" cy="50%"
-          innerRadius={50} outerRadius={75}
-          paddingAngle={3} dataKey="value"
+          cx="50%"
+          cy="50%"
+          innerRadius={50}
+          outerRadius={75}
+          paddingAngle={3}
+          dataKey="value"
           isAnimationActive
           animationBegin={100}
           animationDuration={1000}
           animationEasing="ease-out"
         >
-          {data.map((_, i) => <Cell key={i} fill={PIE_COLORS[i]} />)}
+          {data.map((_, i) => (
+            <Cell key={i} fill={PIE_COLORS[i]} />
+          ))}
         </Pie>
         <Tooltip formatter={(v) => money(v)} />
         <Legend
@@ -259,7 +389,10 @@ const FinancialMixPie = ({ kpis }) => {
 /* ─── Progress list — bars animate in on scroll ─────────────── */
 const ProgressList = ({ items, accent }) => {
   const [ref, inView] = useInView();
-  const maxAmount = Math.max(1, ...items.map((item) => Number(item.amount || 0)));
+  const maxAmount = Math.max(
+    1,
+    ...items.map((item) => Number(item.amount || 0)),
+  );
   return (
     <div className="space-y-4" ref={ref}>
       {items.map((item, idx) => (
@@ -273,14 +406,20 @@ const ProgressList = ({ items, accent }) => {
           }}
         >
           <div className="flex items-center justify-between gap-3">
-            <p className="truncate text-sm font-semibold text-slate-800">{item.name}</p>
-            <p className="shrink-0 text-sm text-slate-500">{money(item.amount)}</p>
+            <p className="truncate text-sm font-semibold text-slate-800">
+              {item.name}
+            </p>
+            <p className="shrink-0 text-sm text-slate-500">
+              {money(item.amount)}
+            </p>
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-slate-100">
             <div
               className="h-full rounded-full"
               style={{
-                width: inView ? `${Math.max(8, (Number(item.amount || 0) / maxAmount) * 100)}%` : "0%",
+                width: inView
+                  ? `${Math.max(8, (Number(item.amount || 0) / maxAmount) * 100)}%`
+                  : "0%",
                 background: accent,
                 transition: `width 0.8s ease ${300 + idx * 100}ms`,
               }}
@@ -295,8 +434,14 @@ const ProgressList = ({ items, accent }) => {
 /* ─── Compact stat box ──────────────────────────────────────── */
 const StatBox = ({ label, value, color = "text-slate-900" }) => (
   <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3.5">
-    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">{label}</p>
-    <p className={`mt-1.5 text-lg font-extrabold leading-tight break-all ${color}`}>{value}</p>
+    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+      {label}
+    </p>
+    <p
+      className={`mt-1.5 text-lg font-extrabold leading-tight break-all ${color}`}
+    >
+      {value}
+    </p>
   </div>
 );
 
@@ -309,12 +454,16 @@ const KpiTile = ({ label, value, tone, sub = "all time", index = 0 }) => {
       className={`rounded-2xl bg-gradient-to-br ${tone} p-[1px] shadow-sm`}
       style={{
         opacity: inView ? 1 : 0,
-        transform: inView ? "translateY(0) scale(1)" : "translateY(20px) scale(0.95)",
+        transform: inView
+          ? "translateY(0) scale(1)"
+          : "translateY(20px) scale(0.95)",
         transition: `opacity 0.45s ease ${index * 70}ms, transform 0.45s ease ${index * 70}ms`,
       }}
     >
       <div className="rounded-[15px] bg-black/10 px-4 py-3.5 h-full">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/80">{label}</p>
+        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/80">
+          {label}
+        </p>
         <p className="mt-2 text-[clamp(0.95rem,2vw,1.4rem)] font-extrabold leading-tight text-white break-all">
           {value}
         </p>
@@ -398,7 +547,10 @@ const DashboardPage = () => {
     setLoading(true);
     setError("");
     try {
-      const response = await accountService.getDashboardOverview(tenantId, period);
+      const response = await accountService.getDashboardOverview(
+        tenantId,
+        period,
+      );
       setDashboard(response);
     } catch (loadError) {
       const message = extractErrorMessage(loadError);
@@ -409,26 +561,60 @@ const DashboardPage = () => {
     }
   };
 
-  useEffect(() => { loadDashboard(); }, [tenantId, period]);
+  useEffect(() => {
+    loadDashboard();
+  }, [tenantId, period]);
 
   const headlineCards = useMemo(() => {
     if (!dashboard) return [];
     return [
-      { label: "Total Sales",    value: money(dashboard.kpis?.total_sales),             tone: "from-emerald-500 to-teal-500" },
-      { label: "Total Profit",   value: money(dashboard.kpis?.total_profit),            tone: "from-amber-500 to-orange-500" },
-      { label: "Total Purchase", value: money(dashboard.kpis?.total_purchases),         tone: "from-blue-500 to-cyan-500" },
-      { label: "Receivables",    value: money(dashboard.kpis?.receivables_outstanding), tone: "from-fuchsia-500 to-pink-500" },
-      { label: "Payables",       value: money(dashboard.kpis?.payables_outstanding),    tone: "from-slate-600 to-slate-400" },
+      {
+        label: "Total Sales",
+        value: money(dashboard.kpis?.total_sales),
+        tone: "from-emerald-500 to-teal-500",
+      },
+      {
+        label: "Total Profit",
+        value: money(dashboard.kpis?.total_profit),
+        tone: "from-amber-500 to-orange-500",
+      },
+      {
+        label: "Total Purchase",
+        value: money(dashboard.kpis?.total_purchases),
+        tone: "from-blue-500 to-cyan-500",
+      },
+      {
+        label: "Receivables",
+        value: money(dashboard.kpis?.receivables_outstanding),
+        tone: "from-fuchsia-500 to-pink-500",
+      },
+      {
+        label: "Payables",
+        value: money(dashboard.kpis?.payables_outstanding),
+        tone: "from-slate-600 to-slate-400",
+      },
     ];
   }, [dashboard]);
 
   const monthlyCards = useMemo(() => {
     if (!dashboard) return [];
     return [
-      ["Profit This Month",    dashboard.kpis?.profit_this_month,    "text-emerald-600"],
-      ["Sales This Month",     dashboard.kpis?.sales_this_month,     "text-sky-600"],
-      ["Purchases This Month", dashboard.kpis?.purchases_this_month, "text-indigo-600"],
-      ["Receipts This Month",  dashboard.kpis?.receipts_this_month,  "text-cyan-600"],
+      [
+        "Profit This Month",
+        dashboard.kpis?.profit_this_month,
+        "text-emerald-600",
+      ],
+      ["Sales This Month", dashboard.kpis?.sales_this_month, "text-sky-600"],
+      [
+        "Purchases This Month",
+        dashboard.kpis?.purchases_this_month,
+        "text-indigo-600",
+      ],
+      [
+        "Receipts This Month",
+        dashboard.kpis?.receipts_this_month,
+        "text-cyan-600",
+      ],
     ];
   }, [dashboard]);
 
@@ -468,7 +654,6 @@ const DashboardPage = () => {
 
             {/* ── Row 2: Pie + Stock/Journal + Monthly snapshot ── */}
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-
               <AnimatedCard delay={0}>
                 <Card className="space-y-3">
                   <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-400">
@@ -486,12 +671,32 @@ const DashboardPage = () => {
                     Stock &amp; Journal
                   </p>
                   <div className="grid grid-cols-2 gap-2.5">
-                    <StatBox label="Stock Total"    value={moneyShort(dashboard.stock_mix?.total)} />
-                    <StatBox label="Raw Materials"  value={moneyShort(dashboard.stock_mix?.raw_materials)} />
-                    <StatBox label="Finished Goods" value={moneyShort(dashboard.stock_mix?.products)} />
-                    <StatBox label="Lines Posted"   value={count(dashboard.journal_health?.lines_posted)} />
-                    <StatBox label="Debit Total"    value={moneyShort(dashboard.journal_health?.debit_total)}  color="text-emerald-700" />
-                    <StatBox label="Credit Total"   value={moneyShort(dashboard.journal_health?.credit_total)} color="text-rose-600" />
+                    <StatBox
+                      label="Stock Total"
+                      value={moneyShort(dashboard.stock_mix?.total)}
+                    />
+                    <StatBox
+                      label="Raw Materials"
+                      value={moneyShort(dashboard.stock_mix?.raw_materials)}
+                    />
+                    <StatBox
+                      label="Finished Goods"
+                      value={moneyShort(dashboard.stock_mix?.products)}
+                    />
+                    <StatBox
+                      label="Lines Posted"
+                      value={count(dashboard.journal_health?.lines_posted)}
+                    />
+                    <StatBox
+                      label="Debit Total"
+                      value={moneyShort(dashboard.journal_health?.debit_total)}
+                      color="text-emerald-700"
+                    />
+                    <StatBox
+                      label="Credit Total"
+                      value={moneyShort(dashboard.journal_health?.credit_total)}
+                      color="text-rose-600"
+                    />
                   </div>
                 </Card>
               </AnimatedCard>
@@ -502,22 +707,41 @@ const DashboardPage = () => {
                     <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-400">
                       Monthly Snapshot
                     </p>
-                    <Button variant="secondary" size="sm" onClick={loadDashboard}>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={loadDashboard}
+                    >
                       Refresh
                     </Button>
                   </div>
                   <div className="grid grid-cols-2 gap-2.5">
                     {monthlyCards.map(([label, value, color]) => (
-                      <div key={label} className="rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-3">
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-400">{label}</p>
-                        <p className={`mt-1.5 text-base font-extrabold ${color}`}>{money(value)}</p>
+                      <div
+                        key={label}
+                        className="rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-3"
+                      >
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-400">
+                          {label}
+                        </p>
+                        <p
+                          className={`mt-1.5 text-base font-extrabold ${color}`}
+                        >
+                          {money(value)}
+                        </p>
                       </div>
                     ))}
                   </div>
                   <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-3 py-3">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-400">As of</p>
-                    <p className="mt-1 text-sm font-bold text-slate-900">{dashboard.today}</p>
-                    <p className="text-xs text-slate-400 mt-0.5">PKR · Profit = Revenue − COGS</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-400">
+                      As of
+                    </p>
+                    <p className="mt-1 text-sm font-bold text-slate-900">
+                      {dashboard.today}
+                    </p>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      PKR · Profit = Revenue − COGS
+                    </p>
                   </div>
                 </Card>
               </AnimatedCard>
@@ -527,8 +751,12 @@ const DashboardPage = () => {
             <AnimatedCard delay={0}>
               <Card className="space-y-5">
                 <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-400">Revenue vs Procurement</p>
-                  <h3 className="mt-1.5 text-xl font-bold text-slate-900">Monthly commercial movement</h3>
+                  <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-400">
+                    Revenue vs Procurement
+                  </p>
+                  <h3 className="mt-1.5 text-xl font-bold text-slate-900">
+                    Monthly commercial movement
+                  </h3>
                 </div>
                 <AnimatedChart height={260} delay={100}>
                   <RevenueAreaChart data={dashboard.monthly_trends || []} />
@@ -540,8 +768,12 @@ const DashboardPage = () => {
             <AnimatedCard delay={0}>
               <Card className="space-y-5">
                 <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-400">Profit Trend</p>
-                  <h3 className="mt-1.5 text-xl font-bold text-slate-900">Sales and profit performance</h3>
+                  <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-400">
+                    Profit Trend
+                  </p>
+                  <h3 className="mt-1.5 text-xl font-bold text-slate-900">
+                    Sales and profit performance
+                  </h3>
                 </div>
                 <AnimatedChart height={260} delay={100}>
                   <ProfitAreaChart data={dashboard.monthly_trends || []} />
@@ -554,8 +786,12 @@ const DashboardPage = () => {
               <AnimatedCard delay={0}>
                 <Card className="space-y-5">
                   <div>
-                    <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-400">Cash Movement</p>
-                    <h3 className="mt-1.5 text-xl font-bold text-slate-900">Receipts and payments by month</h3>
+                    <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-400">
+                      Cash Movement
+                    </p>
+                    <h3 className="mt-1.5 text-xl font-bold text-slate-900">
+                      Receipts and payments by month
+                    </h3>
                   </div>
                   <AnimatedChart height={240} delay={100}>
                     <CashBarChart data={dashboard.monthly_trends || []} />
@@ -566,21 +802,32 @@ const DashboardPage = () => {
               <AnimatedCard delay={100}>
                 <Card className="space-y-5">
                   <div>
-                    <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-400">Master Data</p>
-                    <h3 className="mt-1.5 text-xl font-bold text-slate-900">Operational footprint</h3>
+                    <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-400">
+                      Master Data
+                    </p>
+                    <h3 className="mt-1.5 text-xl font-bold text-slate-900">
+                      Operational footprint
+                    </h3>
                   </div>
                   <div className="grid gap-2.5 grid-cols-2 sm:grid-cols-3">
                     {[
-                      ["Products",      dashboard.counts?.products],
+                      ["Products", dashboard.counts?.products],
                       ["Raw Materials", dashboard.counts?.raw_materials],
-                      ["Customers",     dashboard.counts?.customers],
-                      ["Suppliers",     dashboard.counts?.suppliers],
-                      ["Warehouses",    dashboard.counts?.warehouses],
+                      ["Customers", dashboard.counts?.customers],
+                      ["Suppliers", dashboard.counts?.suppliers],
+                      ["Warehouses", dashboard.counts?.warehouses],
                       ["Opening Stock", dashboard.counts?.opening_stock],
                     ].map(([label, value]) => (
-                      <div key={label} className="rounded-2xl border border-slate-200 bg-white px-4 py-3.5 shadow-sm">
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">{label}</p>
-                        <p className="mt-1.5 text-2xl font-extrabold text-slate-900">{count(value)}</p>
+                      <div
+                        key={label}
+                        className="rounded-2xl border border-slate-200 bg-white px-4 py-3.5 shadow-sm"
+                      >
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                          {label}
+                        </p>
+                        <p className="mt-1.5 text-2xl font-extrabold text-slate-900">
+                          {count(value)}
+                        </p>
                       </div>
                     ))}
                   </div>
@@ -593,39 +840,80 @@ const DashboardPage = () => {
               <AnimatedCard delay={0}>
                 <Card className="flex h-full flex-col space-y-5">
                   <div>
-                    <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-400">Customer Ranking</p>
-                    <h3 className="mt-1.5 text-xl font-bold text-slate-900">Top customers</h3>
+                    <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-400">
+                      Customer Ranking
+                    </p>
+                    <h3 className="mt-1.5 text-xl font-bold text-slate-900">
+                      Top customers
+                    </h3>
                   </div>
-                  <ProgressList items={dashboard.top_customers || []} accent="linear-gradient(90deg,#0f766e,#5eead4)" />
+                  <ProgressList
+                    items={dashboard.top_customers || []}
+                    accent="linear-gradient(90deg,#0f766e,#5eead4)"
+                  />
                 </Card>
               </AnimatedCard>
 
               <AnimatedCard delay={80}>
                 <Card className="flex h-full flex-col space-y-5">
                   <div>
-                    <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-400">Supplier Ranking</p>
-                    <h3 className="mt-1.5 text-xl font-bold text-slate-900">Top suppliers</h3>
+                    <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-400">
+                      Supplier Ranking
+                    </p>
+                    <h3 className="mt-1.5 text-xl font-bold text-slate-900">
+                      Top suppliers
+                    </h3>
                   </div>
-                  <ProgressList items={dashboard.top_suppliers || []} accent="linear-gradient(90deg,#2563eb,#93c5fd)" />
+                  <ProgressList
+                    items={dashboard.top_suppliers || []}
+                    accent="linear-gradient(90deg,#2563eb,#93c5fd)"
+                  />
                 </Card>
               </AnimatedCard>
 
               <AnimatedCard delay={160}>
                 <Card className="flex h-full flex-col space-y-5">
                   <div>
-                    <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-400">Balance Snapshot</p>
-                    <h3 className="mt-1.5 text-xl font-bold text-slate-900">Current position</h3>
+                    <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-400">
+                      Balance Snapshot
+                    </p>
+                    <h3 className="mt-1.5 text-xl font-bold text-slate-900">
+                      Current position
+                    </h3>
                   </div>
                   <div className="space-y-2.5">
                     {[
-                      ["Total Profit", dashboard.kpis?.total_profit,             "text-emerald-600"],
-                      ["Receivables",  dashboard.kpis?.receivables_outstanding,  "text-amber-600"],
-                      ["Payables",     dashboard.kpis?.payables_outstanding,     "text-rose-600"],
-                      ["Stock Value",  dashboard.stock_mix?.total,               "text-indigo-600"],
+                      [
+                        "Total Profit",
+                        dashboard.kpis?.total_profit,
+                        "text-emerald-600",
+                      ],
+                      [
+                        "Receivables",
+                        dashboard.kpis?.receivables_outstanding,
+                        "text-amber-600",
+                      ],
+                      [
+                        "Payables",
+                        dashboard.kpis?.payables_outstanding,
+                        "text-rose-600",
+                      ],
+                      [
+                        "Stock Value",
+                        dashboard.stock_mix?.total,
+                        "text-indigo-600",
+                      ],
                     ].map(([label, value, color]) => (
-                      <div key={label} className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3.5">
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">{label}</p>
-                        <p className={`mt-1.5 text-xl font-extrabold ${color}`}>{money(value)}</p>
+                      <div
+                        key={label}
+                        className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3.5"
+                      >
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                          {label}
+                        </p>
+                        <p className={`mt-1.5 text-xl font-extrabold ${color}`}>
+                          {money(value)}
+                        </p>
                       </div>
                     ))}
                   </div>
@@ -635,26 +923,43 @@ const DashboardPage = () => {
               <AnimatedCard delay={240}>
                 <Card className="flex h-full flex-col space-y-5">
                   <div>
-                    <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-400">Activity Feed</p>
-                    <h3 className="mt-1.5 text-xl font-bold text-slate-900">Latest journal activity</h3>
+                    <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-400">
+                      Activity Feed
+                    </p>
+                    <h3 className="mt-1.5 text-xl font-bold text-slate-900">
+                      Latest journal activity
+                    </h3>
                   </div>
                   <div className="max-h-[400px] space-y-3 overflow-y-auto pr-1">
                     {(dashboard.recent_activity || []).map((item) => (
-                      <div key={item.id} className="rounded-2xl border border-slate-200 bg-white px-4 py-3.5 shadow-sm">
+                      <div
+                        key={item.id}
+                        className="rounded-2xl border border-slate-200 bg-white px-4 py-3.5 shadow-sm"
+                      >
                         <div className="flex flex-col gap-2">
                           <div>
                             <p className="text-sm font-semibold text-slate-900">
                               {item.reference} • {item.document_type}
                             </p>
                             <p className="mt-1 text-xs text-slate-500">
-                              {item.people_type ? `${item.people_type}: ${item.people_name || "-"}` : "Accounting entry"}
+                              {item.people_type
+                                ? `${item.people_type}: ${item.people_name || "-"}`
+                                : "Accounting entry"}
                             </p>
-                            <p className="mt-0.5 text-xs text-slate-500">{item.description || "No remarks"}</p>
+                            <p className="mt-0.5 text-xs text-slate-500">
+                              {item.description || "No remarks"}
+                            </p>
                           </div>
                           <div className="text-xs">
-                            <p className="font-semibold text-emerald-700">Dr {money(item.debit)}</p>
-                            <p className="font-semibold text-rose-700">Cr {money(item.credit)}</p>
-                            <p className="mt-1 uppercase tracking-[0.18em] text-slate-400">{item.date}</p>
+                            <p className="font-semibold text-emerald-700">
+                              Dr {money(item.debit)}
+                            </p>
+                            <p className="font-semibold text-rose-700">
+                              Cr {money(item.credit)}
+                            </p>
+                            <p className="mt-1 uppercase tracking-[0.18em] text-slate-400">
+                              {item.date}
+                            </p>
                           </div>
                         </div>
                       </div>

@@ -2,10 +2,12 @@ from rest_framework import serializers
 from decimal import Decimal
 from django.utils.timezone import now
 from accounts.models import Account
+from inventory.party_accounts import assign_default_party_account
 from .models import (
     Brand,
     Category,
     Customer,
+    Supplier,
     OpeningStock,
     Production,
     Product,
@@ -239,6 +241,11 @@ class ProductMaterialSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({"component_product_id": "Finished good is required."})
             if raw_material is not None:
                 raise serializers.ValidationError({"raw_material_id": "Do not select raw material for finished good line."})
+        elif component_type == "ASSEMBLY_PRODUCT":
+            if component_product is None:
+                raise serializers.ValidationError({"component_product_id": "Assembly product is required."})
+            if raw_material is not None:
+                raise serializers.ValidationError({"raw_material_id": "Do not select raw material for assembly product line."})
         else:
             raise serializers.ValidationError({"component_type": "Invalid component type."})
 
@@ -365,6 +372,21 @@ class ProductSerializer(serializers.ModelSerializer):
                         "Assembly product cannot use itself as a component."
                     )
                 component_keys.append(f"FINISHED_GOOD:{component_product.id}")
+            elif material["component_type"] == "ASSEMBLY_PRODUCT":
+                component_product = material["component_product"]
+                if component_product.tenant_id != tenant_id:
+                    raise serializers.ValidationError(
+                        "Assembly products must belong to the current tenant."
+                    )
+                if component_product.product_type not in {"ASSEMBLY_PRODUCT", "MANUFACTURED"}:
+                    raise serializers.ValidationError(
+                        "Only assembly products can be selected as assembly components."
+                    )
+                if self.instance and component_product.id == self.instance.id:
+                    raise serializers.ValidationError(
+                        "Assembly product cannot use itself as a component."
+                    )
+                component_keys.append(f"ASSEMBLY_PRODUCT:{component_product.id}")
 
         if len(set(component_keys)) != len(component_keys):
             raise serializers.ValidationError("Duplicate assembly components are not allowed")
@@ -535,7 +557,8 @@ class PartySerializer(serializers.ModelSerializer):
         return self.context.get("party_model", self.Meta.model)
 
     def validate_business_name(self, value):
-        tenant_id = self.context["request"].user.tenant_id
+        request = self.context["request"]
+        tenant_id = getattr(request, "tenant_id", None) or request.user.tenant_id
         instance = getattr(self, "instance", None)
         model = self.get_model()
 
@@ -552,18 +575,22 @@ class PartySerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
-        tenant_id = self.context["request"].user.tenant_id
-        model = self.Meta.model
-        allowed_group = (
-            [Account.AccountGroup.ASSET]
+        tenant_id = getattr(self.context["request"], "tenant_id", None) or self.context[
+            "request"
+        ].user.tenant_id
+        model = self.get_model()
+        attrs = assign_default_party_account(model, attrs, self.context["request"])
+        allowed_type = (
+            Account.AccountType.RECEIVABLE
             if model is Customer
-            else [Account.AccountGroup.LIABILITY]
+            else Account.AccountType.PAYABLE
         )
         validate_account_mapping(
             attrs.get("account"),
             tenant_id,
             "account",
-            allowed_group,
+            [Account.AccountGroup.ASSET if model is Customer else Account.AccountGroup.LIABILITY],
+            allowed_types=[allowed_type],
         )
         return attrs
 

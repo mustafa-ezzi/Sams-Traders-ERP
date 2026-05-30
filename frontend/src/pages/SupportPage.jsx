@@ -97,18 +97,33 @@ const SupportPage = () => {
             <table className="w-full min-w-[760px] text-sm">
               <thead className="bg-gray-50 text-left">
                 <tr>
-                  <th className="px-4 py-3 font-semibold text-gray-700">Subject</th>
-                  <th className="px-4 py-3 font-semibold text-gray-700">Message</th>
-                  <th className="px-4 py-3 font-semibold text-gray-700">Admin Response</th>
-                  <th className="px-4 py-3 font-semibold text-gray-700">Status</th>
-                  <th className="px-4 py-3 font-semibold text-gray-700">Date</th>
+                  <th className="px-4 py-3 font-semibold text-gray-700">
+                    Subject
+                  </th>
+                  <th className="px-4 py-3 font-semibold text-gray-700">
+                    Message
+                  </th>
+                  <th className="px-4 py-3 font-semibold text-gray-700">
+                    Admin Response
+                  </th>
+                  <th className="px-4 py-3 font-semibold text-gray-700">
+                    Status
+                  </th>
+                  <th className="px-4 py-3 font-semibold text-gray-700">
+                    Date
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((row) => (
-                  <tr key={row.id} className="border-t border-gray-100 bg-white">
+                  <tr
+                    key={row.id}
+                    className="border-t border-gray-100 bg-white"
+                  >
                     <td className="px-4 py-3 text-gray-800">{row.subject}</td>
-                    <td className="max-w-[420px] px-4 py-3 text-gray-700">{row.message}</td>
+                    <td className="max-w-[420px] px-4 py-3 text-gray-700">
+                      {row.message}
+                    </td>
                     <td className="max-w-[420px] px-4 py-3 text-gray-700">
                       {row.admin_reply || "-"}
                     </td>
@@ -128,4 +143,3 @@ const SupportPage = () => {
 };
 
 export default SupportPage;
-

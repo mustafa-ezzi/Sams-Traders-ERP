@@ -43,6 +43,7 @@ from .services import (
     sync_raw_material_stock_quantity,
 )
 from rest_framework import filters
+from rest_framework.filters import OrderingFilter
 from rest_framework.exceptions import ValidationError
 
 from purchase.models import PurchaseInvoiceLine, PurchaseReturnLine
@@ -219,8 +220,10 @@ class ProductViewSet(viewsets.ModelViewSet):
     serializer_class = ProductSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
-    filter_backends = [filters.SearchFilter]
+    filter_backends = [filters.SearchFilter, OrderingFilter]
     search_fields = ["name"]
+    ordering_fields = ["name", "created_at"]
+    ordering = ["-created_at"]
 
     def get_queryset(self):
         active_materials = ProductMaterial.objects.filter(
@@ -231,6 +234,13 @@ class ProductViewSet(viewsets.ModelViewSet):
         ).select_related("unit").prefetch_related(
             Prefetch("materials", queryset=active_materials)
         )
+        product_type = self.request.query_params.get("product_type", "").strip()
+        if product_type == "ASSEMBLY_PRODUCT":
+            qs = qs.filter(
+                product_type__in=["ASSEMBLY_PRODUCT", "MANUFACTURED"]
+            )
+        elif product_type == "FINISHED_GOOD":
+            qs = qs.filter(product_type__in=["FINISHED_GOOD", "READY_MADE"])
         qs = qs.annotate(
             quantity=Coalesce(
                 Sum(
@@ -564,7 +574,7 @@ class ProductionViewSet(viewsets.ModelViewSet):
         for material in materials:
             if material.component_type == "RAW_MATERIAL":
                 requirements["raw_materials"][material.raw_material_id] = material.quantity * quantity
-            elif material.component_type == "FINISHED_GOOD":
+            elif material.component_type in {"FINISHED_GOOD", "ASSEMBLY_PRODUCT"}:
                 requirements["finished_goods"][material.component_product_id] = material.quantity * quantity
         return requirements
 
@@ -666,7 +676,8 @@ class ProductionViewSet(viewsets.ModelViewSet):
 
         component_product_ids = list(
             product.materials.filter(
-                component_type="FINISHED_GOOD", deleted_at__isnull=True
+                component_type__in=["FINISHED_GOOD", "ASSEMBLY_PRODUCT"],
+                deleted_at__isnull=True,
             ).values_list("component_product_id", flat=True)
         )
         for component_product_id in component_product_ids:
@@ -933,9 +944,8 @@ class BasePartyViewSet(viewsets.ModelViewSet):
     party_model = None  # override in subclass
 
     def get_queryset(self):
-        qs = self.party_model.objects.filter(
-            tenant_id=self.request.user.tenant_id, deleted_at__isnull=True
-        )
+        tenant_id = getattr(self.request, "tenant_id", None) or self.request.user.tenant_id
+        qs = self.party_model.objects.filter(tenant_id=tenant_id, deleted_at__isnull=True)
         return qs
 
     def get_serializer_context(self):
@@ -957,7 +967,8 @@ class BasePartyViewSet(viewsets.ModelViewSet):
         return serializer
 
     def perform_create(self, serializer):
-        serializer.save(tenant_id=self.request.user.tenant_id)
+        tenant_id = getattr(self.request, "tenant_id", None) or self.request.user.tenant_id
+        serializer.save(tenant_id=tenant_id)
 
     def perform_update(self, serializer):
         serializer.save()

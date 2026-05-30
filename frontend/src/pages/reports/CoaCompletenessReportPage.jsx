@@ -32,7 +32,8 @@ const extractErrorMessage = (error) => {
   return "Something went wrong";
 };
 
-const renderMissingFields = (fields = []) => (fields.length ? fields.join(", ") : "-");
+const renderMissingFields = (fields = []) =>
+  fields.length ? fields.join(", ") : "-";
 
 const CoaCompletenessReportPage = () => {
   const toast = useToast();
@@ -44,7 +45,10 @@ const CoaCompletenessReportPage = () => {
   const [report, setReport] = useState(null);
 
   useEffect(() => {
-    dimensionService.list().then((items) => setDimensions(items || [])).catch(() => setDimensions([]));
+    dimensionService
+      .list()
+      .then((items) => setDimensions(items || []))
+      .catch(() => setDimensions([]));
   }, []);
 
   const handleGenerate = async () => {
@@ -53,11 +57,13 @@ const CoaCompletenessReportPage = () => {
     try {
       const response = await accountService.getCoaCompletenessReport(
         { tenant_scope: tenantScope },
-        tenantScope === "BOTH" ? tenantId : tenantScope
+        tenantScope === "BOTH" ? tenantId : tenantScope,
       );
       setReport(response);
     } catch (loadError) {
-      const message = extractErrorMessage(loadError) || "Failed to generate COA completeness report";
+      const message =
+        extractErrorMessage(loadError) ||
+        "Failed to generate COA completeness report";
       setError(message);
       toast.error(message);
     } finally {
@@ -69,9 +75,12 @@ const CoaCompletenessReportPage = () => {
     <div className="space-y-6">
       <Card className="space-y-5">
         <div>
-          <h2 className="text-xl font-bold text-slate-900">COA Completeness Report</h2>
+          <h2 className="text-xl font-bold text-slate-900">
+            COA Completeness Report
+          </h2>
           <p className="mt-1 text-sm text-slate-500">
-            Review missing category, raw material, and product COAs, plus product overrides that differ from their category defaults.
+            Review missing category, raw material, and product COAs, plus
+            product overrides that differ from their category defaults.
           </p>
         </div>
 
@@ -104,32 +113,45 @@ const CoaCompletenessReportPage = () => {
       <StateView
         loading={loading}
         error={error}
-        isEmpty={!loading && !error && Boolean(report) && !Object.values(report.summary || {}).some(Boolean)}
+        isEmpty={
+          !loading &&
+          !error &&
+          Boolean(report) &&
+          !Object.values(report.summary || {}).some(Boolean)
+        }
         emptyMessage="No COA completeness issues found for the selected dimension scope."
       >
         {report ? (
           <div className="space-y-6">
             <div className="grid gap-3 md:grid-cols-4">
               <Card>
-                <p className="text-xs uppercase tracking-wide text-slate-400">Categories Missing</p>
+                <p className="text-xs uppercase tracking-wide text-slate-400">
+                  Categories Missing
+                </p>
                 <p className="mt-2 text-2xl font-bold text-slate-900">
                   {report.summary?.categories_missing_count || 0}
                 </p>
               </Card>
               <Card>
-                <p className="text-xs uppercase tracking-wide text-slate-400">Raw Materials Missing</p>
+                <p className="text-xs uppercase tracking-wide text-slate-400">
+                  Raw Materials Missing
+                </p>
                 <p className="mt-2 text-2xl font-bold text-slate-900">
                   {report.summary?.raw_materials_missing_count || 0}
                 </p>
               </Card>
               <Card>
-                <p className="text-xs uppercase tracking-wide text-slate-400">Products Missing</p>
+                <p className="text-xs uppercase tracking-wide text-slate-400">
+                  Products Missing
+                </p>
                 <p className="mt-2 text-2xl font-bold text-slate-900">
                   {report.summary?.products_missing_count || 0}
                 </p>
               </Card>
               <Card>
-                <p className="text-xs uppercase tracking-wide text-slate-400">Product Mismatches</p>
+                <p className="text-xs uppercase tracking-wide text-slate-400">
+                  Product Mismatches
+                </p>
                 <p className="mt-2 text-2xl font-bold text-slate-900">
                   {report.summary?.product_mismatch_count || 0}
                 </p>
@@ -137,7 +159,9 @@ const CoaCompletenessReportPage = () => {
             </div>
 
             <Card className="space-y-4">
-              <h3 className="text-lg font-bold text-slate-900">Categories Missing COAs</h3>
+              <h3 className="text-lg font-bold text-slate-900">
+                Categories Missing COAs
+              </h3>
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-slate-200 text-sm">
                   <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
@@ -150,9 +174,15 @@ const CoaCompletenessReportPage = () => {
                   <tbody className="divide-y divide-slate-100 bg-white">
                     {(report.categories_missing || []).map((row) => (
                       <tr key={row.id}>
-                        <td className="px-4 py-3 text-slate-600">{row.tenant}</td>
-                        <td className="px-4 py-3 font-semibold text-slate-900">{row.name}</td>
-                        <td className="px-4 py-3 text-slate-600">{renderMissingFields(row.missing_fields)}</td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {row.tenant}
+                        </td>
+                        <td className="px-4 py-3 font-semibold text-slate-900">
+                          {row.name}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {renderMissingFields(row.missing_fields)}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -161,7 +191,9 @@ const CoaCompletenessReportPage = () => {
             </Card>
 
             <Card className="space-y-4">
-              <h3 className="text-lg font-bold text-slate-900">Raw Materials Missing COAs</h3>
+              <h3 className="text-lg font-bold text-slate-900">
+                Raw Materials Missing COAs
+              </h3>
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-slate-200 text-sm">
                   <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
@@ -175,10 +207,18 @@ const CoaCompletenessReportPage = () => {
                   <tbody className="divide-y divide-slate-100 bg-white">
                     {(report.raw_materials_missing || []).map((row) => (
                       <tr key={row.id}>
-                        <td className="px-4 py-3 text-slate-600">{row.tenant}</td>
-                        <td className="px-4 py-3 font-semibold text-slate-900">{row.name}</td>
-                        <td className="px-4 py-3 text-slate-600">{row.category_name || "-"}</td>
-                        <td className="px-4 py-3 text-slate-600">{row.category_inventory_account || "-"}</td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {row.tenant}
+                        </td>
+                        <td className="px-4 py-3 font-semibold text-slate-900">
+                          {row.name}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {row.category_name || "-"}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {row.category_inventory_account || "-"}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -187,7 +227,9 @@ const CoaCompletenessReportPage = () => {
             </Card>
 
             <Card className="space-y-4">
-              <h3 className="text-lg font-bold text-slate-900">Products Missing COAs</h3>
+              <h3 className="text-lg font-bold text-slate-900">
+                Products Missing COAs
+              </h3>
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-slate-200 text-sm">
                   <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
@@ -201,10 +243,18 @@ const CoaCompletenessReportPage = () => {
                   <tbody className="divide-y divide-slate-100 bg-white">
                     {(report.products_missing || []).map((row) => (
                       <tr key={row.id}>
-                        <td className="px-4 py-3 text-slate-600">{row.tenant}</td>
-                        <td className="px-4 py-3 font-semibold text-slate-900">{row.name}</td>
-                        <td className="px-4 py-3 text-slate-600">{row.category_name || "-"}</td>
-                        <td className="px-4 py-3 text-slate-600">{renderMissingFields(row.missing_fields)}</td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {row.tenant}
+                        </td>
+                        <td className="px-4 py-3 font-semibold text-slate-900">
+                          {row.name}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {row.category_name || "-"}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {renderMissingFields(row.missing_fields)}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -213,7 +263,9 @@ const CoaCompletenessReportPage = () => {
             </Card>
 
             <Card className="space-y-4">
-              <h3 className="text-lg font-bold text-slate-900">Product and Category Mismatches</h3>
+              <h3 className="text-lg font-bold text-slate-900">
+                Product and Category Mismatches
+              </h3>
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-slate-200 text-sm">
                   <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
@@ -229,12 +281,24 @@ const CoaCompletenessReportPage = () => {
                   <tbody className="divide-y divide-slate-100 bg-white">
                     {(report.product_mismatches || []).map((row, index) => (
                       <tr key={`${row.id}-${row.field}-${index}`}>
-                        <td className="px-4 py-3 text-slate-600">{row.tenant}</td>
-                        <td className="px-4 py-3 font-semibold text-slate-900">{row.name}</td>
-                        <td className="px-4 py-3 text-slate-600">{row.category_name}</td>
-                        <td className="px-4 py-3 text-slate-600">{row.field_label}</td>
-                        <td className="px-4 py-3 text-slate-600">{row.category_account}</td>
-                        <td className="px-4 py-3 text-slate-600">{row.product_account}</td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {row.tenant}
+                        </td>
+                        <td className="px-4 py-3 font-semibold text-slate-900">
+                          {row.name}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {row.category_name}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {row.field_label}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {row.category_account}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {row.product_account}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

@@ -11,13 +11,26 @@ import FormInput from "../../components/ui/FormInput";
 import ConfirmModal from "../../components/ui/ConfirmModal";
 import IconButton from "../../components/ui/IconButton";
 import { useToast } from "../../context/ToastContext";
-import { flattenAccountTree, formatAccountLabel, getPostableInventoryAccounts } from "../../utils/accounts";
+import {
+  flattenAccountTree,
+  formatAccountLabel,
+  getPostableInventoryAccounts,
+} from "../../utils/accounts";
 
 const schema = z.object({
   name: z.string().trim().min(1, "Name is required"),
-  inventory_account: z.union([z.string().uuid("Inventory account must be valid"), z.literal("")]),
-  cogs_account: z.union([z.string().uuid("COGS account must be valid"), z.literal("")]),
-  revenue_account: z.union([z.string().uuid("Revenue account must be valid"), z.literal("")]),
+  inventory_account: z.union([
+    z.string().uuid("Inventory account must be valid"),
+    z.literal(""),
+  ]),
+  cogs_account: z.union([
+    z.string().uuid("COGS account must be valid"),
+    z.literal(""),
+  ]),
+  revenue_account: z.union([
+    z.string().uuid("Revenue account must be valid"),
+    z.literal(""),
+  ]),
 });
 
 const defaultValues = {
@@ -49,17 +62,23 @@ const CategoriesPage = () => {
     defaultValues,
   });
 
-  const flattenedAccounts = useMemo(() => flattenAccountTree(accounts), [accounts]);
+  const flattenedAccounts = useMemo(
+    () => flattenAccountTree(accounts),
+    [accounts],
+  );
   const inventoryAccounts = getPostableInventoryAccounts(flattenedAccounts);
   const cogsAccounts = flattenedAccounts.filter(
-    (account) => account.account_group === "COGS" && account.is_postable
+    (account) => account.account_group === "COGS" && account.is_postable,
   );
   const revenueAccounts = flattenedAccounts.filter(
-    (account) => account.account_group === "REVENUE" && account.is_postable
+    (account) => account.account_group === "REVENUE" && account.is_postable,
   );
   const accountMap = useMemo(
-    () => Object.fromEntries(flattenedAccounts.map((account) => [account.id, account])),
-    [flattenedAccounts]
+    () =>
+      Object.fromEntries(
+        flattenedAccounts.map((account) => [account.id, account]),
+      ),
+    [flattenedAccounts],
   );
 
   const loadRecords = async (nextPage = page, nextSearch = search) => {
@@ -75,7 +94,9 @@ const CategoriesPage = () => {
       setTotal(response.total || 0);
       setPage(response.page || nextPage);
     } catch (loadError) {
-      setError(loadError?.response?.data?.message || "Failed to load categories");
+      setError(
+        loadError?.response?.data?.message || "Failed to load categories",
+      );
     } finally {
       setLoading(false);
     }
@@ -151,11 +172,12 @@ const CategoriesPage = () => {
       toast.success(
         updatedProducts > 0
           ? `Applied category COAs to ${updatedProducts} product${updatedProducts === 1 ? "" : "s"}`
-          : "No products needed COA updates"
+          : "No products needed COA updates",
       );
       await loadRecords(page, search);
     } catch (applyError) {
-      const msg = applyError?.response?.data?.message || "Failed to apply category COAs";
+      const msg =
+        applyError?.response?.data?.message || "Failed to apply category COAs";
       setError(msg);
       toast.error(msg);
     }
@@ -208,7 +230,9 @@ const CategoriesPage = () => {
             {...form.register("name")}
           />
           <div className="space-y-2">
-            <label className="block text-sm font-semibold text-slate-700">Inventory Account</label>
+            <label className="block text-sm font-semibold text-slate-700">
+              Inventory Account
+            </label>
             <select
               className={selectClassName}
               disabled={loadingAccounts}
@@ -223,7 +247,9 @@ const CategoriesPage = () => {
             </select>
           </div>
           <div className="space-y-2">
-            <label className="block text-sm font-semibold text-slate-700">COGS Account</label>
+            <label className="block text-sm font-semibold text-slate-700">
+              COGS Account
+            </label>
             <select
               className={selectClassName}
               disabled={loadingAccounts}
@@ -238,7 +264,9 @@ const CategoriesPage = () => {
             </select>
           </div>
           <div className="space-y-2">
-            <label className="block text-sm font-semibold text-slate-700">Revenue Account</label>
+            <label className="block text-sm font-semibold text-slate-700">
+              Revenue Account
+            </label>
             <select
               className={selectClassName}
               disabled={loadingAccounts}
@@ -253,15 +281,21 @@ const CategoriesPage = () => {
             </select>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 xl:col-span-2">
-            Category COAs act as defaults. Products can override them, and the "Apply Category COAs"
-            action fills missing product mappings for this category.
+            Category COAs act as defaults. Products can override them, and the
+            "Apply Category COAs" action fills missing product mappings for this
+            category.
           </div>
           <div className="flex flex-col gap-3 sm:flex-row xl:col-span-2">
             <Button type="submit" className="w-full sm:w-auto">
               {editingId ? "Update" : "Create"}
             </Button>
             {editingId && (
-              <Button type="button" variant="secondary" className="w-full sm:w-auto" onClick={resetForm}>
+              <Button
+                type="button"
+                variant="secondary"
+                className="w-full sm:w-auto"
+                onClick={resetForm}
+              >
                 Cancel
               </Button>
             )}
@@ -281,10 +315,16 @@ const CategoriesPage = () => {
               <thead className="bg-[linear-gradient(180deg,#edf4ff,#e1ebff)] text-left">
                 <tr>
                   <th className="px-5 py-4 font-bold text-slate-700">Name</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Inventory</th>
+                  <th className="px-5 py-4 font-bold text-slate-700">
+                    Inventory
+                  </th>
                   <th className="px-5 py-4 font-bold text-slate-700">COGS</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Revenue</th>
-                  <th className="px-5 py-4 text-right font-bold text-slate-700">Actions</th>
+                  <th className="px-5 py-4 font-bold text-slate-700">
+                    Revenue
+                  </th>
+                  <th className="px-5 py-4 text-right font-bold text-slate-700">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -293,20 +333,30 @@ const CategoriesPage = () => {
                     key={record.id}
                     className="border-t border-slate-100 bg-white/80 transition hover:bg-blue-50/50"
                   >
-                    <td className="px-5 py-4 font-medium text-slate-700">{record.name}</td>
+                    <td className="px-5 py-4 font-medium text-slate-700">
+                      {record.name}
+                    </td>
                     <td className="px-5 py-4 text-slate-600">
-                      {record.inventory_account && accountMap[record.inventory_account]
-                        ? formatAccountLabel(accountMap[record.inventory_account]).trim()
+                      {record.inventory_account &&
+                      accountMap[record.inventory_account]
+                        ? formatAccountLabel(
+                            accountMap[record.inventory_account],
+                          ).trim()
                         : "-"}
                     </td>
                     <td className="px-5 py-4 text-slate-600">
                       {record.cogs_account && accountMap[record.cogs_account]
-                        ? formatAccountLabel(accountMap[record.cogs_account]).trim()
+                        ? formatAccountLabel(
+                            accountMap[record.cogs_account],
+                          ).trim()
                         : "-"}
                     </td>
                     <td className="px-5 py-4 text-slate-600">
-                      {record.revenue_account && accountMap[record.revenue_account]
-                        ? formatAccountLabel(accountMap[record.revenue_account]).trim()
+                      {record.revenue_account &&
+                      accountMap[record.revenue_account]
+                        ? formatAccountLabel(
+                            accountMap[record.revenue_account],
+                          ).trim()
                         : "-"}
                     </td>
                     <td className="px-5 py-4 text-right">
@@ -345,7 +395,9 @@ const CategoriesPage = () => {
           </div>
 
           <div className="flex flex-col gap-3 border-t border-slate-100 px-5 py-4 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-            <span className="text-center sm:text-left">{total} total records</span>
+            <span className="text-center sm:text-left">
+              {total} total records
+            </span>
             <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-end">
               <Button
                 variant="secondary"

@@ -47,8 +47,8 @@ const extractErrorMessage = (error) => {
     return data.detail;
   }
 
-  const fieldEntry = Object.entries(data).find(([, value]) =>
-    typeof value === "string" || Array.isArray(value)
+  const fieldEntry = Object.entries(data).find(
+    ([, value]) => typeof value === "string" || Array.isArray(value),
   );
 
   if (fieldEntry) {
@@ -77,8 +77,10 @@ const PurchaseBankPaymentPage = () => {
   const limit = 10;
 
   const selectedInvoice = useMemo(
-    () => invoiceOptions.find((invoice) => invoice.id === form.purchaseInvoiceId) || null,
-    [form.purchaseInvoiceId, invoiceOptions]
+    () =>
+      invoiceOptions.find((invoice) => invoice.id === form.purchaseInvoiceId) ||
+      null,
+    [form.purchaseInvoiceId, invoiceOptions],
   );
 
   const loadPayments = async (nextPage = page, nextSearch = search) => {
@@ -94,7 +96,10 @@ const PurchaseBankPaymentPage = () => {
       setTotal(response.total || 0);
       setPage(response.page || nextPage);
     } catch (loadError) {
-      setError(extractErrorMessage(loadError) || "Failed to load purchase bank payments");
+      setError(
+        extractErrorMessage(loadError) ||
+          "Failed to load purchase bank payments",
+      );
     } finally {
       setLoading(false);
     }
@@ -110,14 +115,16 @@ const PurchaseBankPaymentPage = () => {
       setSuppliers(supplierResponse.data || []);
 
       const flatAccounts = flattenAccountTree(
-        Array.isArray(accountsResponse) ? accountsResponse : accountsResponse.data || []
+        Array.isArray(accountsResponse)
+          ? accountsResponse
+          : accountsResponse.data || [],
       );
       const bankTypeAccounts = flatAccounts.filter(
         (account) =>
           account.is_postable &&
           account.account_group === "ASSET" &&
           account.is_active &&
-          account.account_type === "BANK"
+          account.account_type === "BANK",
       );
       setBankAccounts(bankTypeAccounts);
     } catch {
@@ -132,10 +139,15 @@ const PurchaseBankPaymentPage = () => {
     }
 
     try {
-      const options = await purchaseBankPaymentService.getInvoiceOptions(supplierId, paymentId);
+      const options = await purchaseBankPaymentService.getInvoiceOptions(
+        supplierId,
+        paymentId,
+      );
       setInvoiceOptions(options);
     } catch (loadError) {
-      toast.error(extractErrorMessage(loadError) || "Failed to load purchase invoices");
+      toast.error(
+        extractErrorMessage(loadError) || "Failed to load purchase invoices",
+      );
     }
   };
 
@@ -168,7 +180,9 @@ const PurchaseBankPaymentPage = () => {
   };
 
   const handleInvoiceChange = (purchaseInvoiceId) => {
-    const invoice = invoiceOptions.find((item) => item.id === purchaseInvoiceId);
+    const invoice = invoiceOptions.find(
+      (item) => item.id === purchaseInvoiceId,
+    );
     setForm((current) => ({
       ...current,
       purchaseInvoiceId,
@@ -206,7 +220,10 @@ const PurchaseBankPaymentPage = () => {
       toast.error("Payment amount must be greater than zero");
       return false;
     }
-    if (selectedInvoice && toNumber(form.amount) > toNumber(selectedInvoice.balance_amount)) {
+    if (
+      selectedInvoice &&
+      toNumber(form.amount) > toNumber(selectedInvoice.balance_amount)
+    ) {
       toast.error("Payment amount cannot exceed the invoice balance");
       return false;
     }
@@ -223,11 +240,18 @@ const PurchaseBankPaymentPage = () => {
     try {
       const payload = buildPayload();
       if (editingId) {
-        const response = await purchaseBankPaymentService.update(editingId, payload);
-        toast.success(response.message || "Purchase bank payment updated successfully");
+        const response = await purchaseBankPaymentService.update(
+          editingId,
+          payload,
+        );
+        toast.success(
+          response.message || "Purchase bank payment updated successfully",
+        );
       } else {
         const response = await purchaseBankPaymentService.create(payload);
-        toast.success(response.message || "Purchase bank payment created successfully");
+        toast.success(
+          response.message || "Purchase bank payment created successfully",
+        );
       }
       resetForm();
       await loadPayments(1, search);
@@ -253,21 +277,29 @@ const PurchaseBankPaymentPage = () => {
       });
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (editError) {
-      toast.error(extractErrorMessage(editError) || "Failed to load purchase bank payment");
+      toast.error(
+        extractErrorMessage(editError) ||
+          "Failed to load purchase bank payment",
+      );
     }
   };
 
   const confirmDelete = async () => {
     try {
       const response = await purchaseBankPaymentService.remove(deleteId);
-      toast.success(response.message || "Purchase bank payment deleted successfully");
+      toast.success(
+        response.message || "Purchase bank payment deleted successfully",
+      );
       if (editingId === deleteId) {
         resetForm();
       }
       setDeleteId("");
       await loadPayments(page, search);
     } catch (deleteError) {
-      toast.error(extractErrorMessage(deleteError) || "Failed to delete purchase bank payment");
+      toast.error(
+        extractErrorMessage(deleteError) ||
+          "Failed to delete purchase bank payment",
+      );
     }
   };
 
@@ -279,7 +311,6 @@ const PurchaseBankPaymentPage = () => {
             <h2 className="text-xl font-bold text-slate-900">
               {editingId ? "Edit Bank Payment" : "Create Bank Payment"}
             </h2>
-           
           </div>
           {editingId ? (
             <Button variant="secondary" onClick={resetForm}>
@@ -329,7 +360,8 @@ const PurchaseBankPaymentPage = () => {
                 <option value="">Select Purchase Invoice</option>
                 {invoiceOptions.map((invoice) => (
                   <option key={invoice.id} value={invoice.id}>
-                    {invoice.invoice_number} | Balance {formatDecimal(invoice.balance_amount)}
+                    {invoice.invoice_number} | Balance{" "}
+                    {formatDecimal(invoice.balance_amount)}
                   </option>
                 ))}
               </select>
@@ -373,25 +405,33 @@ const PurchaseBankPaymentPage = () => {
 
           <div className="grid gap-3 grid-cols-1 md:grid-cols-4">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-              <p className="text-xs uppercase tracking-wide text-slate-400">Invoice Net</p>
+              <p className="text-xs uppercase tracking-wide text-slate-400">
+                Invoice Net
+              </p>
               <p className="mt-1 text-lg font-bold text-slate-800">
                 {formatDecimal(selectedInvoice?.net_amount || 0)}
               </p>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-              <p className="text-xs uppercase tracking-wide text-slate-400">Returned</p>
+              <p className="text-xs uppercase tracking-wide text-slate-400">
+                Returned
+              </p>
               <p className="mt-1 text-lg font-bold text-slate-800">
                 {formatDecimal(selectedInvoice?.returned_amount || 0)}
               </p>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-              <p className="text-xs uppercase tracking-wide text-slate-400">Already Paid</p>
+              <p className="text-xs uppercase tracking-wide text-slate-400">
+                Already Paid
+              </p>
               <p className="mt-1 text-lg font-bold text-slate-800">
                 {formatDecimal(selectedInvoice?.paid_amount || 0)}
               </p>
             </div>
             <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-4">
-              <p className="text-xs uppercase tracking-wide text-blue-500">Invoice Balance</p>
+              <p className="text-xs uppercase tracking-wide text-blue-500">
+                Invoice Balance
+              </p>
               <p className="mt-1 text-xl font-extrabold text-blue-700">
                 {formatDecimal(selectedInvoice?.balance_amount || 0)}
               </p>
@@ -400,7 +440,11 @@ const PurchaseBankPaymentPage = () => {
 
           <div className="flex justify-end border-t border-slate-100 pt-4">
             <Button type="submit" disabled={submitting}>
-              {submitting ? "Saving..." : editingId ? "Update Bank Payment" : "Save Bank Payment"}
+              {submitting
+                ? "Saving..."
+                : editingId
+                  ? "Update Bank Payment"
+                  : "Save Bank Payment"}
             </Button>
           </div>
         </form>
@@ -459,7 +503,9 @@ const PurchaseBankPaymentPage = () => {
                       <td className="px-4 py-3 font-semibold text-slate-900">
                         {record.payment_number}
                       </td>
-                      <td className="px-4 py-3 text-slate-600">{record.date}</td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {record.date}
+                      </td>
                       <td className="px-4 py-3 text-slate-600">
                         {record.supplier?.business_name}
                       </td>
@@ -467,7 +513,8 @@ const PurchaseBankPaymentPage = () => {
                         {record.purchase_invoice?.invoice_number}
                       </td>
                       <td className="px-4 py-3 text-slate-600">
-                        {record.bank_account?.code} - {record.bank_account?.name}
+                        {record.bank_account?.code} -{" "}
+                        {record.bank_account?.name}
                       </td>
                       <td className="px-4 py-3 font-semibold text-slate-800">
                         {formatDecimal(record.amount)}
@@ -477,10 +524,16 @@ const PurchaseBankPaymentPage = () => {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex gap-2">
-                          <Button variant="secondary" onClick={() => handleEdit(record.id)}>
+                          <Button
+                            variant="secondary"
+                            onClick={() => handleEdit(record.id)}
+                          >
                             Edit
                           </Button>
-                          <Button variant="danger" onClick={() => setDeleteId(record.id)}>
+                          <Button
+                            variant="danger"
+                            onClick={() => setDeleteId(record.id)}
+                          >
                             Delete
                           </Button>
                         </div>

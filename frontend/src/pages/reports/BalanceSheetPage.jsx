@@ -31,8 +31,8 @@ const extractErrorMessage = (error) => {
     return data.detail;
   }
 
-  const fieldEntry = Object.entries(data).find(([, value]) =>
-    typeof value === "string" || Array.isArray(value)
+  const fieldEntry = Object.entries(data).find(
+    ([, value]) => typeof value === "string" || Array.isArray(value),
   );
 
   if (fieldEntry) {
@@ -68,12 +68,20 @@ const BalanceSheetSection = ({ sectionKey, section }) => {
     <Card className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h3 className="text-lg font-bold text-slate-900">{palette.heading}</h3>
-          <p className="mt-1 text-sm text-slate-500">Detailed COA balances for this section.</p>
+          <h3 className="text-lg font-bold text-slate-900">
+            {palette.heading}
+          </h3>
+          <p className="mt-1 text-sm text-slate-500">
+            Detailed COA balances for this section.
+          </p>
         </div>
-        <div className={`rounded-2xl border px-4 py-3 text-right ${palette.totalClassName}`}>
+        <div
+          className={`rounded-2xl border px-4 py-3 text-right ${palette.totalClassName}`}
+        >
           <p className="text-xs uppercase tracking-wide">Total</p>
-          <p className="mt-1 text-lg font-bold">{formatDecimal(section?.total)}</p>
+          <p className="mt-1 text-lg font-bold">
+            {formatDecimal(section?.total)}
+          </p>
         </div>
       </div>
 
@@ -168,11 +176,12 @@ const BalanceSheetPage = () => {
           tenant_scope: form.tenantScope,
           as_of_date: form.asOfDate,
         },
-        form.tenantScope === "BOTH" ? tenantId : form.tenantScope
+        form.tenantScope === "BOTH" ? tenantId : form.tenantScope,
       );
       setReport(response);
     } catch (reportError) {
-      const message = extractErrorMessage(reportError) || "Failed to generate balance sheet";
+      const message =
+        extractErrorMessage(reportError) || "Failed to generate balance sheet";
       setError(message);
       toast.error(message);
     } finally {
@@ -196,7 +205,8 @@ const BalanceSheetPage = () => {
         <div>
           <h2 className="text-xl font-bold text-slate-900">Balance Sheet</h2>
           <p className="mt-1 text-sm text-slate-500">
-            View actual COA-based assets, liabilities, and equity balances as of a selected date.
+            View actual COA-based assets, liabilities, and equity balances as of
+            a selected date.
           </p>
         </div>
 
@@ -244,9 +254,14 @@ const BalanceSheetPage = () => {
             <Card className="space-y-4">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                 <div>
-                  <h3 className="text-xl font-bold text-slate-900">Statement Position</h3>
+                  <h3 className="text-xl font-bold text-slate-900">
+                    Statement Position
+                  </h3>
                   <p className="mt-1 text-sm text-slate-500">
-                    As of {report.as_of_date} for {report.tenant_scope === "BOTH" ? "All Dimensions" : report.tenant_scope}
+                    As of {report.as_of_date} for{" "}
+                    {report.tenant_scope === "BOTH"
+                      ? "All Dimensions"
+                      : report.tenant_scope}
                   </p>
                 </div>
                 <div className={`rounded-2xl border px-4 py-3 ${statusTone}`}>
@@ -259,37 +274,49 @@ const BalanceSheetPage = () => {
 
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                  <p className="text-xs uppercase tracking-wide text-slate-400">Total Assets</p>
+                  <p className="text-xs uppercase tracking-wide text-slate-400">
+                    Total Assets
+                  </p>
                   <p className="mt-2 text-lg font-bold text-slate-900">
                     {formatDecimal(summary.total_assets)}
                   </p>
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                  <p className="text-xs uppercase tracking-wide text-slate-400">Total Liabilities</p>
+                  <p className="text-xs uppercase tracking-wide text-slate-400">
+                    Total Liabilities
+                  </p>
                   <p className="mt-2 text-lg font-bold text-slate-900">
                     {formatDecimal(summary.total_liabilities)}
                   </p>
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                  <p className="text-xs uppercase tracking-wide text-slate-400">Total Equity</p>
+                  <p className="text-xs uppercase tracking-wide text-slate-400">
+                    Total Equity
+                  </p>
                   <p className="mt-2 text-lg font-bold text-slate-900">
                     {formatDecimal(summary.total_equity)}
                   </p>
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                  <p className="text-xs uppercase tracking-wide text-slate-400">Liabilities + Equity</p>
+                  <p className="text-xs uppercase tracking-wide text-slate-400">
+                    Liabilities + Equity
+                  </p>
                   <p className="mt-2 text-lg font-bold text-slate-900">
                     {formatDecimal(summary.total_liabilities_and_equity)}
                   </p>
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                  <p className="text-xs uppercase tracking-wide text-slate-400">Unclosed P/L</p>
+                  <p className="text-xs uppercase tracking-wide text-slate-400">
+                    Unclosed P/L
+                  </p>
                   <p className="mt-2 text-lg font-bold text-slate-900">
                     {formatDecimal(summary.unclosed_profit_loss)}
                   </p>
                 </div>
                 <div className="rounded-2xl border border-slate-900 bg-slate-900 px-4 py-4 text-white">
-                  <p className="text-xs uppercase tracking-wide text-slate-300">Difference</p>
+                  <p className="text-xs uppercase tracking-wide text-slate-300">
+                    Difference
+                  </p>
                   <p className="mt-2 text-lg font-bold">
                     {formatDecimal(summary.difference)}
                   </p>
@@ -298,10 +325,19 @@ const BalanceSheetPage = () => {
             </Card>
 
             <div className="grid gap-6 xl:grid-cols-2">
-              <BalanceSheetSection sectionKey="assets" section={report.assets} />
+              <BalanceSheetSection
+                sectionKey="assets"
+                section={report.assets}
+              />
               <div className="space-y-6">
-                <BalanceSheetSection sectionKey="liabilities" section={report.liabilities} />
-                <BalanceSheetSection sectionKey="equity" section={report.equity} />
+                <BalanceSheetSection
+                  sectionKey="liabilities"
+                  section={report.liabilities}
+                />
+                <BalanceSheetSection
+                  sectionKey="equity"
+                  section={report.equity}
+                />
               </div>
             </div>
           </div>

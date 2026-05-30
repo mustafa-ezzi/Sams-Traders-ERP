@@ -38,7 +38,9 @@ const DimensionsPage = () => {
       setAllowedDimensions(response || []);
       if ((response || []).length > 0) {
         const currentTenant = localStorage.getItem("tenantId") || "";
-        const exists = (response || []).some((item) => item.code === currentTenant);
+        const exists = (response || []).some(
+          (item) => item.code === currentTenant,
+        );
         if (!exists) {
           setTenant(response[0].code);
         }
@@ -105,8 +107,6 @@ const DimensionsPage = () => {
         onConfirm={handleDelete}
       />
 
-     
-
       <Card>
         <form className="grid gap-4 md:grid-cols-3" onSubmit={handleSubmit}>
           <FormInput
@@ -114,19 +114,28 @@ const DimensionsPage = () => {
             required
             placeholder="Northern Division"
             value={form.name}
-            onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+            onChange={(event) =>
+              setForm((current) => ({ ...current, name: event.target.value }))
+            }
           />
           <FormInput
             label="Dimension Code"
             placeholder="Optional, auto-generated if blank"
             value={form.code}
-            onChange={(event) => setForm((current) => ({ ...current, code: event.target.value }))}
+            onChange={(event) =>
+              setForm((current) => ({ ...current, code: event.target.value }))
+            }
           />
           <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm font-medium text-slate-700 md:self-end">
             <input
               type="checkbox"
               checked={form.is_active}
-              onChange={(event) => setForm((current) => ({ ...current, is_active: event.target.checked }))}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  is_active: event.target.checked,
+                }))
+              }
             />
             Active dimension
           </label>
@@ -153,18 +162,33 @@ const DimensionsPage = () => {
                   <th className="px-5 py-4 font-bold text-slate-700">Code</th>
                   <th className="px-5 py-4 font-bold text-slate-700">Name</th>
                   <th className="px-5 py-4 font-bold text-slate-700">Status</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Created</th>
-                  <th className="px-5 py-4 text-right font-bold text-slate-700">Actions</th>
+                  <th className="px-5 py-4 font-bold text-slate-700">
+                    Created
+                  </th>
+                  <th className="px-5 py-4 text-right font-bold text-slate-700">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {dimensions.map((dimension) => (
-                  <tr key={dimension.id} className="border-t border-slate-100 bg-white">
-                    <td className="px-5 py-4 font-semibold text-slate-800">{dimension.code}</td>
-                    <td className="px-5 py-4 text-slate-700">{dimension.name}</td>
-                    <td className="px-5 py-4 text-slate-600">{dimension.is_active ? "Active" : "Inactive"}</td>
+                  <tr
+                    key={dimension.id}
+                    className="border-t border-slate-100 bg-white"
+                  >
+                    <td className="px-5 py-4 font-semibold text-slate-800">
+                      {dimension.code}
+                    </td>
+                    <td className="px-5 py-4 text-slate-700">
+                      {dimension.name}
+                    </td>
                     <td className="px-5 py-4 text-slate-600">
-                      {dimension.created_at ? new Date(dimension.created_at).toLocaleDateString() : "-"}
+                      {dimension.is_active ? "Active" : "Inactive"}
+                    </td>
+                    <td className="px-5 py-4 text-slate-600">
+                      {dimension.created_at
+                        ? new Date(dimension.created_at).toLocaleDateString()
+                        : "-"}
                     </td>
                     <td className="px-5 py-4 text-right">
                       <button

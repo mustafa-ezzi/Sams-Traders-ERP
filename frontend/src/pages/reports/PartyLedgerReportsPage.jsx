@@ -31,8 +31,8 @@ const extractErrorMessage = (error) => {
     return data.detail;
   }
 
-  const fieldEntry = Object.entries(data).find(([, value]) =>
-    typeof value === "string" || Array.isArray(value)
+  const fieldEntry = Object.entries(data).find(
+    ([, value]) => typeof value === "string" || Array.isArray(value),
   );
 
   if (fieldEntry) {
@@ -81,7 +81,7 @@ const PartyLedgerReportsPage = () => {
     return rows.filter((row) =>
       [row.id, row.document_type, row.date, row.remarks]
         .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(term))
+        .some((value) => String(value).toLowerCase().includes(term)),
     );
   }, [report, search]);
 
@@ -102,7 +102,9 @@ const PartyLedgerReportsPage = () => {
         setCustomers(customerResponse.data?.data || []);
         setSuppliers(supplierResponse.data?.data || []);
       } catch (loadError) {
-        setError(extractErrorMessage(loadError) || "Failed to load partner filters");
+        setError(
+          extractErrorMessage(loadError) || "Failed to load partner filters",
+        );
       } finally {
         setLoadingSetup(false);
       }
@@ -145,11 +147,12 @@ const PartyLedgerReportsPage = () => {
           from_date: form.fromDate,
           to_date: form.toDate,
         },
-        tenantId
+        tenantId,
       );
       setReport(response);
     } catch (reportError) {
-      const message = extractErrorMessage(reportError) || "Failed to generate party ledger";
+      const message =
+        extractErrorMessage(reportError) || "Failed to generate party ledger";
       setError(message);
       toast.error(message);
     } finally {
@@ -173,8 +176,9 @@ const PartyLedgerReportsPage = () => {
     <div className="space-y-6">
       <Card className="space-y-6">
         <div>
-          <h2 className="text-xl font-bold text-slate-900">Party Ledger Report</h2>
-          
+          <h2 className="text-xl font-bold text-slate-900">
+            Party Ledger Report
+          </h2>
         </div>
 
         <form className="space-y-5" onSubmit={handleGenerate}>
@@ -206,7 +210,8 @@ const PartyLedgerReportsPage = () => {
                 disabled={loadingSetup}
               >
                 <option value="">
-                  Select {form.partnerType === "customer" ? "Customer" : "Supplier"}
+                  Select{" "}
+                  {form.partnerType === "customer" ? "Customer" : "Supplier"}
                 </option>
                 {partnerOptions.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -245,37 +250,53 @@ const PartyLedgerReportsPage = () => {
       <StateView
         loading={loadingReport}
         error={error}
-        isEmpty={!loadingReport && !error && Boolean(report) && (report.rows || []).length === 0}
+        isEmpty={
+          !loadingReport &&
+          !error &&
+          Boolean(report) &&
+          (report.rows || []).length === 0
+        }
         emptyMessage="No party ledger rows found for the selected filters."
       >
         {report ? (
           <Card className="space-y-5">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
               <div>
-                <h3 className="text-xl font-bold text-slate-900">{report.partner_name}</h3>
+                <h3 className="text-xl font-bold text-slate-900">
+                  {report.partner_name}
+                </h3>
                 <p className="mt-1 text-sm text-slate-500">
-                  {report.partner_type === "customer" ? "Customer" : "Supplier"} ledger
+                  {report.partner_type === "customer" ? "Customer" : "Supplier"}{" "}
+                  ledger
                 </p>
                 <p className="mt-1 text-sm text-slate-500">
-                  {(report.from_date || "Beginning") + " to " + (report.to_date || "Latest")}
+                  {(report.from_date || "Beginning") +
+                    " to " +
+                    (report.to_date || "Latest")}
                 </p>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-3">
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-right">
-                  <p className="text-xs uppercase tracking-wide text-slate-400">Credit</p>
+                  <p className="text-xs uppercase tracking-wide text-slate-400">
+                    Credit
+                  </p>
                   <p className="mt-1 text-lg font-bold text-emerald-700">
                     {formatDecimal(report.summary?.total_credit)}
                   </p>
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-right">
-                  <p className="text-xs uppercase tracking-wide text-slate-400">Debit</p>
+                  <p className="text-xs uppercase tracking-wide text-slate-400">
+                    Debit
+                  </p>
                   <p className="mt-1 text-lg font-bold text-rose-700">
                     {formatDecimal(report.summary?.total_debit)}
                   </p>
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-slate-900 px-4 py-3 text-right text-white">
-                  <p className="text-xs uppercase tracking-wide text-slate-300">Grand Total</p>
+                  <p className="text-xs uppercase tracking-wide text-slate-300">
+                    Grand Total
+                  </p>
                   <p className="mt-1 text-lg font-bold">
                     {formatDecimal(report.summary?.grand_total)}
                   </p>
@@ -309,11 +330,19 @@ const PartyLedgerReportsPage = () => {
                   <tbody className="divide-y divide-slate-100 bg-white">
                     {filteredRows.map((row, index) => (
                       <tr key={`${row.id}-${row.date}-${index}`}>
-                        <td className="px-4 py-3 text-slate-600">{index + 1}</td>
-                        <td className="px-4 py-3 font-semibold text-blue-700">{row.id}</td>
-                        <td className="px-4 py-3 text-slate-600">{row.document_type}</td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {index + 1}
+                        </td>
+                        <td className="px-4 py-3 font-semibold text-blue-700">
+                          {row.id}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {row.document_type}
+                        </td>
                         <td className="px-4 py-3 text-slate-600">{row.date}</td>
-                        <td className="px-4 py-3 text-slate-600">{row.remarks || "-"}</td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {row.remarks || "-"}
+                        </td>
                         <td className="px-4 py-3 text-right font-semibold text-emerald-700">
                           {formatDecimal(row.credit)}
                         </td>
@@ -337,14 +366,18 @@ const PartyLedgerReportsPage = () => {
                     key={item.label}
                     className="rounded-2xl border border-slate-200 bg-white px-4 py-4"
                   >
-                    <p className="text-xs uppercase tracking-wide text-slate-400">{item.label}</p>
+                    <p className="text-xs uppercase tracking-wide text-slate-400">
+                      {item.label}
+                    </p>
                     <p className="mt-2 text-lg font-bold text-slate-900">
                       {formatDecimal(item.amount)}
                     </p>
                   </div>
                 ))}
                 <div className="rounded-2xl border border-slate-900 bg-slate-900 px-4 py-4 text-white">
-                  <p className="text-xs uppercase tracking-wide text-slate-300">Grand Total</p>
+                  <p className="text-xs uppercase tracking-wide text-slate-300">
+                    Grand Total
+                  </p>
                   <p className="mt-2 text-lg font-bold">
                     {formatDecimal(report.summary?.grand_total)}
                   </p>

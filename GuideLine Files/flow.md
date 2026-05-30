@@ -1,4 +1,4 @@
-# Flow management — product & delivery Q&A
+# Flow management — product, delivery Q&A & Go To Market Strategies
 
 This document captures common questions about scaling, customization, isolation, and positioning. Answers reflect the current **CoreLedger / Sams traders** style architecture (tenant dimensions, role-based UI, shared Django + React deployment) unless noted otherwise.
 

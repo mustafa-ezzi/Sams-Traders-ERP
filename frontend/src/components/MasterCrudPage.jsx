@@ -114,11 +114,9 @@ const MasterCrudPage = ({ title, service }) => {
       <Card className="bg-[linear-gradient(135deg,rgba(255,255,255,0.92),rgba(240,248,255,0.96))]">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-           
             <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">
               {title}
             </h2>
-           
           </div>
           <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
             <input
@@ -135,7 +133,10 @@ const MasterCrudPage = ({ title, service }) => {
       </Card>
 
       <Card>
-        <form className="grid gap-4 md:grid-cols-[1fr_auto_auto]" onSubmit={onSubmit}>
+        <form
+          className="grid gap-4 md:grid-cols-[1fr_auto_auto]"
+          onSubmit={onSubmit}
+        >
           <FormInput
             label={`${singularTitle} Name`}
             required
@@ -185,13 +186,15 @@ const MasterCrudPage = ({ title, service }) => {
                     key={record.id}
                     className="border-t border-slate-100 bg-white/80 transition hover:bg-blue-50/50"
                   >
-                    <td className="px-5 py-4 font-medium text-slate-700">{record.name}</td>
+                    <td className="px-5 py-4 font-medium text-slate-700">
+                      {record.name}
+                    </td>
                     <td className="px-5 py-4 text-right">
                       <div className="flex justify-end gap-2">
                         <IconButton
                           icon="edit"
                           label={`Edit ${singularTitle}`}
-                        onClick={() => onEdit(record)}
+                          onClick={() => onEdit(record)}
                         />
                         <IconButton
                           icon="delete"
@@ -207,7 +210,9 @@ const MasterCrudPage = ({ title, service }) => {
           </div>
 
           <div className="flex flex-col gap-3 border-t border-slate-100 px-5 py-4 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-            <span className="text-center sm:text-left">{total} total records</span>
+            <span className="text-center sm:text-left">
+              {total} total records
+            </span>
             <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-end">
               <Button
                 variant="secondary"

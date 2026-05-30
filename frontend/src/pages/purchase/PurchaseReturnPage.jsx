@@ -20,7 +20,7 @@ const toNumber = (value) => {
 const extractErrorMessage = (error) => {
   const data = error?.response?.data;
 
-  if (!data) {  
+  if (!data) {
     return "Something went wrong";
   }
 
@@ -36,8 +36,8 @@ const extractErrorMessage = (error) => {
     return data.detail;
   }
 
-  const fieldEntry = Object.entries(data).find(([, value]) =>
-    typeof value === "string" || Array.isArray(value)
+  const fieldEntry = Object.entries(data).find(
+    ([, value]) => typeof value === "string" || Array.isArray(value),
   );
 
   if (fieldEntry) {
@@ -75,10 +75,11 @@ const PurchaseReturnPage = () => {
   const grossAmount = useMemo(
     () =>
       form.lines.reduce(
-        (sum, line) => sum + toNumber(line.returnQuantity) * toNumber(line.rate),
-        0
+        (sum, line) =>
+          sum + toNumber(line.returnQuantity) * toNumber(line.rate),
+        0,
       ),
-    [form.lines]
+    [form.lines],
   );
 
   const loadReturns = async (nextPage = page, nextSearch = search) => {
@@ -94,7 +95,9 @@ const PurchaseReturnPage = () => {
       setTotal(response.total || 0);
       setPage(response.page || nextPage);
     } catch (loadError) {
-      setError(extractErrorMessage(loadError) || "Failed to load purchase returns");
+      setError(
+        extractErrorMessage(loadError) || "Failed to load purchase returns",
+      );
     } finally {
       setLoading(false);
     }
@@ -102,7 +105,11 @@ const PurchaseReturnPage = () => {
 
   const loadSuppliers = async () => {
     try {
-      const response = await supplierService.list({ page: 1, limit: 100, search: "" });
+      const response = await supplierService.list({
+        page: 1,
+        limit: 100,
+        search: "",
+      });
       setSuppliers(response.data || []);
     } catch {
       toast.error("Failed to load suppliers");
@@ -132,7 +139,7 @@ const PurchaseReturnPage = () => {
     try {
       const details = await purchaseReturnService.getInvoiceLines(
         purchaseInvoiceId,
-        purchaseReturnId
+        purchaseReturnId,
       );
       setForm((current) => ({
         ...current,
@@ -151,7 +158,9 @@ const PurchaseReturnPage = () => {
           })) || [],
       }));
     } catch (loadError) {
-      toast.error(extractErrorMessage(loadError) || "Failed to load invoice lines");
+      toast.error(
+        extractErrorMessage(loadError) || "Failed to load invoice lines",
+      );
     }
   };
 
@@ -196,7 +205,10 @@ const PurchaseReturnPage = () => {
     setForm((current) => {
       const nextLines = [...current.lines];
       const maxReturnQuantity = toNumber(nextLines[index].maxReturnQuantity);
-      const normalizedValue = Math.min(Math.max(toNumber(value), 0), maxReturnQuantity);
+      const normalizedValue = Math.min(
+        Math.max(toNumber(value), 0),
+        maxReturnQuantity,
+      );
 
       nextLines[index] = {
         ...nextLines[index],
@@ -255,10 +267,14 @@ const PurchaseReturnPage = () => {
       const payload = buildPayload();
       if (editingId) {
         const response = await purchaseReturnService.update(editingId, payload);
-        toast.success(response.message || "Purchase return updated successfully");
+        toast.success(
+          response.message || "Purchase return updated successfully",
+        );
       } else {
         const response = await purchaseReturnService.create(payload);
-        toast.success(response.message || "Purchase return created successfully");
+        toast.success(
+          response.message || "Purchase return created successfully",
+        );
       }
       resetForm();
       await loadReturns(1, search);
@@ -281,10 +297,15 @@ const PurchaseReturnPage = () => {
         remarks: purchaseReturn.remarks || "",
         lines: [],
       });
-      await loadInvoiceLines(purchaseReturn.purchaseInvoiceId, purchaseReturn.id);
+      await loadInvoiceLines(
+        purchaseReturn.purchaseInvoiceId,
+        purchaseReturn.id,
+      );
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (editError) {
-      toast.error(extractErrorMessage(editError) || "Failed to load purchase return");
+      toast.error(
+        extractErrorMessage(editError) || "Failed to load purchase return",
+      );
     }
   };
 
@@ -298,7 +319,9 @@ const PurchaseReturnPage = () => {
       setDeleteId("");
       await loadReturns(page, search);
     } catch (deleteError) {
-      toast.error(extractErrorMessage(deleteError) || "Failed to delete purchase return");
+      toast.error(
+        extractErrorMessage(deleteError) || "Failed to delete purchase return",
+      );
     }
   };
 
@@ -310,7 +333,6 @@ const PurchaseReturnPage = () => {
             <h2 className="text-xl font-bold text-slate-900">
               {editingId ? "Edit Purchase Return" : "Create Purchase Return"}
             </h2>
-           
           </div>
           {editingId ? (
             <Button variant="secondary" onClick={resetForm}>
@@ -377,7 +399,9 @@ const PurchaseReturnPage = () => {
           <div className="overflow-hidden rounded-2xl border border-slate-200">
             <div
               className="grid gap-2 bg-indigo-50 px-4 py-3 text-xs font-bold uppercase tracking-widest text-slate-500"
-              style={{ gridTemplateColumns: "2fr 110px 110px 130px 90px 110px 120px" }}
+              style={{
+                gridTemplateColumns: "2fr 110px 110px 130px 90px 110px 120px",
+              }}
             >
               <span>Product</span>
               <span>Purchased Qty</span>
@@ -398,9 +422,14 @@ const PurchaseReturnPage = () => {
                   <div
                     key={line.purchaseInvoiceLineId}
                     className="grid items-center gap-2 py-3"
-                    style={{ gridTemplateColumns: "2fr 110px 110px 130px 90px 110px 120px" }}
+                    style={{
+                      gridTemplateColumns:
+                        "2fr 110px 110px 130px 90px 110px 120px",
+                    }}
                   >
-                    <div className="text-sm font-medium text-slate-800">{line.productName}</div>
+                    <div className="text-sm font-medium text-slate-800">
+                      {line.productName}
+                    </div>
                     <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-600">
                       {formatDecimal(line.purchasedQuantity)}
                     </div>
@@ -432,7 +461,9 @@ const PurchaseReturnPage = () => {
 
           <div className="flex justify-end border-t border-slate-200 pt-4">
             <div className="rounded-2xl border border-slate-200 bg-white px-5 py-3 min-w-[220px] text-right">
-              <p className="text-xs uppercase tracking-wide text-slate-400">Gross Return Amount</p>
+              <p className="text-xs uppercase tracking-wide text-slate-400">
+                Gross Return Amount
+              </p>
               <p className="mt-1 text-xl font-extrabold text-blue-600">
                 {formatDecimal(grossAmount)}
               </p>
@@ -441,7 +472,11 @@ const PurchaseReturnPage = () => {
 
           <div className="flex justify-end border-t border-slate-100 pt-4">
             <Button type="submit" disabled={submitting}>
-              {submitting ? "Saving..." : editingId ? "Update Purchase Return" : "Save Purchase Return"}
+              {submitting
+                ? "Saving..."
+                : editingId
+                  ? "Update Purchase Return"
+                  : "Save Purchase Return"}
             </Button>
           </div>
         </form>
@@ -450,7 +485,9 @@ const PurchaseReturnPage = () => {
       <Card className="space-y-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <h2 className="text-xl font-bold text-slate-900">Purchase Returns</h2>
+            <h2 className="text-xl font-bold text-slate-900">
+              Purchase Returns
+            </h2>
             <p className="mt-1 text-sm text-slate-500">
               Review, edit, and remove supplier return documents.
             </p>
@@ -498,7 +535,9 @@ const PurchaseReturnPage = () => {
                       <td className="px-4 py-3 font-semibold text-slate-900">
                         {record.return_number}
                       </td>
-                      <td className="px-4 py-3 text-slate-600">{record.date}</td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {record.date}
+                      </td>
                       <td className="px-4 py-3 text-slate-600">
                         {record.supplier?.business_name}
                       </td>
@@ -510,10 +549,16 @@ const PurchaseReturnPage = () => {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex gap-2">
-                          <Button variant="secondary" onClick={() => handleEdit(record.id)}>
+                          <Button
+                            variant="secondary"
+                            onClick={() => handleEdit(record.id)}
+                          >
                             Edit
                           </Button>
-                          <Button variant="danger" onClick={() => setDeleteId(record.id)}>
+                          <Button
+                            variant="danger"
+                            onClick={() => setDeleteId(record.id)}
+                          >
                             Delete
                           </Button>
                         </div>

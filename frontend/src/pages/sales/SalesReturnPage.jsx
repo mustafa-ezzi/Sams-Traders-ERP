@@ -36,8 +36,8 @@ const extractErrorMessage = (error) => {
     return data.detail;
   }
 
-  const fieldEntry = Object.entries(data).find(([, value]) =>
-    typeof value === "string" || Array.isArray(value)
+  const fieldEntry = Object.entries(data).find(
+    ([, value]) => typeof value === "string" || Array.isArray(value),
   );
 
   if (fieldEntry) {
@@ -75,10 +75,11 @@ const SalesReturnPage = () => {
   const grossAmount = useMemo(
     () =>
       form.lines.reduce(
-        (sum, line) => sum + toNumber(line.returnQuantity) * toNumber(line.rate),
-        0
+        (sum, line) =>
+          sum + toNumber(line.returnQuantity) * toNumber(line.rate),
+        0,
       ),
-    [form.lines]
+    [form.lines],
   );
 
   const loadReturns = async (nextPage = page, nextSearch = search) => {
@@ -94,7 +95,9 @@ const SalesReturnPage = () => {
       setTotal(response.total || 0);
       setPage(response.page || nextPage);
     } catch (loadError) {
-      setError(extractErrorMessage(loadError) || "Failed to load sales returns");
+      setError(
+        extractErrorMessage(loadError) || "Failed to load sales returns",
+      );
     } finally {
       setLoading(false);
     }
@@ -102,7 +105,11 @@ const SalesReturnPage = () => {
 
   const loadCustomers = async () => {
     try {
-      const response = await customerService.list({ page: 1, limit: 100, search: "" });
+      const response = await customerService.list({
+        page: 1,
+        limit: 100,
+        search: "",
+      });
       setCustomers(response.data || []);
     } catch {
       toast.error("Failed to load customers");
@@ -130,7 +137,10 @@ const SalesReturnPage = () => {
     }
 
     try {
-      const details = await salesReturnService.getInvoiceLines(salesInvoiceId, salesReturnId);
+      const details = await salesReturnService.getInvoiceLines(
+        salesInvoiceId,
+        salesReturnId,
+      );
       setForm((current) => ({
         ...current,
         lines:
@@ -147,7 +157,9 @@ const SalesReturnPage = () => {
           })) || [],
       }));
     } catch (loadError) {
-      toast.error(extractErrorMessage(loadError) || "Failed to load invoice lines");
+      toast.error(
+        extractErrorMessage(loadError) || "Failed to load invoice lines",
+      );
     }
   };
 
@@ -192,7 +204,10 @@ const SalesReturnPage = () => {
     setForm((current) => {
       const nextLines = [...current.lines];
       const maxReturnQuantity = toNumber(nextLines[index].maxReturnQuantity);
-      const normalizedValue = Math.min(Math.max(toNumber(value), 0), maxReturnQuantity);
+      const normalizedValue = Math.min(
+        Math.max(toNumber(value), 0),
+        maxReturnQuantity,
+      );
 
       nextLines[index] = {
         ...nextLines[index],
@@ -280,7 +295,9 @@ const SalesReturnPage = () => {
       await loadInvoiceLines(salesReturn.salesInvoiceId, salesReturn.id);
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (editError) {
-      toast.error(extractErrorMessage(editError) || "Failed to load sales return");
+      toast.error(
+        extractErrorMessage(editError) || "Failed to load sales return",
+      );
     }
   };
 
@@ -294,7 +311,9 @@ const SalesReturnPage = () => {
       setDeleteId("");
       await loadReturns(page, search);
     } catch (deleteError) {
-      toast.error(extractErrorMessage(deleteError) || "Failed to delete sales return");
+      toast.error(
+        extractErrorMessage(deleteError) || "Failed to delete sales return",
+      );
     }
   };
 
@@ -306,7 +325,6 @@ const SalesReturnPage = () => {
             <h2 className="text-xl font-bold text-slate-900">
               {editingId ? "Edit Sales Return" : "Create Sales Return"}
             </h2>
-          
           </div>
           {editingId ? (
             <Button variant="secondary" onClick={resetForm}>
@@ -373,7 +391,9 @@ const SalesReturnPage = () => {
           <div className="overflow-hidden rounded-2xl border border-slate-200">
             <div
               className="grid gap-2 bg-indigo-50 px-4 py-3 text-xs font-bold uppercase tracking-widest text-slate-500"
-              style={{ gridTemplateColumns: "2.2fr 130px 130px 90px 110px 120px" }}
+              style={{
+                gridTemplateColumns: "2.2fr 130px 130px 90px 110px 120px",
+              }}
             >
               <span>Product</span>
               <span>Sold Qty</span>
@@ -393,9 +413,13 @@ const SalesReturnPage = () => {
                   <div
                     key={line.salesInvoiceLineId}
                     className="grid items-center gap-2 py-3"
-                    style={{ gridTemplateColumns: "2.2fr 130px 130px 90px 110px 120px" }}
+                    style={{
+                      gridTemplateColumns: "2.2fr 130px 130px 90px 110px 120px",
+                    }}
                   >
-                    <div className="text-sm font-medium text-slate-800">{line.productName}</div>
+                    <div className="text-sm font-medium text-slate-800">
+                      {line.productName}
+                    </div>
                     <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-600">
                       {formatDecimal(line.soldQuantity)}
                     </div>
@@ -424,7 +448,9 @@ const SalesReturnPage = () => {
 
           <div className="flex justify-end border-t border-slate-200 pt-4">
             <div className="min-w-[220px] rounded-2xl border border-slate-200 bg-white px-5 py-3 text-right">
-              <p className="text-xs uppercase tracking-wide text-slate-400">Gross Return Amount</p>
+              <p className="text-xs uppercase tracking-wide text-slate-400">
+                Gross Return Amount
+              </p>
               <p className="mt-1 text-xl font-extrabold text-blue-600">
                 {formatDecimal(grossAmount)}
               </p>
@@ -433,7 +459,11 @@ const SalesReturnPage = () => {
 
           <div className="flex justify-end border-t border-slate-100 pt-4">
             <Button type="submit" disabled={submitting}>
-              {submitting ? "Saving..." : editingId ? "Update Sales Return" : "Save Sales Return"}
+              {submitting
+                ? "Saving..."
+                : editingId
+                  ? "Update Sales Return"
+                  : "Save Sales Return"}
             </Button>
           </div>
         </form>
@@ -490,7 +520,9 @@ const SalesReturnPage = () => {
                       <td className="px-4 py-3 font-semibold text-slate-900">
                         {record.return_number}
                       </td>
-                      <td className="px-4 py-3 text-slate-600">{record.date}</td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {record.date}
+                      </td>
                       <td className="px-4 py-3 text-slate-600">
                         {record.customer?.business_name}
                       </td>
@@ -502,10 +534,16 @@ const SalesReturnPage = () => {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex gap-2">
-                          <Button variant="secondary" onClick={() => handleEdit(record.id)}>
+                          <Button
+                            variant="secondary"
+                            onClick={() => handleEdit(record.id)}
+                          >
                             Edit
                           </Button>
-                          <Button variant="danger" onClick={() => setDeleteId(record.id)}>
+                          <Button
+                            variant="danger"
+                            onClick={() => setDeleteId(record.id)}
+                          >
                             Delete
                           </Button>
                         </div>

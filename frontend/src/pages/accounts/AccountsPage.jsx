@@ -95,7 +95,10 @@ const getNextChildCode = (parentAccount, allAccounts) => {
   if (childCodes.length > 0) {
     step = 10 ** Math.max(childCodeWidth - normalizedParentCode.length, 0);
     if (childCodeWidth === normalizedParentCode.length) {
-      step = Math.max(1, 10 ** Math.max(3 - Number(parentAccount.level || 1), 0));
+      step = Math.max(
+        1,
+        10 ** Math.max(3 - Number(parentAccount.level || 1), 0),
+      );
     }
     const baseCode =
       Number(normalizedParentCode) *
@@ -112,9 +115,10 @@ const getNextChildCode = (parentAccount, allAccounts) => {
     branchLimit = Number(normalizedParentCode) + 10;
   }
 
-  const nextValue = childCodes.length > 0
-    ? Math.max(...childCodes) + step
-    : Number(normalizedParentCode) + step;
+  const nextValue =
+    childCodes.length > 0
+      ? Math.max(...childCodes) + step
+      : Number(normalizedParentCode) + step;
 
   if (nextValue >= branchLimit) {
     return "";
@@ -141,33 +145,35 @@ const AccountsPage = () => {
   });
 
   const parentValue = form.watch("parent");
-  const flatAccounts = useMemo(() => flattenAccountTree(accountTree), [accountTree]);
+  const flatAccounts = useMemo(
+    () => flattenAccountTree(accountTree),
+    [accountTree],
+  );
   const parentOptions = useMemo(
-    () =>
-      flatAccounts.filter(
-        (account) => account.id !== editingId
-      ),
-    [editingId, flatAccounts]
+    () => flatAccounts.filter((account) => account.id !== editingId),
+    [editingId, flatAccounts],
   );
   const generatedChildCode = useMemo(() => {
     if (editingId || !parentValue) {
       return "";
     }
-    const parentAccount = flatAccounts.find((account) => account.id === parentValue);
+    const parentAccount = flatAccounts.find(
+      (account) => account.id === parentValue,
+    );
     return getNextChildCode(parentAccount, flatAccounts);
   }, [editingId, flatAccounts, parentValue]);
   const selectedParentAccount = useMemo(
     () => flatAccounts.find((account) => account.id === parentValue) || null,
-    [flatAccounts, parentValue]
+    [flatAccounts, parentValue],
   );
 
   const buildTree = (accounts) => {
     const map = {};
     const roots = [];
 
-    accounts.forEach(a => map[a.id] = { ...a, children: [] });
+    accounts.forEach((a) => (map[a.id] = { ...a, children: [] }));
 
-    accounts.forEach(a => {
+    accounts.forEach((a) => {
       if (a.parent) {
         map[a.parent]?.children.push(map[a.id]);
       } else {
@@ -184,26 +190,31 @@ const AccountsPage = () => {
         .join(" ")
         .toLowerCase()
         .includes(search.toLowerCase());
-      const matchesGroup = groupFilter ? account.account_group === groupFilter : true;
-      const matchesType = typeFilter ? account.account_type === typeFilter : true;
+      const matchesGroup = groupFilter
+        ? account.account_group === groupFilter
+        : true;
+      const matchesType = typeFilter
+        ? account.account_type === typeFilter
+        : true;
       return matchesSearch && matchesGroup && matchesType;
     });
   }, [flatAccounts, groupFilter, search, typeFilter]);
 
-
   const loadAccounts = async () => {
-  setLoading(true);
-  setError("");
+    setLoading(true);
+    setError("");
 
-  try {
-    const response = await accountService.list();
-    setAccountTree(Array.isArray(response) ? response : response.data);
-  } catch (err) {
-    setError(err?.response?.data?.message || "Failed to load chart of accounts");
-  } finally {
-    setLoading(false);
-  }
-};
+    try {
+      const response = await accountService.list();
+      setAccountTree(Array.isArray(response) ? response : response.data);
+    } catch (err) {
+      setError(
+        err?.response?.data?.message || "Failed to load chart of accounts",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     loadAccounts();
@@ -214,7 +225,9 @@ const AccountsPage = () => {
       return;
     }
 
-    const parentAccount = flatAccounts.find((account) => account.id === parentValue);
+    const parentAccount = flatAccounts.find(
+      (account) => account.id === parentValue,
+    );
     if (!parentAccount) {
       return;
     }
@@ -324,253 +337,327 @@ const AccountsPage = () => {
 
       {activeTab === "coa" ? (
         <>
-      <ConfirmModal
-        open={Boolean(deleteId)}
-        title="Delete Account"
-        description="This will soft delete the account if it has no active references. Continue?"
-        onCancel={() => setDeleteId("")}
-        onConfirm={async () => {
-          const selected = deleteId;
-          setDeleteId("");
-          await handleDelete(selected);
-        }}
-      />
-
-      <Card className="bg-[linear-gradient(135deg,rgba(255,255,255,0.92),rgba(237,247,255,0.98))]">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">
-              Chart of Accounts
-            </h2>
-            <p className="mt-2 max-w-2xl text-sm text-slate-500">
-              Manage the dimension chart with hierarchy, posting rules, and group-based account behavior.
-            </p>
-          </div>
-          <div className="grid w-full gap-2 sm:grid-cols-2 lg:w-auto">
-            <input
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
-              placeholder="Search code or name"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
-            <select
-              className={selectClassName}
-              value={groupFilter}
-              onChange={(event) => setGroupFilter(event.target.value)}
-            >
-              <option value="">All groups</option>
-              <option value="ASSET">Asset</option>
-              <option value="LIABILITY">Liability</option>
-              <option value="EQUITY">Equity</option>
-              <option value="REVENUE">Revenue</option>
-              <option value="COGS">COGS</option>
-              <option value="EXPENSE">Expense</option>
-              <option value="TAX">Tax</option>
-              <option value="PURCHASE">Purchase</option>
-            </select>
-            <select
-              className={selectClassName}
-              value={typeFilter}
-              onChange={(event) => setTypeFilter(event.target.value)}
-            >
-              <option value="">All types</option>
-              <option value="GENERAL">General</option>
-              <option value="BANK">Bank</option>
-              <option value="CASH">Cash</option>
-              <option value="RECEIVABLE">Receivable</option>
-              <option value="PAYABLE">Payable</option>
-              <option value="INVENTORY">Inventory</option>
-              <option value="REVENUE">Revenue</option>
-              <option value="COGS">COGS</option>
-            </select>
-          </div>
-        </div>
-      </Card>
-
-      <Card>
-        <form className="grid gap-4 xl:grid-cols-4" onSubmit={onSubmit}>
-          <FormInput
-            label="Code"
-            required
-            placeholder={parentValue ? "Auto generated from parent" : "1000"}
-            error={form.formState.errors.code?.message}
-            readOnly={Boolean(editingId) || Boolean(parentValue)}
-            className={Boolean(editingId) || Boolean(parentValue) ? "bg-slate-100" : ""}
-            {...form.register("code")}
-          />
-          <FormInput
-            label="Name"
-            required
-            placeholder="Account name"
-            error={form.formState.errors.name?.message}
-            {...form.register("name")}
-          />
-          <div className="space-y-2">
-            <label className="block text-sm font-semibold text-slate-700">Parent</label>
-            <select className={selectClassName} {...form.register("parent")}>
-              <option value="">No parent</option>
-              {parentOptions.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {formatAccountLabel(account)}
-                </option>
-              ))}
-            </select>
-            {selectedParentAccount?.is_postable ? (
-              <p className="text-xs text-amber-700">
-                This parent is currently postable. It will be converted into a header account when you save a child under it.
-              </p>
-            ) : null}
-            {parentValue && generatedChildCode ? (
-              <p className="text-xs text-slate-500">
-                Next child code: <span className="font-semibold text-slate-700">{generatedChildCode}</span>
-              </p>
-            ) : null}
-          </div>
-          <FormInput
-            label="Sort Order"
-            required
-            type="number"
-            error={form.formState.errors.sort_order?.message}
-            {...form.register("sort_order")}
+          <ConfirmModal
+            open={Boolean(deleteId)}
+            title="Delete Account"
+            description="This will soft delete the account if it has no active references. Continue?"
+            onCancel={() => setDeleteId("")}
+            onConfirm={async () => {
+              const selected = deleteId;
+              setDeleteId("");
+              await handleDelete(selected);
+            }}
           />
 
-          <div className="space-y-2">
-            <label className="block text-sm font-semibold text-slate-700">Group</label>
-            <select className={selectClassName} {...form.register("account_group")}>
-              <option value="ASSET">Asset</option>
-              <option value="LIABILITY">Liability</option>
-              <option value="EQUITY">Equity</option>
-              <option value="REVENUE">Revenue</option>
-              <option value="COGS">COGS</option>
-              <option value="EXPENSE">Expense</option>
-              <option value="TAX">Tax</option>
-              <option value="PURCHASE">Purchase</option>
-            </select>
-          </div>
-          <div className="space-y-2">
-            <label className="block text-sm font-semibold text-slate-700">Account Type</label>
-            <select className={selectClassName} {...form.register("account_type")}>
-              <option value="GENERAL">General</option>
-              <option value="BANK">Bank</option>
-              <option value="CASH">Cash</option>
-              <option value="RECEIVABLE">Receivable</option>
-              <option value="PAYABLE">Payable</option>
-              <option value="INVENTORY">Inventory</option>
-              <option value="REVENUE">Revenue</option>
-              <option value="COGS">COGS</option>
-            </select>
-          </div>
-          <div className="space-y-2">
-            <label className="block text-sm font-semibold text-slate-700">Nature</label>
-            <select className={selectClassName} {...form.register("account_nature")}>
-              <option value="DEBIT">Debit</option>
-              <option value="CREDIT">Credit</option>
-            </select>
-          </div>
-          <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm font-medium text-slate-700">
-            <input type="checkbox" {...form.register("is_postable")} />
-            Postable account
-          </label>
-          <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm font-medium text-slate-700">
-            <input type="checkbox" {...form.register("is_active")} />
-            Active account
-          </label>
-          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-600 xl:col-span-4">
-            Account type is now explicit. Bank Payments and Bank Receipts only accept COAs marked as
-            `BANK`, so set bank accounts here instead of relying on account names.
-          </div>
+          <Card className="bg-[linear-gradient(135deg,rgba(255,255,255,0.92),rgba(237,247,255,0.98))]">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">
+                  Chart of Accounts
+                </h2>
+                <p className="mt-2 max-w-2xl text-sm text-slate-500">
+                  Manage the dimension chart with hierarchy, posting rules, and
+                  group-based account behavior.
+                </p>
+              </div>
+              <div className="grid w-full gap-2 sm:grid-cols-2 lg:w-auto">
+                <input
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
+                  placeholder="Search code or name"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                />
+                <select
+                  className={selectClassName}
+                  value={groupFilter}
+                  onChange={(event) => setGroupFilter(event.target.value)}
+                >
+                  <option value="">All groups</option>
+                  <option value="ASSET">Asset</option>
+                  <option value="LIABILITY">Liability</option>
+                  <option value="EQUITY">Equity</option>
+                  <option value="REVENUE">Revenue</option>
+                  <option value="COGS">COGS</option>
+                  <option value="EXPENSE">Expense</option>
+                  <option value="TAX">Tax</option>
+                  <option value="PURCHASE">Purchase</option>
+                </select>
+                <select
+                  className={selectClassName}
+                  value={typeFilter}
+                  onChange={(event) => setTypeFilter(event.target.value)}
+                >
+                  <option value="">All types</option>
+                  <option value="GENERAL">General</option>
+                  <option value="BANK">Bank</option>
+                  <option value="CASH">Cash</option>
+                  <option value="RECEIVABLE">Receivable</option>
+                  <option value="PAYABLE">Payable</option>
+                  <option value="INVENTORY">Inventory</option>
+                  <option value="REVENUE">Revenue</option>
+                  <option value="COGS">COGS</option>
+                </select>
+              </div>
+            </div>
+          </Card>
 
-          <div className="flex flex-col gap-3 sm:flex-row xl:col-span-4">
-            <Button type="submit" className="w-full sm:w-auto">
-              {editingId ? "Update" : "Create"}
-            </Button>
-            {editingId && (
-              <Button type="button" variant="secondary" className="w-full sm:w-auto" onClick={resetForm}>
-                Cancel
-              </Button>
-            )}
-          </div>
-        </form>
-      </Card>
+          <Card>
+            <form className="grid gap-4 xl:grid-cols-4" onSubmit={onSubmit}>
+              <FormInput
+                label="Code"
+                required
+                placeholder={
+                  parentValue ? "Auto generated from parent" : "1000"
+                }
+                error={form.formState.errors.code?.message}
+                readOnly={Boolean(editingId) || Boolean(parentValue)}
+                className={
+                  Boolean(editingId) || Boolean(parentValue)
+                    ? "bg-slate-100"
+                    : ""
+                }
+                {...form.register("code")}
+              />
+              <FormInput
+                label="Name"
+                required
+                placeholder="Account name"
+                error={form.formState.errors.name?.message}
+                {...form.register("name")}
+              />
+              <div className="space-y-2">
+                <label className="block text-sm font-semibold text-slate-700">
+                  Parent
+                </label>
+                <select
+                  className={selectClassName}
+                  {...form.register("parent")}
+                >
+                  <option value="">No parent</option>
+                  {parentOptions.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {formatAccountLabel(account)}
+                    </option>
+                  ))}
+                </select>
+                {selectedParentAccount?.is_postable ? (
+                  <p className="text-xs text-amber-700">
+                    This parent is currently postable. It will be converted into
+                    a header account when you save a child under it.
+                  </p>
+                ) : null}
+                {parentValue && generatedChildCode ? (
+                  <p className="text-xs text-slate-500">
+                    Next child code:{" "}
+                    <span className="font-semibold text-slate-700">
+                      {generatedChildCode}
+                    </span>
+                  </p>
+                ) : null}
+              </div>
+              <FormInput
+                label="Sort Order"
+                required
+                type="number"
+                error={form.formState.errors.sort_order?.message}
+                {...form.register("sort_order")}
+              />
 
-      <StateView
-        loading={loading}
-        error={error}
-        isEmpty={!loading && !error && visibleAccounts.length === 0}
-        emptyMessage="No accounts found"
-      >
-        <Card className="overflow-hidden p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1100px] text-sm">
-              <thead className="bg-[linear-gradient(180deg,#edf4ff,#e1ebff)] text-left">
-                <tr>
-                  <th className="px-5 py-4 font-bold text-slate-700">Code</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Name</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Parent</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Group</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Type</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Nature</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Level</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Postable</th>
-                  <th className="px-5 py-4 text-right font-bold text-slate-700">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleAccounts.map((account) => (
-                  <tr
-                    key={account.id}
-                    className="border-t border-slate-100 bg-white/80 transition hover:bg-blue-50/50"
+              <div className="space-y-2">
+                <label className="block text-sm font-semibold text-slate-700">
+                  Group
+                </label>
+                <select
+                  className={selectClassName}
+                  {...form.register("account_group")}
+                >
+                  <option value="ASSET">Asset</option>
+                  <option value="LIABILITY">Liability</option>
+                  <option value="EQUITY">Equity</option>
+                  <option value="REVENUE">Revenue</option>
+                  <option value="COGS">COGS</option>
+                  <option value="EXPENSE">Expense</option>
+                  <option value="TAX">Tax</option>
+                  <option value="PURCHASE">Purchase</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <label className="block text-sm font-semibold text-slate-700">
+                  Account Type
+                </label>
+                <select
+                  className={selectClassName}
+                  {...form.register("account_type")}
+                >
+                  <option value="GENERAL">General</option>
+                  <option value="BANK">Bank</option>
+                  <option value="CASH">Cash</option>
+                  <option value="RECEIVABLE">Receivable</option>
+                  <option value="PAYABLE">Payable</option>
+                  <option value="INVENTORY">Inventory</option>
+                  <option value="REVENUE">Revenue</option>
+                  <option value="COGS">COGS</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <label className="block text-sm font-semibold text-slate-700">
+                  Nature
+                </label>
+                <select
+                  className={selectClassName}
+                  {...form.register("account_nature")}
+                >
+                  <option value="DEBIT">Debit</option>
+                  <option value="CREDIT">Credit</option>
+                </select>
+              </div>
+              <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm font-medium text-slate-700">
+                <input type="checkbox" {...form.register("is_postable")} />
+                Postable account
+              </label>
+              <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm font-medium text-slate-700">
+                <input type="checkbox" {...form.register("is_active")} />
+                Active account
+              </label>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-600 xl:col-span-4">
+                Account type is now explicit. Bank Payments and Bank Receipts
+                only accept COAs marked as `BANK`, so set bank accounts here
+                instead of relying on account names.
+              </div>
+
+              <div className="flex flex-col gap-3 sm:flex-row xl:col-span-4">
+                <Button type="submit" className="w-full sm:w-auto">
+                  {editingId ? "Update" : "Create"}
+                </Button>
+                {editingId && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="w-full sm:w-auto"
+                    onClick={resetForm}
                   >
-                    <td className="px-5 py-4 font-semibold text-slate-800">{account.code}</td>
-                    <td className="px-5 py-4 text-slate-700">
-                      <span style={{ paddingLeft: `${(account.depth || 0) * 16}px` }}>
-                        {account.name}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4 text-slate-600">
-                      {account.parent
-                        ? flatAccounts.find((item) => item.id === account.parent)?.code || "-"
-                        : "-"}
-                    </td>
-                    <td className="px-5 py-4 text-slate-600">{account.account_group}</td>
-                    <td className="px-5 py-4 text-slate-600">{account.account_type}</td>
-                    <td className="px-5 py-4 text-slate-600">{account.account_nature}</td>
-                    <td className="px-5 py-4 text-slate-600">{account.level}</td>
-                    <td className="px-5 py-4 text-slate-600">{account.is_postable ? "Yes" : "No"}</td>
-                    <td className="px-5 py-4 text-right">
-                      <span className="inline-flex gap-2">
-                        <IconButton
-                          icon="edit"
-                          label="Edit account"
-                          onClick={() => {
-                            setEditingId(account.id);
-                            form.reset({
-                              code: account.code,
-                              name: account.name,
-                              parent: account.parent || "",
-                              account_group: account.account_group,
-                              account_type: account.account_type || "GENERAL",
-                              account_nature: account.account_nature,
-                              is_postable: account.is_postable,
-                              is_active: account.is_active,
-                              sort_order: account.sort_order,
-                            });
-                          }}
-                        />
-                        <IconButton
-                          icon="delete"
-                          label="Delete account"
-                          onClick={() => setDeleteId(account.id)}
-                        />
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      </StateView>
+                    Cancel
+                  </Button>
+                )}
+              </div>
+            </form>
+          </Card>
+
+          <StateView
+            loading={loading}
+            error={error}
+            isEmpty={!loading && !error && visibleAccounts.length === 0}
+            emptyMessage="No accounts found"
+          >
+            <Card className="overflow-hidden p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[1100px] text-sm">
+                  <thead className="bg-[linear-gradient(180deg,#edf4ff,#e1ebff)] text-left">
+                    <tr>
+                      <th className="px-5 py-4 font-bold text-slate-700">
+                        Code
+                      </th>
+                      <th className="px-5 py-4 font-bold text-slate-700">
+                        Name
+                      </th>
+                      <th className="px-5 py-4 font-bold text-slate-700">
+                        Parent
+                      </th>
+                      <th className="px-5 py-4 font-bold text-slate-700">
+                        Group
+                      </th>
+                      <th className="px-5 py-4 font-bold text-slate-700">
+                        Type
+                      </th>
+                      <th className="px-5 py-4 font-bold text-slate-700">
+                        Nature
+                      </th>
+                      <th className="px-5 py-4 font-bold text-slate-700">
+                        Level
+                      </th>
+                      <th className="px-5 py-4 font-bold text-slate-700">
+                        Postable
+                      </th>
+                      <th className="px-5 py-4 text-right font-bold text-slate-700">
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleAccounts.map((account) => (
+                      <tr
+                        key={account.id}
+                        className="border-t border-slate-100 bg-white/80 transition hover:bg-blue-50/50"
+                      >
+                        <td className="px-5 py-4 font-semibold text-slate-800">
+                          {account.code}
+                        </td>
+                        <td className="px-5 py-4 text-slate-700">
+                          <span
+                            style={{
+                              paddingLeft: `${(account.depth || 0) * 16}px`,
+                            }}
+                          >
+                            {account.name}
+                          </span>
+                        </td>
+                        <td className="px-5 py-4 text-slate-600">
+                          {account.parent
+                            ? flatAccounts.find(
+                                (item) => item.id === account.parent,
+                              )?.code || "-"
+                            : "-"}
+                        </td>
+                        <td className="px-5 py-4 text-slate-600">
+                          {account.account_group}
+                        </td>
+                        <td className="px-5 py-4 text-slate-600">
+                          {account.account_type}
+                        </td>
+                        <td className="px-5 py-4 text-slate-600">
+                          {account.account_nature}
+                        </td>
+                        <td className="px-5 py-4 text-slate-600">
+                          {account.level}
+                        </td>
+                        <td className="px-5 py-4 text-slate-600">
+                          {account.is_postable ? "Yes" : "No"}
+                        </td>
+                        <td className="px-5 py-4 text-right">
+                          <span className="inline-flex gap-2">
+                            <IconButton
+                              icon="edit"
+                              label="Edit account"
+                              onClick={() => {
+                                setEditingId(account.id);
+                                form.reset({
+                                  code: account.code,
+                                  name: account.name,
+                                  parent: account.parent || "",
+                                  account_group: account.account_group,
+                                  account_type:
+                                    account.account_type || "GENERAL",
+                                  account_nature: account.account_nature,
+                                  is_postable: account.is_postable,
+                                  is_active: account.is_active,
+                                  sort_order: account.sort_order,
+                                });
+                              }}
+                            />
+                            <IconButton
+                              icon="delete"
+                              label="Delete account"
+                              onClick={() => setDeleteId(account.id)}
+                            />
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          </StateView>
         </>
       ) : null}
     </section>

@@ -12,7 +12,11 @@ import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import FormInput from "../../components/ui/FormInput";
 import { useToast } from "../../context/ToastContext";
-import { flattenAccountTree, formatAccountLabel, getPostableInventoryAccounts } from "../../utils/accounts";
+import {
+  flattenAccountTree,
+  formatAccountLabel,
+  getPostableInventoryAccounts,
+} from "../../utils/accounts";
 
 const schema = z.object({
   name: z.string().trim().min(1, "Name is required"),
@@ -24,9 +28,18 @@ const schema = z.object({
   useCalculatedCost: z.boolean(),
   confirmedUnitCost: z.coerce.number().min(0),
   unit: z.union([z.string().uuid("Unit must be a valid UUID"), z.literal("")]),
-  inventory_account: z.union([z.string().uuid("Inventory account must be a valid UUID"), z.literal("")]),
-  cogs_account: z.union([z.string().uuid("COGS account must be a valid UUID"), z.literal("")]),
-  revenue_account: z.union([z.string().uuid("Revenue account must be a valid UUID"), z.literal("")]),
+  inventory_account: z.union([
+    z.string().uuid("Inventory account must be a valid UUID"),
+    z.literal(""),
+  ]),
+  cogs_account: z.union([
+    z.string().uuid("COGS account must be a valid UUID"),
+    z.literal(""),
+  ]),
+  revenue_account: z.union([
+    z.string().uuid("Revenue account must be a valid UUID"),
+    z.literal(""),
+  ]),
 });
 
 const defaultValues = {
@@ -82,7 +95,16 @@ const mapProductMaterials = (product) =>
         quantity: Number(material.quantity),
         rate: Number(material.rate),
       }))
-    : [{ component_type: "RAW_MATERIAL", raw_material_id: "", component_product_id: "", uom_id: "", quantity: 1, rate: 0 }];
+    : [
+        {
+          component_type: "RAW_MATERIAL",
+          raw_material_id: "",
+          component_product_id: "",
+          uom_id: "",
+          quantity: 1,
+          rate: 0,
+        },
+      ];
 
 const ProductFormPage = () => {
   const { id } = useParams();
@@ -98,7 +120,14 @@ const ProductFormPage = () => {
   const [revenueAccounts, setRevenueAccounts] = useState([]);
   const [finishedGoodOptions, setFinishedGoodOptions] = useState([]);
   const [materialRows, setMaterialRows] = useState([
-    { component_type: "RAW_MATERIAL", raw_material_id: "", component_product_id: "", uom_id: "", quantity: 1, rate: 0 },
+    {
+      component_type: "RAW_MATERIAL",
+      raw_material_id: "",
+      component_product_id: "",
+      uom_id: "",
+      quantity: 1,
+      rate: 0,
+    },
   ]);
 
   const form = useForm({ resolver: zodResolver(schema), defaultValues });
@@ -109,7 +138,13 @@ const ProductFormPage = () => {
     const loadSetup = async () => {
       setLoading(true);
       try {
-        const [rawMaterialRes, unitRes, accountRes, productOptionsRes, product] = await Promise.all([
+        const [
+          rawMaterialRes,
+          unitRes,
+          accountRes,
+          productOptionsRes,
+          product,
+        ] = await Promise.all([
           rawMaterialService.list({ page: 1, limit: 100, search: "" }),
           unitService.list({ page: 1, limit: 100, search: "" }),
           accountService.list(),
@@ -122,17 +157,24 @@ const ProductFormPage = () => {
         setFinishedGoodOptions(
           (productOptionsRes.data || []).filter(
             (item) =>
-              (item.product_type === "FINISHED_GOOD" || item.product_type === "READY_MADE") &&
-              String(item.id) !== String(id)
-          )
+              (item.product_type === "FINISHED_GOOD" ||
+                item.product_type === "READY_MADE") &&
+              String(item.id) !== String(id),
+          ),
         );
         setUnitOptions(unitRes.data || []);
         setInventoryAccounts(getPostableInventoryAccounts(flatAccounts));
         setCogsAccounts(
-          flatAccounts.filter((account) => account.account_group === "COGS" && account.is_postable)
+          flatAccounts.filter(
+            (account) =>
+              account.account_group === "COGS" && account.is_postable,
+          ),
         );
         setRevenueAccounts(
-          flatAccounts.filter((account) => account.account_group === "REVENUE" && account.is_postable)
+          flatAccounts.filter(
+            (account) =>
+              account.account_group === "REVENUE" && account.is_postable,
+          ),
         );
 
         if (product) {
@@ -140,7 +182,9 @@ const ProductFormPage = () => {
           setMaterialRows(mapProductMaterials(product));
         }
       } catch (loadError) {
-        toast.error(loadError?.response?.data?.message || "Failed to load product form");
+        toast.error(
+          loadError?.response?.data?.message || "Failed to load product form",
+        );
       } finally {
         setLoading(false);
       }
@@ -153,12 +197,12 @@ const ProductFormPage = () => {
     .map((row) =>
       row.component_type === "RAW_MATERIAL"
         ? `RAW_MATERIAL:${row.raw_material_id}`
-        : `FINISHED_GOOD:${row.component_product_id}`
+        : `FINISHED_GOOD:${row.component_product_id}`,
     )
     .filter((key) => !key.endsWith(":"));
   const materialCost = materialRows.reduce(
     (sum, row) => sum + (Number(row.quantity) || 0) * (Number(row.rate) || 0),
-    0
+    0,
   );
   const autoAssemblyCost =
     materialCost +
@@ -171,19 +215,30 @@ const ProductFormPage = () => {
       setSaving(true);
       const sanitizedRows = materialRows
         .filter((row) =>
-          row.component_type === "RAW_MATERIAL" ? row.raw_material_id : row.component_product_id
+          row.component_type === "RAW_MATERIAL"
+            ? row.raw_material_id
+            : row.component_product_id,
         )
         .map((row) => ({
           component_type: row.component_type,
-          raw_material_id: row.component_type === "RAW_MATERIAL" ? row.raw_material_id : null,
-          component_product_id: row.component_type === "FINISHED_GOOD" ? row.component_product_id : null,
+          raw_material_id:
+            row.component_type === "RAW_MATERIAL" ? row.raw_material_id : null,
+          component_product_id:
+            row.component_type === "FINISHED_GOOD"
+              ? row.component_product_id
+              : null,
           uom_id: row.uom_id || null,
           quantity: Number(row.quantity),
           rate: Number(row.rate),
         }));
 
-      if (values.productType === "ASSEMBLY_PRODUCT" && sanitizedRows.length === 0) {
-        toast.error("Assembly product must include at least one component line.");
+      if (
+        values.productType === "ASSEMBLY_PRODUCT" &&
+        sanitizedRows.length === 0
+      ) {
+        toast.error(
+          "Assembly product must include at least one component line.",
+        );
         return;
       }
 
@@ -200,7 +255,8 @@ const ProductFormPage = () => {
         inventory_account: values.inventory_account || null,
         cogs_account: values.cogs_account || null,
         revenue_account: values.revenue_account || null,
-        materials: values.productType === "ASSEMBLY_PRODUCT" ? sanitizedRows : [],
+        materials:
+          values.productType === "ASSEMBLY_PRODUCT" ? sanitizedRows : [],
       };
 
       if (isEditing) {
@@ -212,7 +268,11 @@ const ProductFormPage = () => {
       }
       navigate("/products");
     } catch (submitError) {
-      toast.error(submitError?.response?.data?.message || submitError.message || "Save failed");
+      toast.error(
+        submitError?.response?.data?.message ||
+          submitError.message ||
+          "Save failed",
+      );
     } finally {
       setSaving(false);
     }
@@ -226,9 +286,12 @@ const ProductFormPage = () => {
             <h2 className="text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">
               {isEditing ? "Edit Product" : "Create Product"}
             </h2>
-           
           </div>
-          <Button type="button" variant="secondary" onClick={() => navigate("/products")}>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => navigate("/products")}
+          >
             Back to Products
           </Button>
         </div>
@@ -236,7 +299,9 @@ const ProductFormPage = () => {
 
       <Card>
         {loading ? (
-          <div className="py-10 text-center text-sm text-slate-500">Loading product form...</div>
+          <div className="py-10 text-center text-sm text-slate-500">
+            Loading product form...
+          </div>
         ) : (
           <form className="grid gap-4 xl:grid-cols-3" onSubmit={onSubmit}>
             <FormInput
@@ -248,8 +313,13 @@ const ProductFormPage = () => {
             />
 
             <div className="space-y-2">
-              <label className="block text-sm font-semibold text-slate-700">Product Type</label>
-              <select className={selectClassName} {...form.register("productType")}>
+              <label className="block text-sm font-semibold text-slate-700">
+                Product Type
+              </label>
+              <select
+                className={selectClassName}
+                {...form.register("productType")}
+              >
                 <option value="FINISHED_GOOD">Finished Good</option>
                 <option value="ASSEMBLY_PRODUCT">Assembly Product</option>
               </select>
@@ -267,7 +337,9 @@ const ProductFormPage = () => {
             )}
 
             <div className="space-y-2">
-              <label className="block text-sm font-semibold text-slate-700">Unit</label>
+              <label className="block text-sm font-semibold text-slate-700">
+                Unit
+              </label>
               <select className={selectClassName} {...form.register("unit")}>
                 <option value="">Select unit</option>
                 {unitOptions.map((item) => (
@@ -277,13 +349,20 @@ const ProductFormPage = () => {
                 ))}
               </select>
               {form.formState.errors.unit?.message ? (
-                <p className="text-sm text-rose-500">{form.formState.errors.unit.message}</p>
+                <p className="text-sm text-rose-500">
+                  {form.formState.errors.unit.message}
+                </p>
               ) : null}
             </div>
 
             <div className="space-y-2">
-              <label className="block text-sm font-semibold text-slate-700">Inventory Account</label>
-              <select className={selectClassName} {...form.register("inventory_account")}>
+              <label className="block text-sm font-semibold text-slate-700">
+                Inventory Account
+              </label>
+              <select
+                className={selectClassName}
+                {...form.register("inventory_account")}
+              >
                 <option value="">Select inventory account</option>
                 {inventoryAccounts.map((item) => (
                   <option key={item.id} value={item.id}>
@@ -294,8 +373,13 @@ const ProductFormPage = () => {
             </div>
 
             <div className="space-y-2">
-              <label className="block text-sm font-semibold text-slate-700">COGS Account</label>
-              <select className={selectClassName} {...form.register("cogs_account")}>
+              <label className="block text-sm font-semibold text-slate-700">
+                COGS Account
+              </label>
+              <select
+                className={selectClassName}
+                {...form.register("cogs_account")}
+              >
                 <option value="">Select COGS account</option>
                 {cogsAccounts.map((item) => (
                   <option key={item.id} value={item.id}>
@@ -306,8 +390,13 @@ const ProductFormPage = () => {
             </div>
 
             <div className="space-y-2">
-              <label className="block text-sm font-semibold text-slate-700">Revenue Account</label>
-              <select className={selectClassName} {...form.register("revenue_account")}>
+              <label className="block text-sm font-semibold text-slate-700">
+                Revenue Account
+              </label>
+              <select
+                className={selectClassName}
+                {...form.register("revenue_account")}
+              >
                 <option value="">Select revenue account</option>
                 {revenueAccounts.map((item) => (
                   <option key={item.id} value={item.id}>
@@ -320,7 +409,9 @@ const ProductFormPage = () => {
             <div className="rounded-[26px] border border-slate-200 bg-slate-50/80 p-4 xl:col-span-3">
               <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <p className="text-sm font-bold text-slate-800">Material Lines</p>
+                  <p className="text-sm font-bold text-slate-800">
+                    Material Lines
+                  </p>
                   <p className="text-sm text-slate-500">
                     Server-side amount and net amount calculation stays intact.
                   </p>
@@ -332,7 +423,14 @@ const ProductFormPage = () => {
                     onClick={() =>
                       setMaterialRows((prev) => [
                         ...prev,
-                        { component_type: "RAW_MATERIAL", raw_material_id: "", component_product_id: "", uom_id: "", quantity: 1, rate: 0 },
+                        {
+                          component_type: "RAW_MATERIAL",
+                          raw_material_id: "",
+                          component_product_id: "",
+                          uom_id: "",
+                          quantity: 1,
+                          rate: 0,
+                        },
                       ])
                     }
                   >
@@ -348,9 +446,16 @@ const ProductFormPage = () => {
               ) : (
                 <div className="space-y-3">
                   {materialRows.map((row, index) => {
-                    const selectedMaterial = rawMaterialOptions.find((material) => material.id === row.raw_material_id);
-                    const selectedFinishedGood = finishedGoodOptions.find((product) => product.id === row.component_product_id);
-                    const selectedOption = row.component_type === "RAW_MATERIAL" ? selectedMaterial : selectedFinishedGood;
+                    const selectedMaterial = rawMaterialOptions.find(
+                      (material) => material.id === row.raw_material_id,
+                    );
+                    const selectedFinishedGood = finishedGoodOptions.find(
+                      (product) => product.id === row.component_product_id,
+                    );
+                    const selectedOption =
+                      row.component_type === "RAW_MATERIAL"
+                        ? selectedMaterial
+                        : selectedFinishedGood;
                     const currentComponentKey =
                       row.component_type === "RAW_MATERIAL"
                         ? `RAW_MATERIAL:${row.raw_material_id}`
@@ -361,7 +466,9 @@ const ProductFormPage = () => {
                         className="grid gap-3 rounded-2xl border border-white bg-white p-4 shadow-sm md:grid-cols-[0.9fr_1.3fr_1fr_1fr_1fr_1fr_auto]"
                       >
                         <div className="space-y-2">
-                          <label className="text-xs font-semibold text-slate-600">Component Type</label>
+                          <label className="text-xs font-semibold text-slate-600">
+                            Component Type
+                          </label>
                           <select
                             className={selectClassName}
                             value={row.component_type}
@@ -378,8 +485,8 @@ const ProductFormPage = () => {
                                         uom_id: "",
                                         rate: 0,
                                       }
-                                    : item
-                                )
+                                    : item,
+                                ),
                               );
                             }}
                           >
@@ -390,61 +497,102 @@ const ProductFormPage = () => {
 
                         <div className="space-y-2">
                           <label className="text-xs font-semibold text-slate-600">
-                            {row.component_type === "FINISHED_GOOD" ? "Finished Good" : "Raw Material"}
+                            {row.component_type === "FINISHED_GOOD"
+                              ? "Finished Good"
+                              : "Raw Material"}
                           </label>
                           <select
                             className={selectClassName}
-                            value={row.component_type === "FINISHED_GOOD" ? row.component_product_id : row.raw_material_id}
+                            value={
+                              row.component_type === "FINISHED_GOOD"
+                                ? row.component_product_id
+                                : row.raw_material_id
+                            }
                             onChange={(event) => {
                               const itemId = event.target.value;
                               const selected =
                                 row.component_type === "FINISHED_GOOD"
-                                  ? finishedGoodOptions.find((item) => item.id === itemId)
-                                  : rawMaterialOptions.find((item) => item.id === itemId);
+                                  ? finishedGoodOptions.find(
+                                      (item) => item.id === itemId,
+                                    )
+                                  : rawMaterialOptions.find(
+                                      (item) => item.id === itemId,
+                                    );
                               setMaterialRows((prev) =>
                                 prev.map((item, i) =>
                                   i === index
                                     ? {
                                         ...item,
-                                        raw_material_id: row.component_type === "RAW_MATERIAL" ? itemId : "",
-                                        component_product_id: row.component_type === "FINISHED_GOOD" ? itemId : "",
-                                        uom_id: selected?.unit || selected?.purchase_unit || item.uom_id || "",
+                                        raw_material_id:
+                                          row.component_type === "RAW_MATERIAL"
+                                            ? itemId
+                                            : "",
+                                        component_product_id:
+                                          row.component_type === "FINISHED_GOOD"
+                                            ? itemId
+                                            : "",
+                                        uom_id:
+                                          selected?.unit ||
+                                          selected?.purchase_unit ||
+                                          item.uom_id ||
+                                          "",
                                         rate: selected
-                                          ? Number(row.component_type === "FINISHED_GOOD" ? selected.net_amount : selected.purchase_price)
+                                          ? Number(
+                                              row.component_type ===
+                                                "FINISHED_GOOD"
+                                                ? selected.net_amount
+                                                : selected.purchase_price,
+                                            )
                                           : 0,
                                       }
-                                    : item
-                                )
+                                    : item,
+                                ),
                               );
                             }}
                           >
                             <option value="">
-                              Select {row.component_type === "FINISHED_GOOD" ? "finished good" : "raw material"}
+                              Select{" "}
+                              {row.component_type === "FINISHED_GOOD"
+                                ? "finished good"
+                                : "raw material"}
                             </option>
-                            {(row.component_type === "FINISHED_GOOD" ? finishedGoodOptions : rawMaterialOptions).map((option) => {
+                            {(row.component_type === "FINISHED_GOOD"
+                              ? finishedGoodOptions
+                              : rawMaterialOptions
+                            ).map((option) => {
                               const optionKey = `${row.component_type}:${option.id}`;
                               return (
-                              <option
-                                key={option.id}
-                                value={option.id}
-                                disabled={selectedComponentKeys.includes(optionKey) && optionKey !== currentComponentKey}
-                              >
-                                {row.component_type === "FINISHED_GOOD"
-                                  ? `${option.name} | Cost: ${formatDecimal(option.net_amount)}`
-                                  : getRawMaterialOptionLabel(option)}
-                              </option>
-                            )})}
+                                <option
+                                  key={option.id}
+                                  value={option.id}
+                                  disabled={
+                                    selectedComponentKeys.includes(optionKey) &&
+                                    optionKey !== currentComponentKey
+                                  }
+                                >
+                                  {row.component_type === "FINISHED_GOOD"
+                                    ? `${option.name} | Cost: ${formatDecimal(option.net_amount)}`
+                                    : getRawMaterialOptionLabel(option)}
+                                </option>
+                              );
+                            })}
                           </select>
                         </div>
 
                         <div className="space-y-2">
-                          <label className="text-xs font-semibold text-slate-600">UOM</label>
+                          <label className="text-xs font-semibold text-slate-600">
+                            UOM
+                          </label>
                           <select
                             className={selectClassName}
                             value={row.uom_id}
                             onChange={(event) =>
                               setMaterialRows((prev) =>
-                                prev.map((item, i) => (i === index ? { ...item, uom_id: event.target.value } : item))
+                                prev.map((item, i) =>
+                                  i === index
+                                    ? { ...item, uom_id: event.target.value }
+                                    : item,
+                                ),
                               )
                             }
                           >
@@ -458,7 +606,9 @@ const ProductFormPage = () => {
                         </div>
 
                         <div className="space-y-2">
-                          <label className="text-xs font-semibold text-slate-600">Quantity (Units)</label>
+                          <label className="text-xs font-semibold text-slate-600">
+                            Quantity (Units)
+                          </label>
                           <input
                             type="number"
                             step="any"
@@ -469,15 +619,24 @@ const ProductFormPage = () => {
                             onChange={(event) =>
                               setMaterialRows((prev) =>
                                 prev.map((item, i) =>
-                                  i === index ? { ...item, quantity: Number(event.target.value || 0) } : item
-                                )
+                                  i === index
+                                    ? {
+                                        ...item,
+                                        quantity: Number(
+                                          event.target.value || 0,
+                                        ),
+                                      }
+                                    : item,
+                                ),
                               )
                             }
                           />
                         </div>
 
                         <div className="space-y-2">
-                          <label className="text-xs font-semibold text-slate-600">Rate</label>
+                          <label className="text-xs font-semibold text-slate-600">
+                            Rate
+                          </label>
                           <input
                             type="number"
                             step="0.01"
@@ -488,8 +647,13 @@ const ProductFormPage = () => {
                             onChange={(event) =>
                               setMaterialRows((prev) =>
                                 prev.map((item, i) =>
-                                  i === index ? { ...item, rate: Number(event.target.value || 0) } : item
-                                )
+                                  i === index
+                                    ? {
+                                        ...item,
+                                        rate: Number(event.target.value || 0),
+                                      }
+                                    : item,
+                                ),
                               )
                             }
                           />
@@ -503,12 +667,17 @@ const ProductFormPage = () => {
                         </div>
 
                         <div className="space-y-2">
-                          <label className="text-xs font-semibold text-slate-600">Cost</label>
+                          <label className="text-xs font-semibold text-slate-600">
+                            Cost
+                          </label>
                           <input
                             type="text"
                             readOnly
                             className="w-full cursor-not-allowed rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm text-slate-700 outline-none"
-                            value={formatDecimal((Number(row.quantity) || 0) * (Number(row.rate) || 0))}
+                            value={formatDecimal(
+                              (Number(row.quantity) || 0) *
+                                (Number(row.rate) || 0),
+                            )}
                           />
                         </div>
 
@@ -519,8 +688,17 @@ const ProductFormPage = () => {
                           onClick={() =>
                             setMaterialRows((prev) =>
                               prev.length === 1
-                                ? [{ component_type: "RAW_MATERIAL", raw_material_id: "", component_product_id: "", uom_id: "", quantity: 1, rate: 0 }]
-                                : prev.filter((_, i) => i !== index)
+                                ? [
+                                    {
+                                      component_type: "RAW_MATERIAL",
+                                      raw_material_id: "",
+                                      component_product_id: "",
+                                      uom_id: "",
+                                      quantity: 1,
+                                      rate: 0,
+                                    },
+                                  ]
+                                : prev.filter((_, i) => i !== index),
                             )
                           }
                         >
@@ -558,11 +736,15 @@ const ProductFormPage = () => {
                       />
                       <div className="rounded-2xl border border-emerald-300 bg-white/90 px-4 py-3">
                         <label className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-900">
-                          <input type="checkbox" {...form.register("useCalculatedCost")} />
+                          <input
+                            type="checkbox"
+                            {...form.register("useCalculatedCost")}
+                          />
                           Use calculated cost
                         </label>
                         <p className="mt-2 text-xs text-emerald-800">
-                          Apply the BOM-based cost automatically for this assembly product.
+                          Apply the BOM-based cost automatically for this
+                          assembly product.
                         </p>
                       </div>
                     </div>
@@ -574,7 +756,9 @@ const ProductFormPage = () => {
                           required
                           type="number"
                           step="0.01"
-                          error={form.formState.errors.confirmedUnitCost?.message}
+                          error={
+                            form.formState.errors.confirmedUnitCost?.message
+                          }
                           {...form.register("confirmedUnitCost")}
                         />
                       </div>
@@ -590,7 +774,8 @@ const ProductFormPage = () => {
                         </p>
                       </div>
                       <p className="max-w-md text-sm text-emerald-900">
-                        This total combines component cost, moulding, labour, and packaging for one unit.
+                        This total combines component cost, moulding, labour,
+                        and packaging for one unit.
                       </p>
                     </div>
                   </div>
@@ -599,10 +784,19 @@ const ProductFormPage = () => {
             </div>
 
             <div className="flex flex-col gap-3 sm:flex-row xl:col-span-3">
-              <Button className="w-full sm:w-fit" type="submit" disabled={saving}>
+              <Button
+                className="w-full sm:w-fit"
+                type="submit"
+                disabled={saving}
+              >
                 {saving ? "Saving..." : isEditing ? "Update" : "Create"}
               </Button>
-              <Button type="button" variant="secondary" className="w-full sm:w-auto" onClick={() => navigate("/products")}>
+              <Button
+                type="button"
+                variant="secondary"
+                className="w-full sm:w-auto"
+                onClick={() => navigate("/products")}
+              >
                 Cancel
               </Button>
             </div>

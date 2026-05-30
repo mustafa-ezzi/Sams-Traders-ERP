@@ -3,7 +3,7 @@ import Card from "./ui/Card";
 const StateView = ({ loading, error, isEmpty, emptyMessage, children }) => {
   if (loading) {
     return (
-      <Card className="flex min-h-32 items-center justify-center text-sm font-medium text-slate-500">
+      <Card className="flex min-h-32 items-center justify-center text-sm font-medium text-slate-500 dark:text-slate-400">
         Loading data...
       </Card>
     );
@@ -11,7 +11,7 @@ const StateView = ({ loading, error, isEmpty, emptyMessage, children }) => {
 
   if (error) {
     return (
-      <Card className="border-rose-200 bg-rose-50/90 text-sm font-medium text-rose-700">
+      <Card className="border-rose-200 bg-rose-50/90 text-sm font-medium text-rose-700 dark:border-rose-800 dark:bg-rose-950/50 dark:text-rose-300">
         {error}
       </Card>
     );
@@ -19,7 +19,7 @@ const StateView = ({ loading, error, isEmpty, emptyMessage, children }) => {
 
   if (isEmpty) {
     return (
-      <Card className="flex min-h-32 items-center justify-center text-sm font-medium text-slate-500">
+      <Card className="flex min-h-32 items-center justify-center text-sm font-medium text-slate-500 dark:text-slate-400">
         {emptyMessage}
       </Card>
     );

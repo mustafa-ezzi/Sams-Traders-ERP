@@ -84,7 +84,10 @@ const TenantStaffPage = () => {
           setSaving(false);
           return;
         }
-        await tenantStaffService.create({ ...payload, password: form.password });
+        await tenantStaffService.create({
+          ...payload,
+          password: form.password,
+        });
         toast.success("Staff user created");
       }
       reset();
@@ -108,7 +111,9 @@ const TenantStaffPage = () => {
       email: row.email || "",
       password: "",
       tenant_role: row.tenant_role || "",
-      ui_permissions: Array.isArray(row.ui_permissions) ? [...row.ui_permissions] : [],
+      ui_permissions: Array.isArray(row.ui_permissions)
+        ? [...row.ui_permissions]
+        : [],
     });
   };
 
@@ -130,7 +135,8 @@ const TenantStaffPage = () => {
       <Card>
         <h2 className="text-xl font-bold text-slate-900">Staff access</h2>
         <p className="mt-1 text-sm text-slate-500">
-          Create users for your organization with module access. Dimensions and Support are not available to staff accounts.
+          Create users for your organization with module access. Dimensions and
+          Support are not available to staff accounts.
         </p>
       </Card>
 
@@ -141,37 +147,49 @@ const TenantStaffPage = () => {
               label="Name (login)"
               required
               value={form.username}
-              onChange={(e) => setForm((p) => ({ ...p, username: e.target.value }))}
+              onChange={(e) =>
+                setForm((p) => ({ ...p, username: e.target.value }))
+              }
             />
             <FormInput
               label="Email"
               required
               type="email"
               value={form.email}
-              onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
+              onChange={(e) =>
+                setForm((p) => ({ ...p, email: e.target.value }))
+              }
             />
             <FormInput
               label="User role"
               required
               placeholder="e.g. Warehouse caretaker"
               value={form.tenant_role}
-              onChange={(e) => setForm((p) => ({ ...p, tenant_role: e.target.value }))}
+              onChange={(e) =>
+                setForm((p) => ({ ...p, tenant_role: e.target.value }))
+              }
             />
             <FormInput
               label={editingId ? "New password (optional)" : "Password"}
               required={!editingId}
               type="password"
               value={form.password}
-              onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
+              onChange={(e) =>
+                setForm((p) => ({ ...p, password: e.target.value }))
+              }
             />
           </div>
 
           <div>
-            <p className="mb-2 text-sm font-semibold text-slate-800">Module permissions</p>
+            <p className="mb-2 text-sm font-semibold text-slate-800">
+              Module permissions
+            </p>
             <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
               {TENANT_UI_PERMISSION_GROUPS.map((group) => (
                 <div key={group.label}>
-                  <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">{group.label}</p>
+                  <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">
+                    {group.label}
+                  </p>
                   <div className="flex flex-wrap gap-2">
                     {group.keys.map((k) => (
                       <label
@@ -214,7 +232,12 @@ const TenantStaffPage = () => {
         onConfirm={onDelete}
       />
 
-      <StateView loading={loading} error={error} isEmpty={!loading && !error && rows.length === 0} emptyMessage="No staff users yet.">
+      <StateView
+        loading={loading}
+        error={error}
+        isEmpty={!loading && !error && rows.length === 0}
+        emptyMessage="No staff users yet."
+      >
         <Card className="overflow-hidden p-0">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-sm">
@@ -230,14 +253,28 @@ const TenantStaffPage = () => {
               <tbody className="divide-y divide-slate-100">
                 {rows.map((row) => (
                   <tr key={row.id}>
-                    <td className="px-4 py-3 font-semibold text-slate-800">{row.username}</td>
+                    <td className="px-4 py-3 font-semibold text-slate-800">
+                      {row.username}
+                    </td>
                     <td className="px-4 py-3 text-slate-600">{row.email}</td>
-                    <td className="px-4 py-3 text-slate-600">{row.tenant_role || "—"}</td>
-                    <td className="px-4 py-3 text-slate-600">{(row.ui_permissions || []).length} selected</td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {row.tenant_role || "—"}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {(row.ui_permissions || []).length} selected
+                    </td>
                     <td className="px-4 py-3 text-right">
                       <span className="inline-flex gap-1">
-                        <IconButton icon="edit" label="Edit" onClick={() => onEdit(row)} />
-                        <IconButton icon="delete" label="Delete" onClick={() => setDeleteId(row.id)} />
+                        <IconButton
+                          icon="edit"
+                          label="Edit"
+                          onClick={() => onEdit(row)}
+                        />
+                        <IconButton
+                          icon="delete"
+                          label="Delete"
+                          onClick={() => setDeleteId(row.id)}
+                        />
                       </span>
                     </td>
                   </tr>

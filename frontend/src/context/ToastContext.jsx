@@ -30,8 +30,8 @@ export const ToastProvider = ({ children }) => {
             key={toast.id}
             className={`rounded-lg border px-3 py-2 text-sm shadow-sm backdrop-blur-sm ${
               toast.type === "success"
-                ? "border-emerald-200 bg-emerald-50/90 text-emerald-700"
-                : "border-red-200 bg-red-50/90 text-red-700"
+                ? "border-emerald-200 bg-emerald-50/90 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300"
+                : "border-red-200 bg-red-50/90 text-red-700 dark:border-red-800 dark:bg-red-950/70 dark:text-red-300"
             }`}
           >
             {toast.message}
@@ -49,4 +49,3 @@ export const useToast = () => {
   }
   return context;
 };
-

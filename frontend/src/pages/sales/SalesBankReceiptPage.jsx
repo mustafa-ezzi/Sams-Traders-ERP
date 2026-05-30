@@ -47,8 +47,8 @@ const extractErrorMessage = (error) => {
     return data.detail;
   }
 
-  const fieldEntry = Object.entries(data).find(([, value]) =>
-    typeof value === "string" || Array.isArray(value)
+  const fieldEntry = Object.entries(data).find(
+    ([, value]) => typeof value === "string" || Array.isArray(value),
   );
 
   if (fieldEntry) {
@@ -77,8 +77,10 @@ const SalesBankReceiptPage = () => {
   const limit = 10;
 
   const selectedInvoice = useMemo(
-    () => invoiceOptions.find((invoice) => invoice.id === form.salesInvoiceId) || null,
-    [form.salesInvoiceId, invoiceOptions]
+    () =>
+      invoiceOptions.find((invoice) => invoice.id === form.salesInvoiceId) ||
+      null,
+    [form.salesInvoiceId, invoiceOptions],
   );
 
   const loadReceipts = async (nextPage = page, nextSearch = search) => {
@@ -94,7 +96,9 @@ const SalesBankReceiptPage = () => {
       setTotal(response.total || 0);
       setPage(response.page || nextPage);
     } catch (loadError) {
-      setError(extractErrorMessage(loadError) || "Failed to load sales bank receipts");
+      setError(
+        extractErrorMessage(loadError) || "Failed to load sales bank receipts",
+      );
     } finally {
       setLoading(false);
     }
@@ -110,14 +114,16 @@ const SalesBankReceiptPage = () => {
       setCustomers(customerResponse.data || []);
 
       const flatAccounts = flattenAccountTree(
-        Array.isArray(accountsResponse) ? accountsResponse : accountsResponse.data || []
+        Array.isArray(accountsResponse)
+          ? accountsResponse
+          : accountsResponse.data || [],
       );
       const bankTypeAccounts = flatAccounts.filter(
         (account) =>
           account.is_postable &&
           account.account_group === "ASSET" &&
           account.is_active &&
-          account.account_type === "BANK"
+          account.account_type === "BANK",
       );
       setBankAccounts(bankTypeAccounts);
     } catch {
@@ -132,10 +138,15 @@ const SalesBankReceiptPage = () => {
     }
 
     try {
-      const options = await salesBankReceiptService.getInvoiceOptions(customerId, receiptId);
+      const options = await salesBankReceiptService.getInvoiceOptions(
+        customerId,
+        receiptId,
+      );
       setInvoiceOptions(options);
     } catch (loadError) {
-      toast.error(extractErrorMessage(loadError) || "Failed to load sales invoices");
+      toast.error(
+        extractErrorMessage(loadError) || "Failed to load sales invoices",
+      );
     }
   };
 
@@ -206,7 +217,10 @@ const SalesBankReceiptPage = () => {
       toast.error("Receipt amount must be greater than zero");
       return false;
     }
-    if (selectedInvoice && toNumber(form.amount) > toNumber(selectedInvoice.balance_amount)) {
+    if (
+      selectedInvoice &&
+      toNumber(form.amount) > toNumber(selectedInvoice.balance_amount)
+    ) {
       toast.error("Receipt amount cannot exceed the invoice balance");
       return false;
     }
@@ -223,11 +237,18 @@ const SalesBankReceiptPage = () => {
     try {
       const payload = buildPayload();
       if (editingId) {
-        const response = await salesBankReceiptService.update(editingId, payload);
-        toast.success(response.message || "Sales bank receipt updated successfully");
+        const response = await salesBankReceiptService.update(
+          editingId,
+          payload,
+        );
+        toast.success(
+          response.message || "Sales bank receipt updated successfully",
+        );
       } else {
         const response = await salesBankReceiptService.create(payload);
-        toast.success(response.message || "Sales bank receipt created successfully");
+        toast.success(
+          response.message || "Sales bank receipt created successfully",
+        );
       }
       resetForm();
       await loadReceipts(1, search);
@@ -253,21 +274,28 @@ const SalesBankReceiptPage = () => {
       });
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (editError) {
-      toast.error(extractErrorMessage(editError) || "Failed to load sales bank receipt");
+      toast.error(
+        extractErrorMessage(editError) || "Failed to load sales bank receipt",
+      );
     }
   };
 
   const confirmDelete = async () => {
     try {
       const response = await salesBankReceiptService.remove(deleteId);
-      toast.success(response.message || "Sales bank receipt deleted successfully");
+      toast.success(
+        response.message || "Sales bank receipt deleted successfully",
+      );
       if (editingId === deleteId) {
         resetForm();
       }
       setDeleteId("");
       await loadReceipts(page, search);
     } catch (deleteError) {
-      toast.error(extractErrorMessage(deleteError) || "Failed to delete sales bank receipt");
+      toast.error(
+        extractErrorMessage(deleteError) ||
+          "Failed to delete sales bank receipt",
+      );
     }
   };
 
@@ -279,7 +307,6 @@ const SalesBankReceiptPage = () => {
             <h2 className="text-xl font-bold text-slate-900">
               {editingId ? "Edit Bank Receipt" : "Create Bank Receipt"}
             </h2>
-           
           </div>
           {editingId ? (
             <Button variant="secondary" onClick={resetForm}>
@@ -318,7 +345,8 @@ const SalesBankReceiptPage = () => {
 
             <div className="space-y-1">
               <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Selected Customer's Invoice <span className="text-rose-500">*</span>
+                Selected Customer's Invoice{" "}
+                <span className="text-rose-500">*</span>
               </label>
               <select
                 className={selectClassName}
@@ -329,7 +357,8 @@ const SalesBankReceiptPage = () => {
                 <option value="">Select Sales Invoice</option>
                 {invoiceOptions.map((invoice) => (
                   <option key={invoice.id} value={invoice.id}>
-                    {invoice.invoice_number} | Balance {formatDecimal(invoice.balance_amount)}
+                    {invoice.invoice_number} | Balance{" "}
+                    {formatDecimal(invoice.balance_amount)}
                   </option>
                 ))}
               </select>
@@ -373,25 +402,33 @@ const SalesBankReceiptPage = () => {
 
           <div className="grid gap-3 grid-cols-1 md:grid-cols-4">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-              <p className="text-xs uppercase tracking-wide text-slate-400">Invoice Net</p>
+              <p className="text-xs uppercase tracking-wide text-slate-400">
+                Invoice Net
+              </p>
               <p className="mt-1 text-lg font-bold text-slate-800">
                 {formatDecimal(selectedInvoice?.net_amount || 0)}
               </p>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-              <p className="text-xs uppercase tracking-wide text-slate-400">Returned</p>
+              <p className="text-xs uppercase tracking-wide text-slate-400">
+                Returned
+              </p>
               <p className="mt-1 text-lg font-bold text-slate-800">
                 {formatDecimal(selectedInvoice?.returned_amount || 0)}
               </p>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-              <p className="text-xs uppercase tracking-wide text-slate-400">Already Received</p>
+              <p className="text-xs uppercase tracking-wide text-slate-400">
+                Already Received
+              </p>
               <p className="mt-1 text-lg font-bold text-slate-800">
                 {formatDecimal(selectedInvoice?.received_amount || 0)}
               </p>
             </div>
             <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-4">
-              <p className="text-xs uppercase tracking-wide text-blue-500">Invoice Balance</p>
+              <p className="text-xs uppercase tracking-wide text-blue-500">
+                Invoice Balance
+              </p>
               <p className="mt-1 text-xl font-extrabold text-blue-700">
                 {formatDecimal(selectedInvoice?.balance_amount || 0)}
               </p>
@@ -400,7 +437,11 @@ const SalesBankReceiptPage = () => {
 
           <div className="flex justify-end border-t border-slate-100 pt-4">
             <Button type="submit" disabled={submitting}>
-              {submitting ? "Saving..." : editingId ? "Update Bank Receipt" : "Save Bank Receipt"}
+              {submitting
+                ? "Saving..."
+                : editingId
+                  ? "Update Bank Receipt"
+                  : "Save Bank Receipt"}
             </Button>
           </div>
         </form>
@@ -459,7 +500,9 @@ const SalesBankReceiptPage = () => {
                       <td className="px-4 py-3 font-semibold text-slate-900">
                         {record.receipt_number}
                       </td>
-                      <td className="px-4 py-3 text-slate-600">{record.date}</td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {record.date}
+                      </td>
                       <td className="px-4 py-3 text-slate-600">
                         {record.customer?.business_name}
                       </td>
@@ -467,7 +510,8 @@ const SalesBankReceiptPage = () => {
                         {record.sales_invoice?.invoice_number}
                       </td>
                       <td className="px-4 py-3 text-slate-600">
-                        {record.bank_account?.code} - {record.bank_account?.name}
+                        {record.bank_account?.code} -{" "}
+                        {record.bank_account?.name}
                       </td>
                       <td className="px-4 py-3 font-semibold text-slate-800">
                         {formatDecimal(record.amount)}
@@ -477,10 +521,16 @@ const SalesBankReceiptPage = () => {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex gap-2">
-                          <Button variant="secondary" onClick={() => handleEdit(record.id)}>
+                          <Button
+                            variant="secondary"
+                            onClick={() => handleEdit(record.id)}
+                          >
                             Edit
                           </Button>
-                          <Button variant="danger" onClick={() => setDeleteId(record.id)}>
+                          <Button
+                            variant="danger"
+                            onClick={() => setDeleteId(record.id)}
+                          >
                             Delete
                           </Button>
                         </div>

@@ -186,6 +186,7 @@ class ProductMaterial(BaseModel):
     COMPONENT_TYPE_CHOICES = [
         ("RAW_MATERIAL", "Raw Material"),
         ("FINISHED_GOOD", "Finished Good"),
+        ("ASSEMBLY_PRODUCT", "Assembly Product"),
     ]
 
     product = models.ForeignKey(

@@ -50,21 +50,40 @@ const AdminInquiriesPage = () => {
                 <tr>
                   <th className="px-5 py-4 font-bold text-slate-700">User</th>
                   <th className="px-5 py-4 font-bold text-slate-700">Tenant</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Subject</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Message</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Admin Reply</th>
+                  <th className="px-5 py-4 font-bold text-slate-700">
+                    Subject
+                  </th>
+                  <th className="px-5 py-4 font-bold text-slate-700">
+                    Message
+                  </th>
+                  <th className="px-5 py-4 font-bold text-slate-700">
+                    Admin Reply
+                  </th>
                   <th className="px-5 py-4 font-bold text-slate-700">Status</th>
-                  <th className="px-5 py-4 text-right font-bold text-slate-700">Action</th>
+                  <th className="px-5 py-4 text-right font-bold text-slate-700">
+                    Action
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((row) => (
-                  <tr key={row.id} className="border-t border-slate-100 bg-white align-top">
-                    <td className="px-5 py-4 font-semibold text-slate-800">{row.user_name}</td>
-                    <td className="px-5 py-4 text-slate-700">{row.tenant_id}</td>
+                  <tr
+                    key={row.id}
+                    className="border-t border-slate-100 bg-white align-top"
+                  >
+                    <td className="px-5 py-4 font-semibold text-slate-800">
+                      {row.user_name}
+                    </td>
+                    <td className="px-5 py-4 text-slate-700">
+                      {row.tenant_id}
+                    </td>
                     <td className="px-5 py-4 text-slate-700">{row.subject}</td>
-                    <td className="max-w-[360px] px-5 py-4 text-slate-700">{row.message}</td>
-                    <td className="max-w-[360px] px-5 py-4 text-slate-700">{row.admin_reply || "-"}</td>
+                    <td className="max-w-[360px] px-5 py-4 text-slate-700">
+                      {row.message}
+                    </td>
+                    <td className="max-w-[360px] px-5 py-4 text-slate-700">
+                      {row.admin_reply || "-"}
+                    </td>
                     <td className="px-5 py-4 text-slate-700">{row.status}</td>
                     <td className="px-5 py-4 text-right">
                       {row.status === "OPEN" ? (
@@ -77,7 +96,9 @@ const AdminInquiriesPage = () => {
                                   rows={3}
                                   label=""
                                   value={replyText}
-                                  onChange={(event) => setReplyText(event.target.value)}
+                                  onChange={(event) =>
+                                    setReplyText(event.target.value)
+                                  }
                                 />
                               </div>
                               <div className="flex gap-2">
@@ -97,8 +118,13 @@ const AdminInquiriesPage = () => {
                                       return;
                                     }
                                     try {
-                                      await adminInquiryService.reply(row.id, replyText.trim());
-                                      toast.success("Inquiry replied and closed");
+                                      await adminInquiryService.reply(
+                                        row.id,
+                                        replyText.trim(),
+                                      );
+                                      toast.success(
+                                        "Inquiry replied and closed",
+                                      );
                                       setReplyingId("");
                                       setReplyText("");
                                       await loadRows();
@@ -139,4 +165,3 @@ const AdminInquiriesPage = () => {
 };
 
 export default AdminInquiriesPage;
-

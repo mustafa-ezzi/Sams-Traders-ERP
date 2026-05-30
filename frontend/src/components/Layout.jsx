@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { useTheme } from "../context/ThemeContext";
 import Button from "./ui/Button";
 import dimensionService from "../api/services/dimensionService";
 
@@ -8,9 +9,15 @@ import dimensionService from "../api/services/dimensionService";
    SVG ICON PRIMITIVE
 ───────────────────────────────────────────────────────────────── */
 const Icon = ({ children, className = "" }) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-    strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
-    className={className}>
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+  >
     {children}
   </svg>
 );
@@ -19,22 +26,132 @@ const Icon = ({ children, className = "" }) => (
    ICONS
 ───────────────────────────────────────────────────────────────── */
 const icons = {
-  dashboard: <Icon className="h-4 w-4"><path d="M3 13.5 12 4l9 9.5" /><path d="M5 11.5V20h14v-8.5" /></Icon>,
-  raw: <Icon className="h-4 w-4"><path d="M5 12h14" /><path d="M7 7h10v10H7z" /></Icon>,
-  products: <Icon className="h-4 w-4"><path d="M4 7.5 12 3l8 4.5-8 4.5L4 7.5Z" /><path d="M4 7.5V16.5L12 21l8-4.5V7.5" /><path d="M12 12v9" /></Icon>,
-  warehouse: <Icon className="h-4 w-4"><path d="M3 21h18" /><path d="M5 21V8l7-4 7 4v13" /><path d="M9 21v-6h6v6" /></Icon>,
-  stock: <Icon className="h-4 w-4"><path d="M12 3v18" /><path d="m7 8 5-5 5 5" /><path d="M5 21h14" /></Icon>,
-  masters: <Icon className="h-4 w-4"><path d="M12 3 4 7v10l8 4 8-4V7l-8-4Z" /><path d="M4 7l8 4 8-4" /><path d="M12 11v10" /></Icon>,
-  parties: <Icon className="h-4 w-4"><path d="M16 20v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="10" cy="7" r="4" /><path d="M20 8v6" /><path d="M17 11h6" /></Icon>,
-  accounts: <Icon className="h-4 w-4"><path d="M4 6h16" /><path d="M4 12h16" /><path d="M4 18h16" /><circle cx="7" cy="6" r="1.2" /><circle cx="12" cy="12" r="1.2" /><circle cx="17" cy="18" r="1.2" /></Icon>,
-  reports: <Icon className="h-4 w-4"><path d="M5 19V5" /><path d="M10 19V9" /><path d="M15 19v-6" /><path d="M20 19V7" /></Icon>,
-  users: <Icon className="h-4 w-4"><path d="M16 20v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="10" cy="7" r="4" /><path d="M20 8v6" /><path d="M17 11h6" /></Icon>,
-  support: <Icon className="h-4 w-4"><path d="M21 11.5a8.5 8.5 0 1 1-3.45-6.85" /><path d="M9 9h.01M12 9h.01M15 9h.01" /><path d="M8 14h8" /></Icon>,
-  chevron: <Icon className="h-3 w-3"><path d="m9 18 6-6-6-6" /></Icon>,
-  menu: <Icon className="h-4 w-4"><path d="M4 7h16M4 12h16M4 17h16" /></Icon>,
-  close: <Icon className="h-4 w-4"><path d="M6 6l12 12M18 6 6 18" /></Icon>,
-  bell: <Icon className="h-4 w-4"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></Icon>,
-  check: <svg className="h-2.5 w-2.5" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 6l3 3 5-5" /></svg>,
+  dashboard: (
+    <Icon className="h-4 w-4">
+      <path d="M3 13.5 12 4l9 9.5" />
+      <path d="M5 11.5V20h14v-8.5" />
+    </Icon>
+  ),
+  raw: (
+    <Icon className="h-4 w-4">
+      <path d="M5 12h14" />
+      <path d="M7 7h10v10H7z" />
+    </Icon>
+  ),
+  products: (
+    <Icon className="h-4 w-4">
+      <path d="M4 7.5 12 3l8 4.5-8 4.5L4 7.5Z" />
+      <path d="M4 7.5V16.5L12 21l8-4.5V7.5" />
+      <path d="M12 12v9" />
+    </Icon>
+  ),
+  warehouse: (
+    <Icon className="h-4 w-4">
+      <path d="M3 21h18" />
+      <path d="M5 21V8l7-4 7 4v13" />
+      <path d="M9 21v-6h6v6" />
+    </Icon>
+  ),
+  stock: (
+    <Icon className="h-4 w-4">
+      <path d="M12 3v18" />
+      <path d="m7 8 5-5 5 5" />
+      <path d="M5 21h14" />
+    </Icon>
+  ),
+  masters: (
+    <Icon className="h-4 w-4">
+      <path d="M12 3 4 7v10l8 4 8-4V7l-8-4Z" />
+      <path d="M4 7l8 4 8-4" />
+      <path d="M12 11v10" />
+    </Icon>
+  ),
+  parties: (
+    <Icon className="h-4 w-4">
+      <path d="M16 20v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+      <circle cx="10" cy="7" r="4" />
+      <path d="M20 8v6" />
+      <path d="M17 11h6" />
+    </Icon>
+  ),
+  accounts: (
+    <Icon className="h-4 w-4">
+      <path d="M4 6h16" />
+      <path d="M4 12h16" />
+      <path d="M4 18h16" />
+      <circle cx="7" cy="6" r="1.2" />
+      <circle cx="12" cy="12" r="1.2" />
+      <circle cx="17" cy="18" r="1.2" />
+    </Icon>
+  ),
+  reports: (
+    <Icon className="h-4 w-4">
+      <path d="M5 19V5" />
+      <path d="M10 19V9" />
+      <path d="M15 19v-6" />
+      <path d="M20 19V7" />
+    </Icon>
+  ),
+  users: (
+    <Icon className="h-4 w-4">
+      <path d="M16 20v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+      <circle cx="10" cy="7" r="4" />
+      <path d="M20 8v6" />
+      <path d="M17 11h6" />
+    </Icon>
+  ),
+  support: (
+    <Icon className="h-4 w-4">
+      <path d="M21 11.5a8.5 8.5 0 1 1-3.45-6.85" />
+      <path d="M9 9h.01M12 9h.01M15 9h.01" />
+      <path d="M8 14h8" />
+    </Icon>
+  ),
+  chevron: (
+    <Icon className="h-3 w-3">
+      <path d="m9 18 6-6-6-6" />
+    </Icon>
+  ),
+  menu: (
+    <Icon className="h-4 w-4">
+      <path d="M4 7h16M4 12h16M4 17h16" />
+    </Icon>
+  ),
+  close: (
+    <Icon className="h-4 w-4">
+      <path d="M6 6l12 12M18 6 6 18" />
+    </Icon>
+  ),
+  sun: (
+    <Icon className="h-4 w-4">
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+    </Icon>
+  ),
+  moon: (
+    <Icon className="h-4 w-4">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+    </Icon>
+  ),
+  bell: (
+    <Icon className="h-4 w-4">
+      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+    </Icon>
+  ),
+  check: (
+    <svg
+      className="h-2.5 w-2.5"
+      viewBox="0 0 12 12"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M2 6l3 3 5-5" />
+    </svg>
+  ),
 };
 
 /* ─────────────────────────────────────────────────────────────────
@@ -47,10 +164,30 @@ const navigation = [
     color: "from-blue-500 to-cyan-500",
     dot: "bg-blue-400",
     items: [
-      { to: "/purchase-invoices", label: "Invoices", icon: icons.stock, perm: "purchase_invoices" },
-      { to: "/purchase-returns", label: "Returns", icon: icons.stock, perm: "purchase_returns" },
-      { to: "/opening-stock", label: "Opening Stock", icon: icons.stock, perm: "opening_stock" },
-      { to: "/suppliers", label: "Suppliers", icon: icons.parties, perm: "suppliers" },
+      {
+        to: "/purchase-invoices",
+        label: "Invoices",
+        icon: icons.stock,
+        perm: "purchase_invoices",
+      },
+      {
+        to: "/purchase-returns",
+        label: "Returns",
+        icon: icons.stock,
+        perm: "purchase_returns",
+      },
+      {
+        to: "/opening-stock",
+        label: "Opening Stock",
+        icon: icons.stock,
+        perm: "opening_stock",
+      },
+      {
+        to: "/suppliers",
+        label: "Suppliers",
+        icon: icons.parties,
+        perm: "suppliers",
+      },
     ],
   },
   {
@@ -59,9 +196,24 @@ const navigation = [
     color: "from-emerald-500 to-teal-500",
     dot: "bg-emerald-400",
     items: [
-      { to: "/sales-invoices", label: "Invoices", icon: icons.stock, perm: "sales_invoices" },
-      { to: "/sales-returns", label: "Returns", icon: icons.stock, perm: "sales_returns" },
-      { to: "/customers", label: "Customers", icon: icons.parties, perm: "customers" },
+      {
+        to: "/sales-invoices",
+        label: "Invoices",
+        icon: icons.stock,
+        perm: "sales_invoices",
+      },
+      {
+        to: "/sales-returns",
+        label: "Returns",
+        icon: icons.stock,
+        perm: "sales_returns",
+      },
+      {
+        to: "/customers",
+        label: "Customers",
+        icon: icons.parties,
+        perm: "customers",
+      },
     ],
   },
   {
@@ -70,9 +222,24 @@ const navigation = [
     color: "from-violet-500 to-purple-500",
     dot: "bg-violet-400",
     items: [
-      { to: "/purchase-bank-payments", label: "Bank Payments", icon: icons.accounts, perm: "purchase_bank_payments" },
-      { to: "/sales-bank-receipts", label: "Bank Receipts", icon: icons.accounts, perm: "sales_bank_receipts" },
-      { to: "/expenses", label: "Expenses", icon: icons.accounts, perm: "expenses" },
+      {
+        to: "/purchase-bank-payments",
+        label: "Bank Payments",
+        icon: icons.accounts,
+        perm: "purchase_bank_payments",
+      },
+      {
+        to: "/sales-bank-receipts",
+        label: "Bank Receipts",
+        icon: icons.accounts,
+        perm: "sales_bank_receipts",
+      },
+      {
+        to: "/expenses",
+        label: "Expenses",
+        icon: icons.accounts,
+        perm: "expenses",
+      },
     ],
   },
   {
@@ -81,10 +248,30 @@ const navigation = [
     color: "from-amber-500 to-orange-500",
     dot: "bg-amber-400",
     items: [
-      { to: "/reports/balance-sheet", label: "Balance Sheet", icon: icons.reports, perm: "reports_balance_sheet" },
-      { to: "/reports/ledger", label: "Ledger Reports", icon: icons.reports, perm: "reports_ledger" },
-      { to: "/reports/party-ledger", label: "Party Ledger", icon: icons.reports, perm: "reports_party_ledger" },
-      { to: "/reports/coa-completeness", label: "COA Completeness", icon: icons.reports, perm: "reports_coa_completeness" },
+      {
+        to: "/reports/balance-sheet",
+        label: "Balance Sheet",
+        icon: icons.reports,
+        perm: "reports_balance_sheet",
+      },
+      {
+        to: "/reports/ledger",
+        label: "Ledger Reports",
+        icon: icons.reports,
+        perm: "reports_ledger",
+      },
+      {
+        to: "/reports/party-ledger",
+        label: "Party Ledger",
+        icon: icons.reports,
+        perm: "reports_party_ledger",
+      },
+      {
+        to: "/reports/coa-completeness",
+        label: "COA Completeness",
+        icon: icons.reports,
+        perm: "reports_coa_completeness",
+      },
     ],
   },
   {
@@ -93,15 +280,60 @@ const navigation = [
     color: "from-rose-500 to-pink-500",
     dot: "bg-rose-400",
     items: [
-      { to: "/masters/units", label: "Units", icon: icons.masters, perm: "masters_units" },
-      { to: "/masters/brands", label: "Brands", icon: icons.masters, perm: "masters_brands" },
-      { to: "/masters/categories", label: "Categories", icon: icons.masters, perm: "masters_categories" },
-      { to: "/warehouses", label: "Warehouses", icon: icons.warehouse, perm: "warehouses" },
-      { to: "/raw-materials", label: "Raw Materials", icon: icons.raw, perm: "raw_materials" },
-      { to: "/products", label: "Products", icon: icons.products, perm: "products" },
-      { to: "/production", label: "Production", icon: icons.products, perm: "production" },
-      { to: "/accounts", label: "Chart Of Accounts", icon: icons.accounts, perm: "accounts" },
-      { to: "/settings/staff", label: "Staff access", icon: icons.users, orgAdminOnly: true },
+      {
+        to: "/masters/units",
+        label: "Units",
+        icon: icons.masters,
+        perm: "masters_units",
+      },
+      {
+        to: "/masters/brands",
+        label: "Brands",
+        icon: icons.masters,
+        perm: "masters_brands",
+      },
+      {
+        to: "/masters/categories",
+        label: "Categories",
+        icon: icons.masters,
+        perm: "masters_categories",
+      },
+      {
+        to: "/warehouses",
+        label: "Warehouses",
+        icon: icons.warehouse,
+        perm: "warehouses",
+      },
+      {
+        to: "/raw-materials",
+        label: "Raw Materials",
+        icon: icons.raw,
+        perm: "raw_materials",
+      },
+      {
+        to: "/products",
+        label: "Products",
+        icon: icons.products,
+        perm: "products",
+      },
+      {
+        to: "/production",
+        label: "Production",
+        icon: icons.products,
+        perm: "production",
+      },
+      {
+        to: "/accounts",
+        label: "Chart Of Accounts",
+        icon: icons.accounts,
+        perm: "accounts",
+      },
+      {
+        to: "/settings/staff",
+        label: "Staff access",
+        icon: icons.users,
+        orgAdminOnly: true,
+      },
     ],
   },
   {
@@ -110,8 +342,18 @@ const navigation = [
     color: "from-slate-500 to-slate-400",
     dot: "bg-slate-400",
     items: [
-      { to: "/users/dimensions", label: "Dimensions", icon: icons.users, perm: "dimensions" },
-      { to: "/support", label: "Support", icon: icons.support, perm: "support" },
+      {
+        to: "/users/dimensions",
+        label: "Dimensions",
+        icon: icons.users,
+        perm: "dimensions",
+      },
+      {
+        to: "/support",
+        label: "Support",
+        icon: icons.support,
+        perm: "support",
+      },
     ],
   },
 ];
@@ -141,7 +383,10 @@ const pageTitles = {
   "/masters/brands": { title: "Brands", eyebrow: "Masters" },
   "/support": { title: "Support", eyebrow: "Users" },
   "/settings/staff": { title: "Staff access", eyebrow: "Admin" },
-  "/reports/coa-completeness": { title: "COA Completeness", eyebrow: "Reports" },
+  "/reports/coa-completeness": {
+    title: "COA Completeness",
+    eyebrow: "Reports",
+  },
 };
 
 /* ─────────────────────────────────────────────────────────────────
@@ -149,7 +394,9 @@ const pageTitles = {
 ───────────────────────────────────────────────────────────────── */
 const NavSection = ({ section, onNavigate }) => {
   const { pathname } = useLocation();
-  const isActiveSection = section.items.some((item) => pathname.startsWith(item.to));
+  const isActiveSection = section.items.some((item) =>
+    pathname.startsWith(item.to),
+  );
   const [open, setOpen] = useState(isActiveSection);
 
   return (
@@ -161,7 +408,9 @@ const NavSection = ({ section, onNavigate }) => {
         className="group flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 transition-all hover:bg-white/[0.06]"
       >
         {/* Colored accent dot */}
-        <span className={`h-1.5 w-1.5 rounded-full ${section.dot} opacity-70 group-hover:opacity-100 transition-opacity`} />
+        <span
+          className={`h-1.5 w-1.5 rounded-full ${section.dot} opacity-70 group-hover:opacity-100 transition-opacity`}
+        />
         <span className="flex-1 text-left text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500 group-hover:text-slate-400 transition-colors">
           {section.title}
         </span>
@@ -184,17 +433,21 @@ const NavSection = ({ section, onNavigate }) => {
               to={item.to}
               onClick={onNavigate}
               className={({ isActive }) =>
-                `group flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px] transition-all duration-150 ${isActive
-                  ? "bg-white/[0.1] text-white font-semibold"
-                  : "text-slate-400 hover:bg-white/[0.05] hover:text-slate-200 font-medium"
+                `group flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px] transition-all duration-150 ${
+                  isActive
+                    ? "bg-white/[0.1] text-white font-semibold"
+                    : "text-slate-400 hover:bg-white/[0.05] hover:text-slate-200 font-medium"
                 }`
               }
             >
               {({ isActive }) => (
                 <>
                   <span
-                    className={`shrink-0 transition-colors ${isActive ? "text-blue-400" : "text-slate-600 group-hover:text-slate-400"
-                      }`}
+                    className={`shrink-0 transition-colors ${
+                      isActive
+                        ? "text-blue-400"
+                        : "text-slate-600 group-hover:text-slate-400"
+                    }`}
                   >
                     {item.icon}
                   </span>
@@ -215,31 +468,51 @@ const NavSection = ({ section, onNavigate }) => {
 /* ─────────────────────────────────────────────────────────────────
    CHECKBOX PILL (Create-in control)
 ───────────────────────────────────────────────────────────────── */
-const CheckPill = ({ label, checked, onChange, disabled, isCurrent, isAll }) => (
+const CheckPill = ({
+  label,
+  checked,
+  onChange,
+  disabled,
+  isCurrent,
+  isAll,
+}) => (
   <label
-    className={`inline-flex select-none items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold tracking-wide transition-all duration-150 ${disabled ? "cursor-default" : "cursor-pointer"
-      } ${isAll && checked
-        ? "border-emerald-200 bg-emerald-50 text-emerald-700 shadow-sm"
+    className={`inline-flex select-none items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold tracking-wide transition-all duration-150 ${
+      disabled ? "cursor-default" : "cursor-pointer"
+    } ${
+      isAll && checked
+        ? "border-emerald-200 bg-emerald-50 text-emerald-700 shadow-sm dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
         : checked
-          ? "border-blue-200 bg-blue-50 text-blue-700 shadow-sm"
-          : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700"
-      }`}
-    title={disabled ? "Current dimension is always included" : `Create in ${label}`}
+          ? "border-blue-200 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300"
+          : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400 dark:hover:border-slate-500 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+    }`}
+    title={
+      disabled ? "Current dimension is always included" : `Create in ${label}`
+    }
   >
     <span
-      className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border transition-all duration-150 ${isAll && checked
+      className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border transition-all duration-150 ${
+        isAll && checked
           ? "border-emerald-500 bg-emerald-500"
           : checked
             ? "border-blue-500 bg-blue-500"
-            : "border-slate-300 bg-white"
-        }`}
+            : "border-slate-300 bg-white dark:border-slate-600 dark:bg-slate-800"
+      }`}
     >
       {checked && icons.check}
     </span>
-    <input type="checkbox" className="sr-only" checked={checked} disabled={disabled} onChange={onChange} />
+    <input
+      type="checkbox"
+      className="sr-only"
+      checked={checked}
+      disabled={disabled}
+      onChange={onChange}
+    />
     {label}
     {isCurrent && (
-      <span className="ml-0.5 text-[9px] font-bold uppercase tracking-widest text-blue-400">•</span>
+      <span className="ml-0.5 text-[9px] font-bold uppercase tracking-widest text-blue-400">
+        •
+      </span>
     )}
   </label>
 );
@@ -260,6 +533,7 @@ const Layout = () => {
     uiPermissions,
     tenantRole,
   } = useAuth();
+  const { isDark, toggleTheme } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [dimensions, setDimensions] = useState([]);
   const isOnboardingOnly = !isTenantChild && !allowedDimensions?.length;
@@ -283,49 +557,78 @@ const Layout = () => {
 
   const showDashboardNav = !isTenantChild || perms.includes("dashboard");
 
-  const pageMeta = useMemo(
-    () => {
-      if (pathname.startsWith("/products/") && pathname.endsWith("/edit")) {
-        return { title: "Edit Product", eyebrow: "Inventory" };
-      }
-      return pageTitles[pathname] || { title: "Workspace", eyebrow: "ERP" };
-    },
-    [pathname]
-  );
+  const pageMeta = useMemo(() => {
+    if (pathname.startsWith("/products/") && pathname.endsWith("/edit")) {
+      return { title: "Edit Product", eyebrow: "Inventory" };
+    }
+    return pageTitles[pathname] || { title: "Workspace", eyebrow: "ERP" };
+  }, [pathname]);
 
   useEffect(() => {
-    if (isOnboardingOnly) { setDimensions([]); return; }
+    if (isOnboardingOnly) {
+      setDimensions([]);
+      return;
+    }
     if (!localStorage.getItem("token")) return;
-    dimensionService.list().then((items) => setDimensions(items || [])).catch(() => setDimensions([]));
+    dimensionService
+      .list()
+      .then((items) => setDimensions(items || []))
+      .catch(() => setDimensions([]));
   }, [isOnboardingOnly]);
 
   useEffect(() => {
     if (isOnboardingOnly) return;
-    const availableCodes = (dimensions.length ? dimensions : allowedDimensions || []).map((i) => i.code);
+    const availableCodes = (
+      dimensions.length ? dimensions : allowedDimensions || []
+    ).map((i) => i.code);
     if (!availableCodes.length || !tenantId) return;
-    const nextSelected = [...new Set([tenantId, ...createTenantIds].filter((c) => availableCodes.includes(c)))];
-    if (nextSelected.join("|") !== createTenantIds.join("|")) setCreateTenants(nextSelected);
-  }, [allowedDimensions, createTenantIds, dimensions, isOnboardingOnly, setCreateTenants, tenantId]);
+    const nextSelected = [
+      ...new Set(
+        [tenantId, ...createTenantIds].filter((c) =>
+          availableCodes.includes(c),
+        ),
+      ),
+    ];
+    if (nextSelected.join("|") !== createTenantIds.join("|"))
+      setCreateTenants(nextSelected);
+  }, [
+    allowedDimensions,
+    createTenantIds,
+    dimensions,
+    isOnboardingOnly,
+    setCreateTenants,
+    tenantId,
+  ]);
 
   const activeDimension = dimensions.find((i) => i.code === tenantId);
-  const creationDimensions = dimensions.length ? dimensions : allowedDimensions || [];
+  const creationDimensions = dimensions.length
+    ? dimensions
+    : allowedDimensions || [];
   const creationCodes = creationDimensions.map((d) => d.code);
-  const selectedCreateTenantIds = [...new Set([tenantId, ...createTenantIds].filter((c) => creationCodes.includes(c)))];
-  const allSelected = creationCodes.length > 0 && creationCodes.every((c) => selectedCreateTenantIds.includes(c));
+  const selectedCreateTenantIds = [
+    ...new Set(
+      [tenantId, ...createTenantIds].filter((c) => creationCodes.includes(c)),
+    ),
+  ];
+  const allSelected =
+    creationCodes.length > 0 &&
+    creationCodes.every((c) => selectedCreateTenantIds.includes(c));
 
   const setCreateDimensionChecked = (code, checked) => {
     if (code === tenantId && !checked) return;
     const next = checked
       ? [...new Set([...selectedCreateTenantIds, code])]
       : selectedCreateTenantIds.filter((c) => c !== code);
-    setCreateTenants([...new Set([tenantId, ...next].filter((c) => creationCodes.includes(c)))]);
+    setCreateTenants([
+      ...new Set([tenantId, ...next].filter((c) => creationCodes.includes(c))),
+    ]);
   };
-  const setAllCreateDimensions = (checked) => setCreateTenants(checked ? creationCodes : [tenantId]);
+  const setAllCreateDimensions = (checked) =>
+    setCreateTenants(checked ? creationCodes : [tenantId]);
 
   /* ── Sidebar inner content ── */
   const SidebarContent = () => (
     <div className="flex h-full flex-col gap-0">
-
       {/* ── Brand block ── */}
       <div className="px-4 pt-1 pb-5">
         <div className="flex items-center gap-3">
@@ -339,7 +642,9 @@ const Layout = () => {
               {activeDimension?.name || tenantId}
             </p>
             <div className="mt-1 flex flex-wrap items-center gap-2">
-              <p className="text-[10px] text-slate-500 tracking-wide">CoreLedger</p>
+              <p className="text-[10px] text-slate-500 tracking-wide">
+                CoreLedger
+              </p>
               {!isTenantChild ? (
                 <span className="inline-flex shrink-0 rounded-md bg-amber-500/25 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-200 ring-1 ring-amber-400/25">
                   Admin
@@ -366,7 +671,10 @@ const Layout = () => {
             to="/users/dimensions"
             onClick={() => setMobileOpen(false)}
             className={({ isActive }) =>
-              `flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] font-semibold transition-all ${isActive ? "bg-white/[0.1] text-white" : "text-slate-400 hover:bg-white/[0.05] hover:text-slate-200"
+              `flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] font-semibold transition-all ${
+                isActive
+                  ? "bg-white/[0.1] text-white"
+                  : "text-slate-400 hover:bg-white/[0.05] hover:text-slate-200"
               }`
             }
           >
@@ -381,18 +689,26 @@ const Layout = () => {
             end
             onClick={() => setMobileOpen(false)}
             className={({ isActive }) =>
-              `flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] font-semibold transition-all ${isActive ? "bg-white/[0.1] text-white" : "text-slate-400 hover:bg-white/[0.05] hover:text-slate-200"
+              `flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] font-semibold transition-all ${
+                isActive
+                  ? "bg-white/[0.1] text-white"
+                  : "text-slate-400 hover:bg-white/[0.05] hover:text-slate-200"
               }`
             }
           >
             {({ isActive }) => (
               <>
-                <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors ${isActive ? "bg-blue-500/20 text-blue-300" : "text-slate-500"
-                  }`}>
+                <span
+                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors ${
+                    isActive ? "bg-blue-500/20 text-blue-300" : "text-slate-500"
+                  }`}
+                >
                   {icons.dashboard}
                 </span>
                 <span>Dashboard</span>
-                {isActive && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-blue-400" />}
+                {isActive && (
+                  <span className="ml-auto h-1.5 w-1.5 rounded-full bg-blue-400" />
+                )}
               </>
             )}
           </NavLink>
@@ -419,7 +735,15 @@ const Layout = () => {
           onClick={logout}
           className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.04] py-2 text-[13px] font-semibold text-slate-400 transition-all hover:bg-white/[0.08] hover:text-slate-200"
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="h-4 w-4"
+          >
             <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
             <polyline points="16 17 21 12 16 7" />
             <line x1="21" y1="12" x2="9" y2="12" />
@@ -431,17 +755,19 @@ const Layout = () => {
   );
 
   /* ── Initials from tenant or user ── */
-  const initials = (activeDimension?.name || tenantId || "?").slice(0, 1).toUpperCase();
+  const initials = (activeDimension?.name || tenantId || "?")
+    .slice(0, 1)
+    .toUpperCase();
 
   return (
-    <div className="min-h-screen bg-[#f4f6f9]">
-
+    <div className="min-h-screen bg-[#f4f6f9] dark:bg-slate-950">
       {/* ═══════════════════════════════════════════
           SIDEBAR
       ═══════════════════════════════════════════ */}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 w-[220px] transform transition-transform duration-300 ease-out lg:translate-x-0 ${mobileOpen ? "translate-x-0" : "-translate-x-full"
-          }`}
+        className={`fixed inset-y-0 left-0 z-40 w-[220px] transform transition-transform duration-300 ease-out lg:translate-x-0 ${
+          mobileOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
       >
         {/* Glass-dark sidebar surface */}
         <div className="flex h-full flex-col bg-[#0d1424] border-r border-white/[0.05]">
@@ -476,17 +802,14 @@ const Layout = () => {
           MAIN AREA
       ═══════════════════════════════════════════ */}
       <div className="lg:pl-[220px]">
-
         {/* ── TOP BAR ── */}
-        <header className="sticky top-0 z-20 bg-white/80 backdrop-blur-xl border-b border-slate-200/60 shadow-[0_1px_0_0_rgba(0,0,0,0.04)]">
-
+        <header className="sticky top-0 z-20 border-b border-slate-200/60 bg-white/80 shadow-[0_1px_0_0_rgba(0,0,0,0.04)] backdrop-blur-xl dark:border-slate-700/60 dark:bg-slate-900/85 dark:shadow-[0_1px_0_0_rgba(255,255,255,0.04)]">
           {/* Primary row */}
           <div className="flex items-center gap-3 px-4 py-2.5 lg:px-6">
-
             {/* Hamburger — mobile */}
             <button
               type="button"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:bg-slate-50 lg:hidden"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 lg:hidden"
               onClick={() => setMobileOpen(true)}
             >
               {icons.menu}
@@ -499,7 +822,7 @@ const Layout = () => {
                   {pageMeta.eyebrow}
                 </span>
                 <span className="text-slate-300 text-xs">·</span>
-                <h1 className="truncate text-[15px] font-bold text-slate-800">
+                <h1 className="truncate text-[15px] font-bold text-slate-800 dark:text-slate-100">
                   {pageMeta.title}
                 </h1>
               </div>
@@ -507,27 +830,51 @@ const Layout = () => {
 
             {/* Right actions */}
             <div className="flex shrink-0 items-center gap-2">
-
               {/* Tenant selector */}
               {!isOnboardingOnly && (
                 <div className="relative hidden sm:block">
                   <select
-                    className="h-8 appearance-none rounded-lg border border-slate-200 bg-slate-50 pl-3 pr-8 text-xs font-semibold text-slate-700 outline-none transition focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-100/50 cursor-pointer"
+                    className="h-8 appearance-none rounded-lg border border-slate-200 bg-slate-50 pl-3 pr-8 text-xs font-semibold text-slate-700 outline-none transition focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-100/50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:focus:bg-slate-800 dark:focus:ring-blue-900/40 cursor-pointer"
                     value={tenantId}
-                    onChange={(e) => { setTenant(e.target.value); window.location.reload(); }}
+                    onChange={(e) => {
+                      setTenant(e.target.value);
+                      window.location.reload();
+                    }}
                   >
-                    {(dimensions.length ? dimensions : [{ code: tenantId, name: tenantId }]).map((d) => (
-                      <option key={d.code} value={d.code}>{d.name}</option>
+                    {(dimensions.length
+                      ? dimensions
+                      : [{ code: tenantId, name: tenantId }]
+                    ).map((d) => (
+                      <option key={d.code} value={d.code}>
+                        {d.name}
+                      </option>
                     ))}
                   </select>
                   <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-400">
-                    <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <svg
+                      className="h-3 w-3"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                    >
                       <path d="M6 9l6 6 6-6" />
                     </svg>
                   </span>
                 </div>
               )}
 
+              <button
+                type="button"
+                onClick={toggleTheme}
+                aria-label={
+                  isDark ? "Switch to light mode" : "Switch to dark mode"
+                }
+                title={isDark ? "Light mode" : "Dark mode"}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+              >
+                {isDark ? icons.sun : icons.moon}
+              </button>
 
               {/* Avatar */}
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 text-[11px] font-bold text-white shadow-sm">
@@ -538,9 +885,9 @@ const Layout = () => {
 
           {/* ── Create-in row (secondary) ── */}
           {!isOnboardingOnly && creationDimensions.length > 0 && (
-            <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-1.5 lg:px-6">
+            <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-1.5 dark:border-slate-700 dark:bg-slate-900/50 lg:px-6">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400 whitespace-nowrap">
+                <span className="whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400 dark:text-slate-500">
                   Create in
                 </span>
 
@@ -557,16 +904,30 @@ const Layout = () => {
                 {!isOnboardingOnly && (
                   <div className="relative sm:hidden ml-auto">
                     <select
-                      className="h-7 appearance-none rounded-lg border border-slate-200 bg-white pl-2.5 pr-7 text-xs font-semibold text-slate-700 outline-none transition focus:border-blue-400"
+                      className="h-7 appearance-none rounded-lg border border-slate-200 bg-white pl-2.5 pr-7 text-xs font-semibold text-slate-700 outline-none transition focus:border-blue-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
                       value={tenantId}
-                      onChange={(e) => { setTenant(e.target.value); window.location.reload(); }}
+                      onChange={(e) => {
+                        setTenant(e.target.value);
+                        window.location.reload();
+                      }}
                     >
-                      {(dimensions.length ? dimensions : [{ code: tenantId, name: tenantId }]).map((d) => (
-                        <option key={d.code} value={d.code}>{d.name}</option>
+                      {(dimensions.length
+                        ? dimensions
+                        : [{ code: tenantId, name: tenantId }]
+                      ).map((d) => (
+                        <option key={d.code} value={d.code}>
+                          {d.name}
+                        </option>
                       ))}
                     </select>
                     <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-400">
-                      <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <svg
+                        className="h-3 w-3"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.5"
+                      >
                         <path d="M6 9l6 6 6-6" />
                       </svg>
                     </span>
@@ -574,7 +935,9 @@ const Layout = () => {
                 )}
 
                 {creationDimensions.map((dimension) => {
-                  const checked = selectedCreateTenantIds.includes(dimension.code);
+                  const checked = selectedCreateTenantIds.includes(
+                    dimension.code,
+                  );
                   const isCurrent = dimension.code === tenantId;
                   return (
                     <CheckPill
@@ -583,7 +946,12 @@ const Layout = () => {
                       checked={checked}
                       disabled={isCurrent}
                       isCurrent={isCurrent}
-                      onChange={(e) => setCreateDimensionChecked(dimension.code, e.target.checked)}
+                      onChange={(e) =>
+                        setCreateDimensionChecked(
+                          dimension.code,
+                          e.target.checked,
+                        )
+                      }
                     />
                   );
                 })}
@@ -598,6 +966,20 @@ const Layout = () => {
             <Outlet />
           </div>
         </main>
+
+        <footer className="border-t border-slate-200/60 px-4 py-4 dark:border-slate-700/60 lg:px-6">
+          <p className="text-center text-xs text-slate-500 dark:text-slate-400">
+            © {new Date().getFullYear()} CoreLedger — a product of{" "}
+            <a
+              href="https://www.trisitesolutions.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-emerald-600 transition-colors hover:text-emerald-700 hover:underline dark:text-emerald-400 dark:hover:text-emerald-300"
+            >
+              TrisiteSolutions
+            </a>
+          </p>
+        </footer>
       </div>
     </div>
   );

@@ -15,14 +15,21 @@ import FormInput from "../../components/ui/FormInput";
 import ConfirmModal from "../../components/ui/ConfirmModal";
 import IconButton from "../../components/ui/IconButton";
 import { useToast } from "../../context/ToastContext";
-import { flattenAccountTree, formatAccountLabel, getPostableInventoryAccounts } from "../../utils/accounts";
+import {
+  flattenAccountTree,
+  formatAccountLabel,
+  getPostableInventoryAccounts,
+} from "../../utils/accounts";
 
 const schema = z.object({
   name: z.string().trim().min(1, "Name is required"),
   brand: z.string().uuid("brandId must be a valid UUID"),
   category: z.string().uuid("categoryId must be a valid UUID"),
   purchase_unit: z.string().uuid("purchase_unit must be a valid UUID"),
-  inventory_account: z.union([z.string().uuid("inventory account must be a valid UUID"), z.literal("")]),
+  inventory_account: z.union([
+    z.string().uuid("inventory account must be a valid UUID"),
+    z.literal(""),
+  ]),
   purchase_price: z.coerce.number().min(0),
 });
 
@@ -59,13 +66,17 @@ const RawMaterialPage = () => {
   const selectedInventoryAccountId = form.watch("inventory_account");
 
   const categoryMap = useMemo(
-    () => Object.fromEntries(categories.map((category) => [category.id, category])),
-    [categories]
+    () =>
+      Object.fromEntries(categories.map((category) => [category.id, category])),
+    [categories],
   );
 
   const selectedInventoryAccount = useMemo(
-    () => inventoryAccounts.find((account) => account.id === selectedInventoryAccountId),
-    [inventoryAccounts, selectedInventoryAccountId]
+    () =>
+      inventoryAccounts.find(
+        (account) => account.id === selectedInventoryAccountId,
+      ),
+    [inventoryAccounts, selectedInventoryAccountId],
   );
 
   const load = async (nextPage = page, nextSearch = search) => {
@@ -81,7 +92,9 @@ const RawMaterialPage = () => {
       setTotal(response.total || 0);
       setPage(response.page || nextPage);
     } catch (loadError) {
-      setError(loadError?.response?.data?.message || "Failed to load raw materials");
+      setError(
+        loadError?.response?.data?.message || "Failed to load raw materials",
+      );
     } finally {
       setLoading(false);
     }
@@ -99,7 +112,9 @@ const RawMaterialPage = () => {
       setBrands(brandRes.data || []);
       setCategories(categoryRes.data || []);
       setUnits(unitRes.data || []);
-      setInventoryAccounts(getPostableInventoryAccounts(flattenAccountTree(accountRes || [])));
+      setInventoryAccounts(
+        getPostableInventoryAccounts(flattenAccountTree(accountRes || [])),
+      );
     } catch {
       toast.error("Failed to load master dropdown data");
     } finally {
@@ -114,7 +129,10 @@ const RawMaterialPage = () => {
 
   useEffect(() => {
     if (!selectedCategoryId) {
-      form.setValue("inventory_account", "", { shouldValidate: true, shouldDirty: true });
+      form.setValue("inventory_account", "", {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
       return;
     }
 
@@ -175,11 +193,9 @@ const RawMaterialPage = () => {
       <Card className="bg-[linear-gradient(135deg,rgba(255,255,255,0.92),rgba(240,248,255,0.96))]">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-
             <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">
               Raw Materials
             </h2>
-
           </div>
           <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
             <input
@@ -209,7 +225,11 @@ const RawMaterialPage = () => {
             <label className="block text-sm font-semibold text-slate-700">
               Brand <span className="text-rose-500">*</span>
             </label>
-            <select className={selectClassName} {...form.register("brand")} disabled={loadingOptions}>
+            <select
+              className={selectClassName}
+              {...form.register("brand")}
+              disabled={loadingOptions}
+            >
               <option value="">Select brand</option>
               {brands.map((item) => (
                 <option key={item.id} value={item.id}>
@@ -223,7 +243,11 @@ const RawMaterialPage = () => {
             <label className="block text-sm font-semibold text-slate-700">
               Category <span className="text-rose-500">*</span>
             </label>
-            <select className={selectClassName} {...form.register("category")} disabled={loadingOptions}>
+            <select
+              className={selectClassName}
+              {...form.register("category")}
+              disabled={loadingOptions}
+            >
               <option value="">Select category</option>
               {categories.map((item) => (
                 <option key={item.id} value={item.id}>
@@ -237,7 +261,11 @@ const RawMaterialPage = () => {
             <label className="block text-sm font-semibold text-slate-700">
               Purchase Unit <span className="text-rose-500">*</span>
             </label>
-            <select className={selectClassName} {...form.register("purchase_unit")} disabled={loadingOptions}>
+            <select
+              className={selectClassName}
+              {...form.register("purchase_unit")}
+              disabled={loadingOptions}
+            >
               <option value="">Select purchase unit</option>
               {units.map((item) => (
                 <option key={item.id} value={item.id}>
@@ -253,7 +281,11 @@ const RawMaterialPage = () => {
             </label>
             <input
               className={`${selectClassName} bg-slate-50 text-slate-600`}
-              value={selectedInventoryAccount ? formatAccountLabel(selectedInventoryAccount) : ""}
+              value={
+                selectedInventoryAccount
+                  ? formatAccountLabel(selectedInventoryAccount)
+                  : ""
+              }
               readOnly
               placeholder="Auto selected from category"
             />
@@ -272,11 +304,15 @@ const RawMaterialPage = () => {
               error={form.formState.errors.purchase_price?.message}
               {...form.register("purchase_price")}
             />
-            <p className="mt-1 text-xs text-slate-500">Optional. Leave blank to keep default rate 0.</p>
+            <p className="mt-1 text-xs text-slate-500">
+              Optional. Leave blank to keep default rate 0.
+            </p>
           </div>
 
           <div className="flex flex-col gap-3 sm:flex-row xl:col-span-3">
-            <Button type="submit" className="w-full sm:w-auto">{editingId ? "Update" : "Create"}</Button>
+            <Button type="submit" className="w-full sm:w-auto">
+              {editingId ? "Update" : "Create"}
+            </Button>
             {editingId && (
               <Button
                 type="button"
@@ -294,7 +330,12 @@ const RawMaterialPage = () => {
         </form>
       </Card>
 
-      <StateView loading={loading} error={error} isEmpty={!loading && !error && records.length === 0} emptyMessage="No raw materials found">
+      <StateView
+        loading={loading}
+        error={error}
+        isEmpty={!loading && !error && records.length === 0}
+        emptyMessage="No raw materials found"
+      >
         <Card className="overflow-hidden p-0">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[920px] text-sm">
@@ -302,30 +343,57 @@ const RawMaterialPage = () => {
                 <tr>
                   <th className="px-5 py-4 font-bold text-slate-700">Name</th>
                   <th className="px-5 py-4 font-bold text-slate-700">Brand</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Category</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Inventory Account</th>
+                  <th className="px-5 py-4 font-bold text-slate-700">
+                    Category
+                  </th>
+                  <th className="px-5 py-4 font-bold text-slate-700">
+                    Inventory Account
+                  </th>
                   <th className="px-5 py-4 font-bold text-slate-700">Qty</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Purchase UOM</th>
+                  <th className="px-5 py-4 font-bold text-slate-700">
+                    Purchase UOM
+                  </th>
                   <th className="px-5 py-4 font-bold text-slate-700">Rate</th>
-                  <th className="px-5 py-4 text-right font-bold text-slate-700">Actions</th>
+                  <th className="px-5 py-4 text-right font-bold text-slate-700">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {records.map((row) => (
-                  <tr key={row.id} className="border-t border-slate-100 bg-white/80 transition hover:bg-blue-50/50">
-                    <td className="px-5 py-4 font-semibold text-slate-800">{row.name}</td>
-                    <td className="px-5 py-4 text-slate-600">{row.brand?.name || "-"}</td>
-                    <td className="px-5 py-4 text-slate-600">{row.category?.name || "-"}</td>
+                  <tr
+                    key={row.id}
+                    className="border-t border-slate-100 bg-white/80 transition hover:bg-blue-50/50"
+                  >
+                    <td className="px-5 py-4 font-semibold text-slate-800">
+                      {row.name}
+                    </td>
                     <td className="px-5 py-4 text-slate-600">
-                      {inventoryAccounts.find((account) => account.id === row.inventory_account)
+                      {row.brand?.name || "-"}
+                    </td>
+                    <td className="px-5 py-4 text-slate-600">
+                      {row.category?.name || "-"}
+                    </td>
+                    <td className="px-5 py-4 text-slate-600">
+                      {inventoryAccounts.find(
+                        (account) => account.id === row.inventory_account,
+                      )
                         ? formatAccountLabel(
-                            inventoryAccounts.find((account) => account.id === row.inventory_account)
+                            inventoryAccounts.find(
+                              (account) => account.id === row.inventory_account,
+                            ),
                           ).trim()
                         : "-"}
                     </td>
-                    <td className="px-5 py-4 text-slate-600">{formatDecimal(row.quantity)}</td>
-                    <td className="px-5 py-4 text-slate-600">{row.purchase_unit?.name || "-"}</td>
-                    <td className="px-5 py-4 text-slate-600">{formatDecimal(row.purchase_price)}</td>
+                    <td className="px-5 py-4 text-slate-600">
+                      {formatDecimal(row.quantity)}
+                    </td>
+                    <td className="px-5 py-4 text-slate-600">
+                      {row.purchase_unit?.name || "-"}
+                    </td>
+                    <td className="px-5 py-4 text-slate-600">
+                      {formatDecimal(row.purchase_price)}
+                    </td>
                     <td className="px-5 py-4 text-right">
                       <span className="inline-flex gap-2">
                         <IconButton
@@ -337,7 +405,8 @@ const RawMaterialPage = () => {
                               name: row.name,
                               brand: row.brand?.id || row.brand,
                               category: row.category?.id || row.category,
-                              purchase_unit: row.purchase_unit?.id || row.purchase_unit,
+                              purchase_unit:
+                                row.purchase_unit?.id || row.purchase_unit,
                               inventory_account: row.inventory_account || "",
                               purchase_price: Number(row.purchase_price),
                             });
@@ -357,13 +426,27 @@ const RawMaterialPage = () => {
           </div>
 
           <div className="flex flex-col gap-3 border-t border-slate-100 px-5 py-4 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-            <span className="text-center sm:text-left">{total} total records</span>
+            <span className="text-center sm:text-left">
+              {total} total records
+            </span>
             <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-end">
-              <Button variant="secondary" type="button" disabled={page <= 1} onClick={() => load(page - 1, search)}>
+              <Button
+                variant="secondary"
+                type="button"
+                disabled={page <= 1}
+                onClick={() => load(page - 1, search)}
+              >
                 Prev
               </Button>
-              <span className="font-semibold text-slate-700">Page {page} / {totalPages}</span>
-              <Button variant="secondary" type="button" disabled={page >= totalPages} onClick={() => load(page + 1, search)}>
+              <span className="font-semibold text-slate-700">
+                Page {page} / {totalPages}
+              </span>
+              <Button
+                variant="secondary"
+                type="button"
+                disabled={page >= totalPages}
+                onClick={() => load(page + 1, search)}
+              >
                 Next
               </Button>
             </div>

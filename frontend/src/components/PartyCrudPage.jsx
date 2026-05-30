@@ -13,11 +13,17 @@ import { formatAccountLabel } from "../utils/accounts";
 
 const schema = z.object({
   name: z.string().trim().min(1, "Name is required"),
-  email: z.union([z.string().trim().email("Email must be valid"), z.literal("")]),
+  email: z.union([
+    z.string().trim().email("Email must be valid"),
+    z.literal(""),
+  ]),
   phone_number: z.string().trim(),
   business_name: z.string().trim().min(1, "Business name is required"),
   address: z.string().trim().min(1, "Address is required"),
-  account: z.union([z.string().uuid("Account must be a valid UUID"), z.literal("")]),
+  account: z.union([
+    z.string().uuid("Account must be a valid UUID"),
+    z.literal(""),
+  ]),
 });
 
 const defaultValues = {
@@ -52,8 +58,11 @@ const PartyCrudPage = ({
 
   const singularTitle = title.endsWith("s") ? title.slice(0, -1) : title;
   const accountMap = useMemo(
-    () => Object.fromEntries(accountOptions.map((account) => [account.id, account])),
-    [accountOptions]
+    () =>
+      Object.fromEntries(
+        accountOptions.map((account) => [account.id, account]),
+      ),
+    [accountOptions],
   );
 
   const form = useForm({
@@ -74,7 +83,10 @@ const PartyCrudPage = ({
       setTotal(response.total || 0);
       setPage(response.page || nextPage);
     } catch (loadError) {
-      setError(loadError?.response?.data?.message || `Failed to load ${title.toLowerCase()}`);
+      setError(
+        loadError?.response?.data?.message ||
+          `Failed to load ${title.toLowerCase()}`,
+      );
     } finally {
       setLoading(false);
     }
@@ -126,7 +138,9 @@ const PartyCrudPage = ({
         account: record.account || "",
       });
     } catch (editError) {
-      const message = editError?.response?.data?.message || `Failed to load ${singularTitle.toLowerCase()}`;
+      const message =
+        editError?.response?.data?.message ||
+        `Failed to load ${singularTitle.toLowerCase()}`;
       setError(message);
       toast.error(message);
     }
@@ -226,7 +240,9 @@ const PartyCrudPage = ({
               ))}
             </select>
             {form.formState.errors.account?.message && (
-              <p className="text-sm text-rose-600">{form.formState.errors.account.message}</p>
+              <p className="text-sm text-rose-600">
+                {form.formState.errors.account.message}
+              </p>
             )}
           </div>
           <FormInput
@@ -269,11 +285,17 @@ const PartyCrudPage = ({
               <thead className="bg-[linear-gradient(180deg,#edf4ff,#e1ebff)] text-left">
                 <tr>
                   <th className="px-5 py-4 font-bold text-slate-700">Name</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Business Name</th>
+                  <th className="px-5 py-4 font-bold text-slate-700">
+                    Business Name
+                  </th>
                   <th className="px-5 py-4 font-bold text-slate-700">Email</th>
                   <th className="px-5 py-4 font-bold text-slate-700">Phone</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Account</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Address</th>
+                  <th className="px-5 py-4 font-bold text-slate-700">
+                    Account
+                  </th>
+                  <th className="px-5 py-4 font-bold text-slate-700">
+                    Address
+                  </th>
                   <th className="px-5 py-4 text-right font-bold text-slate-700">
                     Actions
                   </th>
@@ -285,16 +307,26 @@ const PartyCrudPage = ({
                     key={record.id}
                     className="border-t border-slate-100 bg-white/80 transition hover:bg-blue-50/50"
                   >
-                    <td className="px-5 py-4 font-medium text-slate-700">{record.name}</td>
-                    <td className="px-5 py-4 text-slate-600">{record.business_name}</td>
-                    <td className="px-5 py-4 text-slate-600">{record.email || "-"}</td>
-                    <td className="px-5 py-4 text-slate-600">{record.phone_number}</td>
+                    <td className="px-5 py-4 font-medium text-slate-700">
+                      {record.name}
+                    </td>
+                    <td className="px-5 py-4 text-slate-600">
+                      {record.business_name}
+                    </td>
+                    <td className="px-5 py-4 text-slate-600">
+                      {record.email || "-"}
+                    </td>
+                    <td className="px-5 py-4 text-slate-600">
+                      {record.phone_number}
+                    </td>
                     <td className="px-5 py-4 text-slate-600">
                       {record.account && accountMap[record.account]
                         ? formatAccountLabel(accountMap[record.account]).trim()
                         : "-"}
                     </td>
-                    <td className="px-5 py-4 text-slate-600">{record.address}</td>
+                    <td className="px-5 py-4 text-slate-600">
+                      {record.address}
+                    </td>
                     <td className="px-5 py-4 text-right">
                       <div className="flex justify-end gap-2">
                         <IconButton
@@ -316,7 +348,9 @@ const PartyCrudPage = ({
           </div>
 
           <div className="flex flex-col gap-3 border-t border-slate-100 px-5 py-4 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-            <span className="text-center sm:text-left">{total} total records</span>
+            <span className="text-center sm:text-left">
+              {total} total records
+            </span>
             <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-end">
               <Button
                 variant="secondary"

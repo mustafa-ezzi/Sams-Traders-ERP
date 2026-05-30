@@ -58,10 +58,12 @@ const OpeningStockPage = () => {
       });
 
       // Transform response to ensure camelCase field names
-      const transformedRecords = (response.data || []).map(item => ({
+      const transformedRecords = (response.data || []).map((item) => ({
         ...item,
-        previousAvailability: item.previous_availability ?? item.previousAvailability,
-        currentAvailability: item.current_availability ?? item.currentAvailability,
+        previousAvailability:
+          item.previous_availability ?? item.previousAvailability,
+        currentAvailability:
+          item.current_availability ?? item.currentAvailability,
         availableQuantity: item.available_quantity ?? item.availableQuantity,
         rawMaterial: item.raw_material ?? item.rawMaterial,
         rawMaterialId: item.raw_material_id ?? item.rawMaterialId,
@@ -72,7 +74,9 @@ const OpeningStockPage = () => {
       setTotal(response.total || 0);
       setPage(response.page || nextPage);
     } catch (loadError) {
-      setError(loadError?.response?.data?.message || "Failed to load opening stock");
+      setError(
+        loadError?.response?.data?.message || "Failed to load opening stock",
+      );
     } finally {
       setLoading(false);
     }
@@ -113,8 +117,7 @@ const OpeningStockPage = () => {
       await load();
       await loadOptions();
     } catch (submitError) {
-      const message =
-        submitError?.response?.data?.message || "Save failed";
+      const message = submitError?.response?.data?.message || "Save failed";
       setError(message);
       toast.error(message);
     }
@@ -127,8 +130,7 @@ const OpeningStockPage = () => {
       await load();
       await loadOptions();
     } catch (deleteError) {
-      const message =
-        deleteError?.response?.data?.message || "Delete failed";
+      const message = deleteError?.response?.data?.message || "Delete failed";
       setError(message);
       toast.error(message);
     }
@@ -137,7 +139,7 @@ const OpeningStockPage = () => {
   const totalPages = Math.max(1, Math.ceil(total / limit));
   const editingRecord = records.find((item) => item.id === editingId);
   const selectedRawMaterial = rawMaterials.find(
-    (item) => item.id === selectedRawMaterialId
+    (item) => item.id === selectedRawMaterialId,
   );
   const currentAvailability = Number(selectedRawMaterial?.quantity || 0);
   const previousAvailabilityHint =
@@ -165,7 +167,6 @@ const OpeningStockPage = () => {
             <h2 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900">
               Opening Stock
             </h2>
-            
           </div>
           <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
             <input
@@ -183,7 +184,13 @@ const OpeningStockPage = () => {
 
       <Card>
         <form className="grid gap-4 xl:grid-cols-3" onSubmit={onSubmit}>
-          <FormInput label="Date" required type="date" error={form.formState.errors.date?.message} {...form.register("date")} />
+          <FormInput
+            label="Date"
+            required
+            type="date"
+            error={form.formState.errors.date?.message}
+            {...form.register("date")}
+          />
 
           <div className="space-y-2">
             <label className="block text-sm font-semibold text-slate-700">
@@ -230,11 +237,19 @@ const OpeningStockPage = () => {
               </p>
             )}
             <p className="text-xs font-medium text-slate-500">
-              Previous available stock: {formatDecimal(previousAvailabilityHint)}
+              Previous available stock:{" "}
+              {formatDecimal(previousAvailabilityHint)}
             </p>
           </div>
 
-          <FormInput label="Quantity" required type="number" step="0.01" error={form.formState.errors.quantity?.message} {...form.register("quantity")} />
+          <FormInput
+            label="Quantity"
+            required
+            type="number"
+            step="0.01"
+            error={form.formState.errors.quantity?.message}
+            {...form.register("quantity")}
+          />
           <div className="flex flex-col gap-3 xl:justify-end">
             <Button className="w-full" type="submit">
               {editingId ? "Update" : "Create"}
@@ -256,35 +271,83 @@ const OpeningStockPage = () => {
         </form>
       </Card>
 
-      <StateView loading={loading} error={error} isEmpty={!loading && !error && records.length === 0} emptyMessage="No opening stock entries found">
+      <StateView
+        loading={loading}
+        error={error}
+        isEmpty={!loading && !error && records.length === 0}
+        emptyMessage="No opening stock entries found"
+      >
         <Card className="overflow-hidden p-0">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1040px] text-sm">
               <thead className="bg-[linear-gradient(180deg,#edf4ff,#e1ebff)] text-left">
                 <tr>
                   <th className="px-5 py-4 font-bold text-slate-700">Date</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Warehouse</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Raw Material</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Previous Stock</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Opening Qty</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Available Stock</th>
-                  <th className="px-5 py-4 text-right font-bold text-slate-700">Actions</th>
+                  <th className="px-5 py-4 font-bold text-slate-700">
+                    Warehouse
+                  </th>
+                  <th className="px-5 py-4 font-bold text-slate-700">
+                    Raw Material
+                  </th>
+                  <th className="px-5 py-4 font-bold text-slate-700">
+                    Previous Stock
+                  </th>
+                  <th className="px-5 py-4 font-bold text-slate-700">
+                    Opening Qty
+                  </th>
+                  <th className="px-5 py-4 font-bold text-slate-700">
+                    Available Stock
+                  </th>
+                  <th className="px-5 py-4 text-right font-bold text-slate-700">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {records.map((row) => (
-                  <tr key={row.id} className="border-t border-slate-100 bg-white/80 transition hover:bg-blue-50/50">
-                    <td className="px-5 py-4 font-semibold text-slate-800">{String(row.date).slice(0, 10)}</td>
-                    <td className="px-5 py-4 text-slate-600">{row.warehouse?.name || "-"}</td>
-                    <td className="px-5 py-4 text-slate-600">{row.rawMaterial?.name || "-"}</td>
-                    <td className="px-5 py-4 text-slate-600">{formatDecimal(row.previousAvailability)}</td>
-                    <td className="px-5 py-4 text-slate-600">{formatDecimal(row.quantity)}</td>
-                    <td className="px-5 py-4 text-slate-600">{formatDecimal(row.availableQuantity)}</td>
+                  <tr
+                    key={row.id}
+                    className="border-t border-slate-100 bg-white/80 transition hover:bg-blue-50/50"
+                  >
+                    <td className="px-5 py-4 font-semibold text-slate-800">
+                      {String(row.date).slice(0, 10)}
+                    </td>
+                    <td className="px-5 py-4 text-slate-600">
+                      {row.warehouse?.name || "-"}
+                    </td>
+                    <td className="px-5 py-4 text-slate-600">
+                      {row.rawMaterial?.name || "-"}
+                    </td>
+                    <td className="px-5 py-4 text-slate-600">
+                      {formatDecimal(row.previousAvailability)}
+                    </td>
+                    <td className="px-5 py-4 text-slate-600">
+                      {formatDecimal(row.quantity)}
+                    </td>
+                    <td className="px-5 py-4 text-slate-600">
+                      {formatDecimal(row.availableQuantity)}
+                    </td>
                     <td className="px-5 py-4 text-right">
-                      <button type="button" className="mr-3 font-semibold text-blue-600 transition hover:text-blue-800" onClick={() => { setEditingId(row.id); form.reset({ date: String(row.date).slice(0, 10), warehouseId: row.warehouseId, rawMaterialId: row.rawMaterialId, quantity: Number(row.quantity) }); }}>
+                      <button
+                        type="button"
+                        className="mr-3 font-semibold text-blue-600 transition hover:text-blue-800"
+                        onClick={() => {
+                          setEditingId(row.id);
+                          form.reset({
+                            date: String(row.date).slice(0, 10),
+                            warehouseId: row.warehouseId,
+                            rawMaterialId: row.rawMaterialId,
+                            quantity: Number(row.quantity),
+                          });
+                        }}
+                      >
                         Edit
                       </button>
-                      <button type="button" className="font-semibold text-rose-600 transition hover:text-rose-800" onClick={() => setDeleteId(row.id)}>
+                      <button
+                        type="button"
+                        className="font-semibold text-rose-600 transition hover:text-rose-800"
+                        onClick={() => setDeleteId(row.id)}
+                      >
                         Delete
                       </button>
                     </td>
@@ -295,7 +358,9 @@ const OpeningStockPage = () => {
           </div>
 
           <div className="flex flex-col gap-3 border-t border-slate-100 px-5 py-4 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-            <span className="text-center sm:text-left">{total} total records</span>
+            <span className="text-center sm:text-left">
+              {total} total records
+            </span>
             <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-end">
               <Button
                 variant="secondary"

@@ -1,0 +1,444 @@
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import Card from "../../../components/ui/Card";
+import Button from "../../../components/ui/Button";
+import FormInput from "../../../components/ui/FormInput";
+import supplierService from "../../../api/services/supplierService";
+import purchaseReturnService from "../../../api/services/purchaseReturnService";
+import { formatDecimal } from "../../../utils/format";
+import { useToast } from "../../../context/ToastContext";
+const selectClassName =
+  "w-full rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/90 px-4 py-3 text-sm text-slate-800 dark:text-slate-100 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/40";
+const toNumber = (value) => {
+  const parsedValue = Number(value);
+  return Number.isFinite(parsedValue) ? parsedValue : 0;
+};
+const extractErrorMessage = (error) => {
+  const data = error?.response?.data;
+  if (!data) return "Something went wrong";
+  if (typeof data === "string") return data;
+  if (data.message) return data.message;
+  if (typeof data.detail === "string") return data.detail;
+  const fieldEntry = Object.entries(data).find(
+    ([, value]) => typeof value === "string" || Array.isArray(value),
+  );
+  if (fieldEntry) {
+    const [, value] = fieldEntry;
+    return Array.isArray(value) ? value.join(", ") : value;
+  }
+  return "Something went wrong";
+};
+const createDefaultForm = () => ({
+  date: new Date().toISOString().slice(0, 10),
+  supplierId: "",
+  purchaseInvoiceId: "",
+  remarks: "",
+  lines: [],
+});
+const CreateUpdatePurchaseReturn = () => {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const toast = useToast();
+  const editingId = id || "";
+  const [suppliers, setSuppliers] = useState([]);
+  const [invoiceOptions, setInvoiceOptions] = useState([]);
+  const [form, setForm] = useState(createDefaultForm());
+  const [submitting, setSubmitting] = useState(false);
+  const [loadingRecord, setLoadingRecord] = useState(Boolean(id));
+  const grossAmount = useMemo(
+    () =>
+      form.lines.reduce(
+        (sum, line) =>
+          sum + toNumber(line.returnQuantity) * toNumber(line.rate),
+        0,
+      ),
+    [form.lines],
+  );
+  const loadSuppliers = async () => {
+    try {
+      const response = await supplierService.list({
+        page: 1,
+        limit: 100,
+        search: "",
+      });
+      setSuppliers(response.data || []);
+    } catch {
+      toast.error("Failed to load suppliers");
+    }
+  };
+  const loadInvoiceOptions = async (supplierId) => {
+    if (!supplierId) {
+      setInvoiceOptions([]);
+      return;
+    }
+    try {
+      const options = await purchaseReturnService.getInvoiceOptions(supplierId);
+      setInvoiceOptions(options);
+    } catch {
+      toast.error("Failed to load purchase invoices");
+    }
+  };
+  const loadInvoiceLines = async (purchaseInvoiceId, purchaseReturnId = "") => {
+    if (!purchaseInvoiceId) {
+      setForm((current) => ({ ...current, lines: [] }));
+      return;
+    }
+    try {
+      const details = await purchaseReturnService.getInvoiceLines(
+        purchaseInvoiceId,
+        purchaseReturnId,
+      );
+      setForm((current) => ({
+        ...current,
+        lines:
+          details?.lines?.map((line) => ({
+            purchaseInvoiceLineId: line.purchaseInvoiceLineId,
+            productId: line.productId,
+            productName: line.productName,
+            purchasedQuantity: String(line.purchasedQuantity ?? 0),
+            soldQuantity: String(line.soldQuantity ?? 0),
+            returnQuantity: String(line.returnQuantity ?? 0),
+            maxReturnQuantity: String(line.maxReturnQuantity ?? 0),
+            rate: String(line.rate ?? 0),
+            amount: String(line.amount ?? 0),
+            unit: line.unit || "Each",
+          })) || [],
+      }));
+    } catch (loadError) {
+      toast.error(
+        extractErrorMessage(loadError) || "Failed to load invoice lines",
+      );
+    }
+  };
+  useEffect(() => {
+    loadSuppliers();
+  }, [toast]);
+  useEffect(() => {
+    loadInvoiceOptions(form.supplierId);
+  }, [form.supplierId]);
+  useEffect(() => {
+    if (!id) {
+      setLoadingRecord(false);
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      setLoadingRecord(true);
+      try {
+        const purchaseReturn = await purchaseReturnService.getById(id);
+        if (cancelled) return;
+        await loadInvoiceOptions(purchaseReturn.supplierId);
+        const linePayload = await purchaseReturnService.getInvoiceLines(
+          purchaseReturn.purchaseInvoiceId,
+          purchaseReturn.id,
+        );
+        if (cancelled) return;
+        setForm({
+          date: purchaseReturn.date,
+          supplierId: purchaseReturn.supplierId,
+          purchaseInvoiceId: purchaseReturn.purchaseInvoiceId,
+          remarks: purchaseReturn.remarks || "",
+          lines:
+            linePayload?.lines?.map((line) => ({
+              purchaseInvoiceLineId: line.purchaseInvoiceLineId,
+              productId: line.productId,
+              productName: line.productName,
+              purchasedQuantity: String(line.purchasedQuantity ?? 0),
+              soldQuantity: String(line.soldQuantity ?? 0),
+              returnQuantity: String(line.returnQuantity ?? 0),
+              maxReturnQuantity: String(line.maxReturnQuantity ?? 0),
+              rate: String(line.rate ?? 0),
+              amount: String(line.amount ?? 0),
+              unit: line.unit || "Each",
+            })) || [],
+        });
+      } catch (editError) {
+        if (!cancelled) {
+          toast.error(
+            extractErrorMessage(editError) || "Failed to load purchase return",
+          );
+          navigate("/purchase-returns", { replace: true });
+        }
+      } finally {
+        if (!cancelled) setLoadingRecord(false);
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [id, navigate, toast]);
+  const handleChange = (field, value) => {
+    setForm((current) => ({ ...current, [field]: value }));
+  };
+  const handleSupplierChange = (supplierId) => {
+    setForm((current) => ({
+      ...current,
+      supplierId,
+      purchaseInvoiceId: "",
+      lines: [],
+    }));
+  };
+  const handleInvoiceChange = async (purchaseInvoiceId) => {
+    setForm((current) => ({ ...current, purchaseInvoiceId, lines: [] }));
+    await loadInvoiceLines(purchaseInvoiceId, editingId);
+  };
+  const handleLineChange = (index, value) => {
+    setForm((current) => {
+      const nextLines = [...current.lines];
+      const maxReturnQuantity = toNumber(nextLines[index].maxReturnQuantity);
+      const normalizedValue = Math.min(
+        Math.max(toNumber(value), 0),
+        maxReturnQuantity,
+      );
+      nextLines[index] = {
+        ...nextLines[index],
+        returnQuantity: String(normalizedValue),
+        amount: String(normalizedValue * toNumber(nextLines[index].rate)),
+      };
+      return { ...current, lines: nextLines };
+    });
+  };
+  const buildPayload = () => ({
+    date: form.date,
+    supplier_id: form.supplierId,
+    purchase_invoice_id: form.purchaseInvoiceId,
+    remarks: form.remarks,
+    lines: form.lines
+      .filter((line) => toNumber(line.returnQuantity) > 0)
+      .map((line) => ({
+        purchase_invoice_line_id: line.purchaseInvoiceLineId,
+        quantity: toNumber(line.returnQuantity),
+      })),
+  });
+  const validateBeforeSubmit = () => {
+    if (!form.date) {
+      toast.error("Please select a return date");
+      return false;
+    }
+    if (!form.supplierId) {
+      toast.error("Please select a supplier");
+      return false;
+    }
+    if (!form.purchaseInvoiceId) {
+      toast.error("Please select a purchase invoice");
+      return false;
+    }
+    if (!form.lines.some((line) => toNumber(line.returnQuantity) > 0)) {
+      toast.error("Please enter a return quantity for at least one line");
+      return false;
+    }
+    return true;
+  };
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    if (!validateBeforeSubmit()) return;
+    setSubmitting(true);
+    try {
+      const payload = buildPayload();
+      if (editingId) {
+        const response = await purchaseReturnService.update(editingId, payload);
+        toast.success(
+          response.message || "Purchase return updated successfully",
+        );
+      } else {
+        const response = await purchaseReturnService.create(payload);
+        toast.success(
+          response.message || "Purchase return created successfully",
+        );
+      }
+      navigate("/purchase-returns");
+    } catch (submitError) {
+      toast.error(extractErrorMessage(submitError));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+  const title = editingId ? "Edit Purchase Return" : "Purchase Return";
+  if (loadingRecord) {
+    return (
+      <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-8 text-center text-slate-600 dark:text-slate-300">
+        {" "}
+        Loading return…{" "}
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-6">
+      {" "}
+      <Card className="space-y-6">
+        {" "}
+        <div className="flex items-center justify-between gap-4">
+          {" "}
+          <div>
+            {" "}
+            <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
+              {title}
+            </h2>{" "}
+          </div>{" "}
+          <Button
+            variant="secondary"
+            type="button"
+            onClick={() => navigate("/purchase-returns")}
+          >
+            {" "}
+            Back to list{" "}
+          </Button>{" "}
+        </div>{" "}
+        <form className="space-y-5" onSubmit={handleSubmit}>
+          {" "}
+          <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
+            {" "}
+            <FormInput
+              label="Return Date *"
+              type="date"
+              required
+              value={form.date}
+              onChange={(e) => handleChange("date", e.target.value)}
+            />{" "}
+            <div className="space-y-1">
+              {" "}
+              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 dark:text-slate-500">
+                {" "}
+                Supplier <span className="text-rose-500">*</span>{" "}
+              </label>{" "}
+              <select
+                className={selectClassName}
+                value={form.supplierId}
+                onChange={(e) => handleSupplierChange(e.target.value)}
+              >
+                {" "}
+                <option value="">Select Supplier</option>{" "}
+                {suppliers.map((supplier) => (
+                  <option key={supplier.id} value={supplier.id}>
+                    {" "}
+                    {supplier.business_name}{" "}
+                  </option>
+                ))}{" "}
+              </select>{" "}
+            </div>{" "}
+            <div className="space-y-1">
+              {" "}
+              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 dark:text-slate-500">
+                {" "}
+                Purchase Invoice <span className="text-rose-500">*</span>{" "}
+              </label>{" "}
+              <select
+                className={selectClassName}
+                value={form.purchaseInvoiceId}
+                onChange={(e) => handleInvoiceChange(e.target.value)}
+                disabled={!form.supplierId}
+              >
+                {" "}
+                <option value="">Select Purchase Invoice</option>{" "}
+                {invoiceOptions.map((invoice) => (
+                  <option key={invoice.id} value={invoice.id}>
+                    {" "}
+                    {invoice.invoice_number}{" "}
+                  </option>
+                ))}{" "}
+              </select>{" "}
+            </div>{" "}
+            <FormInput
+              label="Remarks"
+              placeholder="Reason or notes for this return"
+              value={form.remarks}
+              onChange={(e) => handleChange("remarks", e.target.value)}
+            />{" "}
+          </div>{" "}
+          <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700">
+            {" "}
+            <div
+              className="grid gap-2 bg-indigo-50 px-4 py-3 text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400 dark:text-slate-500"
+              style={{
+                gridTemplateColumns: "2fr 110px 110px 130px 90px 110px 120px",
+              }}
+            >
+              {" "}
+              <span>Product</span> <span>Purchased Qty</span>{" "}
+              <span>Sold Qty</span> <span>Return Qty</span> <span>Unit</span>{" "}
+              <span>Rate</span> <span>Amount</span>{" "}
+            </div>{" "}
+            <div className="divide-y divide-slate-100 dark:divide-slate-700 px-4 py-2">
+              {" "}
+              {form.lines.length === 0 ? (
+                <div className="py-10 text-center text-sm text-slate-500 dark:text-slate-400 dark:text-slate-500">
+                  {" "}
+                  Select a supplier invoice to load returnable products.{" "}
+                </div>
+              ) : (
+                form.lines.map((line, index) => (
+                  <div
+                    key={line.purchaseInvoiceLineId}
+                    className="grid items-center gap-2 py-3"
+                    style={{
+                      gridTemplateColumns:
+                        "2fr 110px 110px 130px 90px 110px 120px",
+                    }}
+                  >
+                    {" "}
+                    <div className="text-sm font-medium text-slate-800 dark:text-slate-100">
+                      {line.productName}
+                    </div>{" "}
+                    <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 px-3 py-3 text-sm text-slate-600 dark:text-slate-300">
+                      {" "}
+                      {formatDecimal(line.purchasedQuantity)}{" "}
+                    </div>{" "}
+                    <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 px-3 py-3 text-sm text-slate-600 dark:text-slate-300">
+                      {" "}
+                      {formatDecimal(line.soldQuantity)}{" "}
+                    </div>{" "}
+                    <FormInput
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      max={line.maxReturnQuantity}
+                      value={line.returnQuantity}
+                      onChange={(e) => handleLineChange(index, e.target.value)}
+                    />{" "}
+                    <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 px-3 py-3 text-sm text-slate-600 dark:text-slate-300">
+                      {" "}
+                      {line.unit}{" "}
+                    </div>{" "}
+                    <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 px-3 py-3 text-sm text-slate-600 dark:text-slate-300">
+                      {" "}
+                      {formatDecimal(line.rate)}{" "}
+                    </div>{" "}
+                    <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 px-3 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                      {" "}
+                      {formatDecimal(line.amount)}{" "}
+                    </div>{" "}
+                  </div>
+                ))
+              )}{" "}
+            </div>{" "}
+          </div>{" "}
+          <div className="flex justify-end border-t border-slate-200 dark:border-slate-700 pt-4">
+            {" "}
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-5 py-3 min-w-[220px] text-right">
+              {" "}
+              <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                Gross Return Amount
+              </p>{" "}
+              <p className="mt-1 text-xl font-extrabold text-blue-600 dark:text-blue-400">
+                {formatDecimal(grossAmount)}
+              </p>{" "}
+            </div>{" "}
+          </div>{" "}
+          <div className="flex justify-end border-t border-slate-100 dark:border-slate-700 pt-4">
+            {" "}
+            <Button type="submit" disabled={submitting}>
+              {" "}
+              {submitting
+                ? "Saving..."
+                : editingId
+                  ? "Update Purchase Return"
+                  : "Save Purchase Return"}{" "}
+            </Button>{" "}
+          </div>{" "}
+        </form>{" "}
+      </Card>{" "}
+    </div>
+  );
+};
+export default CreateUpdatePurchaseReturn;

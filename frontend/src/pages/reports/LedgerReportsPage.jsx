@@ -33,8 +33,8 @@ const extractErrorMessage = (error) => {
     return data.detail;
   }
 
-  const fieldEntry = Object.entries(data).find(([, value]) =>
-    typeof value === "string" || Array.isArray(value)
+  const fieldEntry = Object.entries(data).find(
+    ([, value]) => typeof value === "string" || Array.isArray(value),
   );
 
   if (fieldEntry) {
@@ -64,11 +64,14 @@ const LedgerReportsPage = () => {
     toDate: new Date().toISOString().slice(0, 10),
   });
 
-  const flatAccounts = useMemo(() => flattenAccountTree(accountTree), [accountTree]);
+  const flatAccounts = useMemo(
+    () => flattenAccountTree(accountTree),
+    [accountTree],
+  );
 
   const headOptions = useMemo(
     () => flatAccounts.filter((account) => !account.is_postable),
-    [flatAccounts]
+    [flatAccounts],
   );
 
   const descendantIds = useMemo(() => {
@@ -104,7 +107,9 @@ const LedgerReportsPage = () => {
       }));
 
     const supplierOptions = suppliers
-      .filter((supplier) => supplier.account && descendantIds.has(supplier.account))
+      .filter(
+        (supplier) => supplier.account && descendantIds.has(supplier.account),
+      )
       .map((supplier) => ({
         value: `supplier:${supplier.id}`,
         label: `${supplier.business_name} | Supplier`,
@@ -112,20 +117,25 @@ const LedgerReportsPage = () => {
       }));
 
     const customerOptions = customers
-      .filter((customer) => customer.account && descendantIds.has(customer.account))
+      .filter(
+        (customer) => customer.account && descendantIds.has(customer.account),
+      )
       .map((customer) => ({
         value: `customer:${customer.id}`,
         label: `${customer.business_name} | Customer`,
         type: "customer",
       }));
 
-    return [...accountOptions, ...supplierOptions, ...customerOptions].sort((a, b) =>
-      a.label.localeCompare(b.label)
+    return [...accountOptions, ...supplierOptions, ...customerOptions].sort(
+      (a, b) => a.label.localeCompare(b.label),
     );
   }, [customers, descendantIds, flatAccounts, form.headAccountId, suppliers]);
 
   useEffect(() => {
-    dimensionService.list().then((items) => setDimensions(items || [])).catch(() => setDimensions([]));
+    dimensionService
+      .list()
+      .then((items) => setDimensions(items || []))
+      .catch(() => setDimensions([]));
   }, []);
 
   useEffect(() => {
@@ -164,29 +174,40 @@ const LedgerReportsPage = () => {
             ]),
           ]);
 
-          const supplierResponses = dimensionResponses.filter((_, index) => index % 2 === 0);
-          const customerResponses = dimensionResponses.filter((_, index) => index % 2 === 1);
+          const supplierResponses = dimensionResponses.filter(
+            (_, index) => index % 2 === 0,
+          );
+          const customerResponses = dimensionResponses.filter(
+            (_, index) => index % 2 === 1,
+          );
 
           setAccountTree(
-            Array.isArray(accountsResponse) ? accountsResponse : accountsResponse.data || []
+            Array.isArray(accountsResponse)
+              ? accountsResponse
+              : accountsResponse.data || [],
           );
           setSuppliers(mergeUniqueParties(supplierResponses));
           setCustomers(mergeUniqueParties(customerResponses));
         } else {
-          const [accountsResponse, supplierResponse, customerResponse] = await Promise.all([
-            fetchWithTenant("/accounts/accounts/", form.tenantScope),
-            fetchWithTenant("/inventory/suppliers", form.tenantScope),
-            fetchWithTenant("/inventory/customers", form.tenantScope),
-          ]);
+          const [accountsResponse, supplierResponse, customerResponse] =
+            await Promise.all([
+              fetchWithTenant("/accounts/accounts/", form.tenantScope),
+              fetchWithTenant("/inventory/suppliers", form.tenantScope),
+              fetchWithTenant("/inventory/customers", form.tenantScope),
+            ]);
 
           setAccountTree(
-            Array.isArray(accountsResponse) ? accountsResponse : accountsResponse.data || []
+            Array.isArray(accountsResponse)
+              ? accountsResponse
+              : accountsResponse.data || [],
           );
           setSuppliers(supplierResponse.data || []);
           setCustomers(customerResponse.data || []);
         }
       } catch (loadError) {
-        setError(extractErrorMessage(loadError) || "Failed to load report filters");
+        setError(
+          extractErrorMessage(loadError) || "Failed to load report filters",
+        );
       } finally {
         setLoadingSetup(false);
       }
@@ -238,17 +259,21 @@ const LedgerReportsPage = () => {
 
     setLoadingReport(true);
     try {
-      const response = await accountService.getLedgerReport({
-        tenant_scope: form.tenantScope,
-        head_account_id: form.headAccountId,
-        ledger_type: ledgerType,
-        ledger_id: ledgerId,
-        from_date: form.fromDate,
-        to_date: form.toDate,
-      }, form.tenantScope === "BOTH" ? tenantId : form.tenantScope);
+      const response = await accountService.getLedgerReport(
+        {
+          tenant_scope: form.tenantScope,
+          head_account_id: form.headAccountId,
+          ledger_type: ledgerType,
+          ledger_id: ledgerId,
+          from_date: form.fromDate,
+          to_date: form.toDate,
+        },
+        form.tenantScope === "BOTH" ? tenantId : form.tenantScope,
+      );
       setReport(response);
     } catch (reportError) {
-      const message = extractErrorMessage(reportError) || "Failed to generate ledger report";
+      const message =
+        extractErrorMessage(reportError) || "Failed to generate ledger report";
       setError(message);
       toast.error(message);
     } finally {
@@ -261,7 +286,6 @@ const LedgerReportsPage = () => {
       <Card className="space-y-6">
         <div>
           <h2 className="text-xl font-bold text-slate-900">Ledger Reports</h2>
-         
         </div>
 
         <form className="space-y-5" onSubmit={handleGenerate}>
@@ -310,7 +334,9 @@ const LedgerReportsPage = () => {
               <select
                 className={selectClassName}
                 value={form.ledgerSelection}
-                onChange={(e) => handleChange("ledgerSelection", e.target.value)}
+                onChange={(e) =>
+                  handleChange("ledgerSelection", e.target.value)
+                }
                 disabled={!form.headAccountId || loadingSetup}
               >
                 <option value="">Select COA / Party</option>
@@ -350,27 +376,38 @@ const LedgerReportsPage = () => {
       <StateView
         loading={loadingReport}
         error={error}
-        isEmpty={!loadingReport && !error && Boolean(report) && (report.rows || []).length === 0}
+        isEmpty={
+          !loadingReport &&
+          !error &&
+          Boolean(report) &&
+          (report.rows || []).length === 0
+        }
         emptyMessage="No ledger rows found for the selected filters."
       >
         {report ? (
           <Card className="space-y-4">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
-                <h3 className="text-xl font-bold text-slate-900">{report.title}</h3>
+                <h3 className="text-xl font-bold text-slate-900">
+                  {report.title}
+                </h3>
                 <p className="mt-1 text-sm text-slate-500">
                   {report.from_date} to {report.to_date}
                 </p>
               </div>
               <div className="flex gap-3">
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-right">
-                  <p className="text-xs uppercase tracking-wide text-slate-400">Total Debit</p>
+                  <p className="text-xs uppercase tracking-wide text-slate-400">
+                    Total Debit
+                  </p>
                   <p className="mt-1 text-lg font-bold text-slate-800">
                     {formatDecimal(report.total_debit)}
                   </p>
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-right">
-                  <p className="text-xs uppercase tracking-wide text-slate-400">Total Credit</p>
+                  <p className="text-xs uppercase tracking-wide text-slate-400">
+                    Total Credit
+                  </p>
                   <p className="mt-1 text-lg font-bold text-slate-800">
                     {formatDecimal(report.total_credit)}
                   </p>
@@ -397,13 +434,25 @@ const LedgerReportsPage = () => {
                   <tbody className="divide-y divide-slate-100 bg-white">
                     {(report.rows || []).map((row, index) => (
                       <tr key={`${row.id}-${index}`}>
-                        <td className="px-4 py-3 text-slate-600">{index + 1}</td>
-                        <td className="px-4 py-3 font-semibold text-slate-900">{row.id}</td>
-                        <td className="px-4 py-3 text-slate-600">{row.tenant || "-"}</td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {index + 1}
+                        </td>
+                        <td className="px-4 py-3 font-semibold text-slate-900">
+                          {row.id}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {row.tenant || "-"}
+                        </td>
                         <td className="px-4 py-3 text-slate-600">{row.date}</td>
-                        <td className="px-4 py-3 text-slate-600">{row.document_type}</td>
-                        <td className="px-4 py-3 text-slate-600">{row.people_type}</td>
-                        <td className="px-4 py-3 text-slate-600">{row.remarks || "-"}</td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {row.document_type}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {row.people_type}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {row.remarks || "-"}
+                        </td>
                         <td className="px-4 py-3 font-semibold text-emerald-700">
                           {formatDecimal(row.debit)}
                         </td>

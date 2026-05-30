@@ -40,8 +40,8 @@ const extractErrorMessage = (error) => {
     return data.message;
   }
 
-  const fieldEntry = Object.entries(data).find(([, value]) =>
-    typeof value === "string" || Array.isArray(value)
+  const fieldEntry = Object.entries(data).find(
+    ([, value]) => typeof value === "string" || Array.isArray(value),
   );
 
   if (fieldEntry) {
@@ -67,8 +67,11 @@ const OpeningAccountsTab = () => {
   const [deleteTarget, setDeleteTarget] = useState(null);
 
   const openingAccounts = useMemo(
-    () => banks.flatMap((bank) => (bank.children || []).map((account) => ({ ...account, bank }))),
-    [banks]
+    () =>
+      banks.flatMap((bank) =>
+        (bank.children || []).map((account) => ({ ...account, bank })),
+      ),
+    [banks],
   );
 
   const loadOpeningAccounts = async () => {
@@ -79,7 +82,9 @@ const OpeningAccountsTab = () => {
       setRootAccount(response.root || null);
       setBanks(response.banks || []);
     } catch (loadError) {
-      setError(extractErrorMessage(loadError) || "Failed to load opening accounts");
+      setError(
+        extractErrorMessage(loadError) || "Failed to load opening accounts",
+      );
     } finally {
       setLoading(false);
     }
@@ -155,7 +160,9 @@ const OpeningAccountsTab = () => {
     setSavingAccount(true);
     try {
       if (editingAccountId) {
-        const account = openingAccounts.find((item) => item.id === editingAccountId);
+        const account = openingAccounts.find(
+          (item) => item.id === editingAccountId,
+        );
         await accountService.update(editingAccountId, {
           code: account.code,
           name: accountForm.name.trim(),
@@ -219,14 +226,19 @@ const OpeningAccountsTab = () => {
               Opening Accounts
             </h2>
             <p className="mt-2 max-w-3xl text-sm text-slate-500">
-              Banks are created under <span className="font-semibold text-slate-700">1110</span>. A bank
-              gets a 4-digit code like <span className="font-semibold text-slate-700">1111</span>, and each
-              postable account inside that bank gets a 5-digit code like
+              Banks are created under{" "}
+              <span className="font-semibold text-slate-700">1110</span>. A bank
+              gets a 4-digit code like{" "}
+              <span className="font-semibold text-slate-700">1111</span>, and
+              each postable account inside that bank gets a 5-digit code like
               <span className="font-semibold text-slate-700"> 11111</span>.
             </p>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-            Root COA: {rootAccount ? `${rootAccount.code} - ${rootAccount.name}` : "1110 - Bank"}
+            Root COA:{" "}
+            {rootAccount
+              ? `${rootAccount.code} - ${rootAccount.name}`
+              : "1110 - Bank"}
           </div>
         </div>
       </Card>
@@ -239,10 +251,16 @@ const OpeningAccountsTab = () => {
                 <h3 className="text-lg font-bold text-slate-900">
                   {editingBankId ? "Edit Opening Bank" : "Create Opening Bank"}
                 </h3>
-                <p className="text-sm text-slate-500">Creates the next 4-digit bank code under 1110.</p>
+                <p className="text-sm text-slate-500">
+                  Creates the next 4-digit bank code under 1110.
+                </p>
               </div>
               {editingBankId ? (
-                <Button type="button" variant="secondary" onClick={resetBankForm}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={resetBankForm}
+                >
                   Cancel
                 </Button>
               ) : null}
@@ -253,7 +271,12 @@ const OpeningAccountsTab = () => {
               required
               placeholder="Bank Alfalah"
               value={bankForm.name}
-              onChange={(event) => setBankForm((current) => ({ ...current, name: event.target.value }))}
+              onChange={(event) =>
+                setBankForm((current) => ({
+                  ...current,
+                  name: event.target.value,
+                }))
+              }
             />
 
             <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm font-medium text-slate-700">
@@ -261,14 +284,21 @@ const OpeningAccountsTab = () => {
                 type="checkbox"
                 checked={bankForm.isActive}
                 onChange={(event) =>
-                  setBankForm((current) => ({ ...current, isActive: event.target.checked }))
+                  setBankForm((current) => ({
+                    ...current,
+                    isActive: event.target.checked,
+                  }))
                 }
               />
               Active bank
             </label>
 
             <Button type="submit" disabled={savingBank}>
-              {savingBank ? "Saving..." : editingBankId ? "Update Bank" : "Create Bank"}
+              {savingBank
+                ? "Saving..."
+                : editingBankId
+                  ? "Update Bank"
+                  : "Create Bank"}
             </Button>
           </form>
         </Card>
@@ -278,24 +308,37 @@ const OpeningAccountsTab = () => {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h3 className="text-lg font-bold text-slate-900">
-                  {editingAccountId ? "Edit Opening Account" : "Create Opening Account"}
+                  {editingAccountId
+                    ? "Edit Opening Account"
+                    : "Create Opening Account"}
                 </h3>
-                <p className="text-sm text-slate-500">Creates the next 5-digit account inside the selected bank.</p>
+                <p className="text-sm text-slate-500">
+                  Creates the next 5-digit account inside the selected bank.
+                </p>
               </div>
               {editingAccountId ? (
-                <Button type="button" variant="secondary" onClick={resetAccountForm}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={resetAccountForm}
+                >
                   Cancel
                 </Button>
               ) : null}
             </div>
 
             <div className="space-y-2">
-              <label className="block text-sm font-semibold text-slate-700">Bank</label>
+              <label className="block text-sm font-semibold text-slate-700">
+                Bank
+              </label>
               <select
                 className={selectClassName}
                 value={accountForm.bankId}
                 onChange={(event) =>
-                  setAccountForm((current) => ({ ...current, bankId: event.target.value }))
+                  setAccountForm((current) => ({
+                    ...current,
+                    bankId: event.target.value,
+                  }))
                 }
               >
                 <option value="">Select bank</option>
@@ -312,7 +355,12 @@ const OpeningAccountsTab = () => {
               required
               placeholder="Current Account"
               value={accountForm.name}
-              onChange={(event) => setAccountForm((current) => ({ ...current, name: event.target.value }))}
+              onChange={(event) =>
+                setAccountForm((current) => ({
+                  ...current,
+                  name: event.target.value,
+                }))
+              }
             />
 
             <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm font-medium text-slate-700">
@@ -320,14 +368,21 @@ const OpeningAccountsTab = () => {
                 type="checkbox"
                 checked={accountForm.isActive}
                 onChange={(event) =>
-                  setAccountForm((current) => ({ ...current, isActive: event.target.checked }))
+                  setAccountForm((current) => ({
+                    ...current,
+                    isActive: event.target.checked,
+                  }))
                 }
               />
               Active opening account
             </label>
 
             <Button type="submit" disabled={savingAccount}>
-              {savingAccount ? "Saving..." : editingAccountId ? "Update Account" : "Create Account"}
+              {savingAccount
+                ? "Saving..."
+                : editingAccountId
+                  ? "Update Account"
+                  : "Create Account"}
             </Button>
           </form>
         </Card>
@@ -347,20 +402,35 @@ const OpeningAccountsTab = () => {
                   <th className="px-5 py-4 font-bold text-slate-700">Code</th>
                   <th className="px-5 py-4 font-bold text-slate-700">Name</th>
                   <th className="px-5 py-4 font-bold text-slate-700">Type</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Postable</th>
+                  <th className="px-5 py-4 font-bold text-slate-700">
+                    Postable
+                  </th>
                   <th className="px-5 py-4 font-bold text-slate-700">Status</th>
-                  <th className="px-5 py-4 text-right font-bold text-slate-700">Actions</th>
+                  <th className="px-5 py-4 text-right font-bold text-slate-700">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {banks.map((bank) => (
                   <Fragment key={bank.id}>
-                    <tr key={bank.id} className="border-t border-slate-100 bg-slate-50/70">
-                      <td className="px-5 py-4 font-semibold text-slate-900">{bank.code}</td>
-                      <td className="px-5 py-4 font-semibold text-slate-800">{bank.name}</td>
+                    <tr
+                      key={bank.id}
+                      className="border-t border-slate-100 bg-slate-50/70"
+                    >
+                      <td className="px-5 py-4 font-semibold text-slate-900">
+                        {bank.code}
+                      </td>
+                      <td className="px-5 py-4 font-semibold text-slate-800">
+                        {bank.name}
+                      </td>
                       <td className="px-5 py-4 text-slate-600">Bank Header</td>
-                      <td className="px-5 py-4 text-slate-600">{bank.is_postable ? "Yes" : "No"}</td>
-                      <td className="px-5 py-4 text-slate-600">{bank.is_active ? "Active" : "Inactive"}</td>
+                      <td className="px-5 py-4 text-slate-600">
+                        {bank.is_postable ? "Yes" : "No"}
+                      </td>
+                      <td className="px-5 py-4 text-slate-600">
+                        {bank.is_active ? "Active" : "Inactive"}
+                      </td>
                       <td className="px-5 py-4 text-right">
                         <button
                           type="button"
@@ -378,21 +448,37 @@ const OpeningAccountsTab = () => {
                         <button
                           type="button"
                           className="font-semibold text-rose-600 transition hover:text-rose-800"
-                          onClick={() => setDeleteTarget({ id: bank.id, label: "Opening bank" })}
+                          onClick={() =>
+                            setDeleteTarget({
+                              id: bank.id,
+                              label: "Opening bank",
+                            })
+                          }
                         >
                           Delete
                         </button>
                       </td>
                     </tr>
                     {(bank.children || []).map((account) => (
-                      <tr key={account.id} className="border-t border-slate-100 bg-white">
-                        <td className="px-5 py-4 font-medium text-slate-800">{account.code}</td>
+                      <tr
+                        key={account.id}
+                        className="border-t border-slate-100 bg-white"
+                      >
+                        <td className="px-5 py-4 font-medium text-slate-800">
+                          {account.code}
+                        </td>
                         <td className="px-5 py-4 text-slate-700">
                           <span className="pl-6">{account.name}</span>
                         </td>
-                        <td className="px-5 py-4 text-slate-600">{bank.name}</td>
-                        <td className="px-5 py-4 text-slate-600">{account.is_postable ? "Yes" : "No"}</td>
-                        <td className="px-5 py-4 text-slate-600">{account.is_active ? "Active" : "Inactive"}</td>
+                        <td className="px-5 py-4 text-slate-600">
+                          {bank.name}
+                        </td>
+                        <td className="px-5 py-4 text-slate-600">
+                          {account.is_postable ? "Yes" : "No"}
+                        </td>
+                        <td className="px-5 py-4 text-slate-600">
+                          {account.is_active ? "Active" : "Inactive"}
+                        </td>
                         <td className="px-5 py-4 text-right">
                           <button
                             type="button"
@@ -411,7 +497,12 @@ const OpeningAccountsTab = () => {
                           <button
                             type="button"
                             className="font-semibold text-rose-600 transition hover:text-rose-800"
-                            onClick={() => setDeleteTarget({ id: account.id, label: "Opening account" })}
+                            onClick={() =>
+                              setDeleteTarget({
+                                id: account.id,
+                                label: "Opening account",
+                              })
+                            }
                           >
                             Delete
                           </button>

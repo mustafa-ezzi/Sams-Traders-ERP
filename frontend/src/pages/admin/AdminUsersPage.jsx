@@ -124,17 +124,49 @@ const AdminUsersPage = () => {
 
       <Card>
         <form className="grid gap-4 md:grid-cols-2" onSubmit={onSubmit}>
-          <FormInput label="Username" required value={form.username} onChange={(event) => setForm((prev) => ({ ...prev, username: event.target.value }))} />
-          <FormInput label="Email" required type="email" value={form.email} onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))} />
-          <FormInput label="Phone Number" value={form.phone_number} onChange={(event) => setForm((prev) => ({ ...prev, phone_number: event.target.value }))} />
-          <FormInput label="Business Name" value={form.business_name} onChange={(event) => setForm((prev) => ({ ...prev, business_name: event.target.value }))} />
+          <FormInput
+            label="Username"
+            required
+            value={form.username}
+            onChange={(event) =>
+              setForm((prev) => ({ ...prev, username: event.target.value }))
+            }
+          />
+          <FormInput
+            label="Email"
+            required
+            type="email"
+            value={form.email}
+            onChange={(event) =>
+              setForm((prev) => ({ ...prev, email: event.target.value }))
+            }
+          />
+          <FormInput
+            label="Phone Number"
+            value={form.phone_number}
+            onChange={(event) =>
+              setForm((prev) => ({ ...prev, phone_number: event.target.value }))
+            }
+          />
+          <FormInput
+            label="Business Name"
+            value={form.business_name}
+            onChange={(event) =>
+              setForm((prev) => ({
+                ...prev,
+                business_name: event.target.value,
+              }))
+            }
+          />
           {!editingId ? (
             <FormInput
               label="Password"
               required
               type="password"
               value={form.password}
-              onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, password: event.target.value }))
+              }
             />
           ) : null}
           <FormInput
@@ -143,7 +175,9 @@ const AdminUsersPage = () => {
             type="number"
             min={1}
             value={form.tenant_limit}
-            onChange={(event) => setForm((prev) => ({ ...prev, tenant_limit: event.target.value }))}
+            onChange={(event) =>
+              setForm((prev) => ({ ...prev, tenant_limit: event.target.value }))
+            }
           />
           <div className="md:col-span-2 flex flex-wrap gap-3">
             <Button type="submit" disabled={saving}>
@@ -158,25 +192,43 @@ const AdminUsersPage = () => {
         </form>
       </Card>
 
-      <StateView loading={loading} error={error} isEmpty={!loading && !error && users.length === 0} emptyMessage="No users found">
+      <StateView
+        loading={loading}
+        error={error}
+        isEmpty={!loading && !error && users.length === 0}
+        emptyMessage="No users found"
+      >
         <Card className="overflow-hidden p-0">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[840px] text-sm">
               <thead className="bg-[linear-gradient(180deg,#edf4ff,#e1ebff)] text-left">
                 <tr>
                   <th className="px-5 py-4 font-bold text-slate-700">Type</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Username</th>
+                  <th className="px-5 py-4 font-bold text-slate-700">
+                    Username
+                  </th>
                   <th className="px-5 py-4 font-bold text-slate-700">Email</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Parent admin</th>
+                  <th className="px-5 py-4 font-bold text-slate-700">
+                    Parent admin
+                  </th>
                   <th className="px-5 py-4 font-bold text-slate-700">Role</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Business</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Tenant Limit</th>
-                  <th className="px-5 py-4 text-right font-bold text-slate-700">Actions</th>
+                  <th className="px-5 py-4 font-bold text-slate-700">
+                    Business
+                  </th>
+                  <th className="px-5 py-4 font-bold text-slate-700">
+                    Tenant Limit
+                  </th>
+                  <th className="px-5 py-4 text-right font-bold text-slate-700">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {users.map((user) => (
-                  <tr key={user.id} className="border-t border-slate-100 bg-white">
+                  <tr
+                    key={user.id}
+                    className="border-t border-slate-100 bg-white"
+                  >
                     <td className="px-5 py-4 text-slate-700">
                       <span
                         className={`rounded-full px-2 py-0.5 text-xs font-bold ${
@@ -185,20 +237,40 @@ const AdminUsersPage = () => {
                             : "bg-slate-100 text-slate-700"
                         }`}
                       >
-                        {user.account_kind === "child" ? "Child" : "Tenant admin"}
+                        {user.account_kind === "child"
+                          ? "Child"
+                          : "Tenant admin"}
                       </span>
                     </td>
-                    <td className="px-5 py-4 font-semibold text-slate-800">{user.username}</td>
+                    <td className="px-5 py-4 font-semibold text-slate-800">
+                      {user.username}
+                    </td>
                     <td className="px-5 py-4 text-slate-700">{user.email}</td>
-                    <td className="px-5 py-4 text-slate-700">{user.parent_email || "—"}</td>
-                    <td className="px-5 py-4 text-slate-700">{user.tenant_role || "—"}</td>
-                    <td className="px-5 py-4 text-slate-700">{user.business_name || "-"}</td>
-                    <td className="px-5 py-4 text-slate-700">{user.tenant_limit}</td>
+                    <td className="px-5 py-4 text-slate-700">
+                      {user.parent_email || "—"}
+                    </td>
+                    <td className="px-5 py-4 text-slate-700">
+                      {user.tenant_role || "—"}
+                    </td>
+                    <td className="px-5 py-4 text-slate-700">
+                      {user.business_name || "-"}
+                    </td>
+                    <td className="px-5 py-4 text-slate-700">
+                      {user.tenant_limit}
+                    </td>
                     <td className="px-5 py-4 text-right">
-                      <button className="mr-3 font-semibold text-blue-600 hover:text-blue-800" type="button" onClick={() => onEdit(user)}>
+                      <button
+                        className="mr-3 font-semibold text-blue-600 hover:text-blue-800"
+                        type="button"
+                        onClick={() => onEdit(user)}
+                      >
                         Edit
                       </button>
-                      <button className="font-semibold text-rose-600 hover:text-rose-800" type="button" onClick={() => setDeleteId(user.id)}>
+                      <button
+                        className="font-semibold text-rose-600 hover:text-rose-800"
+                        type="button"
+                        onClick={() => setDeleteId(user.id)}
+                      >
                         Delete
                       </button>
                     </td>

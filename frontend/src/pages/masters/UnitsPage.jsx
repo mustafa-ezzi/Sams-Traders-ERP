@@ -12,7 +12,9 @@ import { useToast } from "../../context/ToastContext";
 
 const schema = z.object({
   name: z.string().trim().min(1, "Unit name is required"),
-  base_quantity: z.coerce.number().positive("Base quantity must be greater than 0"),
+  base_quantity: z.coerce
+    .number()
+    .positive("Base quantity must be greater than 0"),
   breakdown_unit: z.string().trim().min(1, "Breakdown unit is required"),
   breakdown_quantity: z.coerce
     .number()
@@ -29,7 +31,9 @@ const defaultValues = {
 const formatQty = (value) => {
   const numberValue = Number(value);
   if (Number.isNaN(numberValue)) return "0";
-  return Number.isInteger(numberValue) ? String(numberValue) : numberValue.toFixed(4);
+  return Number.isInteger(numberValue)
+    ? String(numberValue)
+    : numberValue.toFixed(4);
 };
 
 const UnitsPage = () => {
@@ -108,11 +112,11 @@ const UnitsPage = () => {
   };
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
-  const conversionPreview = `${formatQty(form.watch("base_quantity"))} ${form
-    .watch("name")
-    ?.trim() || "Main Unit"} = ${formatQty(form.watch("breakdown_quantity"))} ${form
-    .watch("breakdown_unit")
-    ?.trim() || "Breakdown Unit"}`;
+  const conversionPreview = `${formatQty(form.watch("base_quantity"))} ${
+    form.watch("name")?.trim() || "Main Unit"
+  } = ${formatQty(form.watch("breakdown_quantity"))} ${
+    form.watch("breakdown_unit")?.trim() || "Breakdown Unit"
+  }`;
 
   return (
     <section className="space-y-6">
@@ -186,7 +190,8 @@ const UnitsPage = () => {
           />
 
           <div className="rounded-2xl border border-blue-200 bg-blue-50/80 px-4 py-3 text-sm text-blue-900 xl:col-span-3">
-            Conversion Preview: <span className="font-semibold">{conversionPreview}</span>
+            Conversion Preview:{" "}
+            <span className="font-semibold">{conversionPreview}</span>
           </div>
 
           <div className="flex flex-col gap-3 xl:justify-end">
@@ -222,11 +227,21 @@ const UnitsPage = () => {
               <thead className="bg-[linear-gradient(180deg,#edf4ff,#e1ebff)] text-left">
                 <tr>
                   <th className="px-5 py-4 font-bold text-slate-700">Unit</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Base Qty</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Breakdown Unit</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Breakdown Qty</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Conversion</th>
-                  <th className="px-5 py-4 text-right font-bold text-slate-700">Actions</th>
+                  <th className="px-5 py-4 font-bold text-slate-700">
+                    Base Qty
+                  </th>
+                  <th className="px-5 py-4 font-bold text-slate-700">
+                    Breakdown Unit
+                  </th>
+                  <th className="px-5 py-4 font-bold text-slate-700">
+                    Breakdown Qty
+                  </th>
+                  <th className="px-5 py-4 font-bold text-slate-700">
+                    Conversion
+                  </th>
+                  <th className="px-5 py-4 text-right font-bold text-slate-700">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -235,12 +250,21 @@ const UnitsPage = () => {
                     key={record.id}
                     className="border-t border-slate-100 bg-white/80 transition hover:bg-blue-50/50"
                   >
-                    <td className="px-5 py-4 font-medium text-slate-700">{record.name}</td>
-                    <td className="px-5 py-4 text-slate-600">{formatQty(record.base_quantity)}</td>
-                    <td className="px-5 py-4 text-slate-600">{record.breakdown_unit}</td>
-                    <td className="px-5 py-4 text-slate-600">{formatQty(record.breakdown_quantity)}</td>
+                    <td className="px-5 py-4 font-medium text-slate-700">
+                      {record.name}
+                    </td>
+                    <td className="px-5 py-4 text-slate-600">
+                      {formatQty(record.base_quantity)}
+                    </td>
+                    <td className="px-5 py-4 text-slate-600">
+                      {record.breakdown_unit}
+                    </td>
+                    <td className="px-5 py-4 text-slate-600">
+                      {formatQty(record.breakdown_quantity)}
+                    </td>
                     <td className="px-5 py-4 font-semibold text-slate-700">
-                      {formatQty(record.base_quantity)} {record.name} = {formatQty(record.breakdown_quantity)}{" "}
+                      {formatQty(record.base_quantity)} {record.name} ={" "}
+                      {formatQty(record.breakdown_quantity)}{" "}
                       {record.breakdown_unit}
                     </td>
                     <td className="px-5 py-4 text-right">
@@ -252,7 +276,9 @@ const UnitsPage = () => {
                             name: record.name,
                             base_quantity: Number(record.base_quantity || 1),
                             breakdown_unit: record.breakdown_unit || "",
-                            breakdown_quantity: Number(record.breakdown_quantity || 1),
+                            breakdown_quantity: Number(
+                              record.breakdown_quantity || 1,
+                            ),
                           });
                         }}
                         type="button"
@@ -274,7 +300,9 @@ const UnitsPage = () => {
           </div>
 
           <div className="flex flex-col gap-3 border-t border-slate-100 px-5 py-4 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-            <span className="text-center sm:text-left">{total} total records</span>
+            <span className="text-center sm:text-left">
+              {total} total records
+            </span>
             <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-end">
               <Button
                 variant="secondary"

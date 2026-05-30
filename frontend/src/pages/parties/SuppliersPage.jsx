@@ -29,9 +29,10 @@ const SuppliersPage = () => {
   const accountOptions = useMemo(
     () =>
       flattenAccountTree(accounts).filter(
-        (account) => account.account_group === "LIABILITY" && account.is_postable
+        (account) =>
+          account.account_group === "LIABILITY" && account.is_postable,
       ),
-    [accounts]
+    [accounts],
   );
 
   return (

@@ -34,8 +34,8 @@ const extractErrorMessage = (error) => {
   if (data.message) return data.message;
   if (typeof data.detail === "string") return data.detail;
 
-  const fieldEntry = Object.entries(data).find(([, value]) =>
-    typeof value === "string" || Array.isArray(value)
+  const fieldEntry = Object.entries(data).find(
+    ([, value]) => typeof value === "string" || Array.isArray(value),
   );
 
   if (fieldEntry) {
@@ -85,7 +85,9 @@ const ExpensePage = () => {
     try {
       const accountsResponse = await accountService.list();
       const flatAccounts = flattenAccountTree(
-        Array.isArray(accountsResponse) ? accountsResponse : accountsResponse.data || []
+        Array.isArray(accountsResponse)
+          ? accountsResponse
+          : accountsResponse.data || [],
       );
 
       setBankAccounts(
@@ -94,16 +96,16 @@ const ExpensePage = () => {
             account.is_postable &&
             account.is_active &&
             account.account_group === "ASSET" &&
-            account.account_type === "BANK"
-        )
+            account.account_type === "BANK",
+        ),
       );
       setExpenseAccounts(
         flatAccounts.filter(
           (account) =>
             account.is_postable &&
             account.is_active &&
-            account.account_group === "EXPENSE"
-        )
+            account.account_group === "EXPENSE",
+        ),
       );
     } catch {
       toast.error("Failed to load bank and expense accounts");
@@ -204,7 +206,9 @@ const ExpensePage = () => {
       setDeleteId("");
       await loadExpenses(page, search);
     } catch (deleteError) {
-      toast.error(extractErrorMessage(deleteError) || "Failed to delete expense");
+      toast.error(
+        extractErrorMessage(deleteError) || "Failed to delete expense",
+      );
     }
   };
 
@@ -216,7 +220,6 @@ const ExpensePage = () => {
             <h2 className="text-xl font-bold text-slate-900">
               {editingId ? "Edit Expense" : "Create Expense"}
             </h2>
-           
           </div>
           {editingId ? (
             <Button variant="secondary" onClick={resetForm}>
@@ -260,7 +263,9 @@ const ExpensePage = () => {
               <select
                 className={selectClassName}
                 value={form.expenseAccountId}
-                onChange={(e) => handleChange("expenseAccountId", e.target.value)}
+                onChange={(e) =>
+                  handleChange("expenseAccountId", e.target.value)
+                }
               >
                 <option value="">Select Expense Account</option>
                 {expenseAccounts.map((account) => (
@@ -291,7 +296,11 @@ const ExpensePage = () => {
 
           <div className="flex justify-end border-t border-slate-100 pt-4">
             <Button type="submit" disabled={submitting}>
-              {submitting ? "Saving..." : editingId ? "Update Expense" : "Save Expense"}
+              {submitting
+                ? "Saving..."
+                : editingId
+                  ? "Update Expense"
+                  : "Save Expense"}
             </Button>
           </div>
         </form>
@@ -302,7 +311,8 @@ const ExpensePage = () => {
           <div>
             <h2 className="text-xl font-bold text-slate-900">Expenses</h2>
             <p className="mt-1 text-sm text-slate-500">
-              Review, edit, and remove expense entries posted from bank accounts.
+              Review, edit, and remove expense entries posted from bank
+              accounts.
             </p>
           </div>
           <div className="flex gap-2">
@@ -349,23 +359,35 @@ const ExpensePage = () => {
                       <td className="px-4 py-3 font-semibold text-slate-900">
                         {record.expense_number}
                       </td>
-                      <td className="px-4 py-3 text-slate-600">{record.date}</td>
                       <td className="px-4 py-3 text-slate-600">
-                        {record.bank_account?.code} - {record.bank_account?.name}
+                        {record.date}
                       </td>
                       <td className="px-4 py-3 text-slate-600">
-                        {record.expense_account?.code} - {record.expense_account?.name}
+                        {record.bank_account?.code} -{" "}
+                        {record.bank_account?.name}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {record.expense_account?.code} -{" "}
+                        {record.expense_account?.name}
                       </td>
                       <td className="px-4 py-3 font-semibold text-slate-800">
                         {formatDecimal(record.amount)}
                       </td>
-                      <td className="px-4 py-3 text-slate-600">{record.remarks || "-"}</td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {record.remarks || "-"}
+                      </td>
                       <td className="px-4 py-3">
                         <div className="flex gap-2">
-                          <Button variant="secondary" onClick={() => handleEdit(record.id)}>
+                          <Button
+                            variant="secondary"
+                            onClick={() => handleEdit(record.id)}
+                          >
                             Edit
                           </Button>
-                          <Button variant="danger" onClick={() => setDeleteId(record.id)}>
+                          <Button
+                            variant="danger"
+                            onClick={() => setDeleteId(record.id)}
+                          >
                             Delete
                           </Button>
                         </div>

@@ -348,7 +348,7 @@ def sync_product_stock_quantity(tenant_id, warehouse_id, product_id):
     component_consumption_total = (
         ProductMaterial.objects.filter(
             tenant_id=tenant_id,
-            component_type="FINISHED_GOOD",
+            component_type__in=["FINISHED_GOOD", "ASSEMBLY_PRODUCT"],
             component_product_id=product_id,
             deleted_at__isnull=True,
             product__deleted_at__isnull=True,

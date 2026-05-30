@@ -46,8 +46,8 @@ const extractErrorMessage = (error) => {
     return data.detail;
   }
 
-  const fieldEntry = Object.entries(data).find(([, value]) =>
-    typeof value === "string" || Array.isArray(value)
+  const fieldEntry = Object.entries(data).find(
+    ([, value]) => typeof value === "string" || Array.isArray(value),
   );
 
   if (fieldEntry) {
@@ -88,7 +88,7 @@ const SalesInvoicePage = () => {
         accumulator[product.id] = product;
         return accumulator;
       }, {}),
-    [productOptions]
+    [productOptions],
   );
 
   const lineMetrics = useMemo(
@@ -111,24 +111,24 @@ const SalesInvoicePage = () => {
           profit,
         };
       }),
-    [form.lines, productMap]
+    [form.lines, productMap],
   );
 
   const grossAmount = useMemo(
     () => lineMetrics.reduce((sum, line) => sum + line.totalAmount, 0),
-    [lineMetrics]
+    [lineMetrics],
   );
   const netAmount = useMemo(
     () => Math.max(grossAmount - toNumber(form.invoiceDiscount), 0),
-    [grossAmount, form.invoiceDiscount]
+    [grossAmount, form.invoiceDiscount],
   );
   const estimatedCostTotal = useMemo(
     () => lineMetrics.reduce((sum, line) => sum + line.costTotal, 0),
-    [lineMetrics]
+    [lineMetrics],
   );
   const estimatedProfit = useMemo(
     () => netAmount - estimatedCostTotal,
-    [estimatedCostTotal, netAmount]
+    [estimatedCostTotal, netAmount],
   );
 
   const loadInvoices = async (nextPage = page, nextSearch = search) => {
@@ -144,7 +144,9 @@ const SalesInvoicePage = () => {
       setTotal(response.total || 0);
       setPage(response.page || nextPage);
     } catch (loadError) {
-      setError(extractErrorMessage(loadError) || "Failed to load sales invoices");
+      setError(
+        extractErrorMessage(loadError) || "Failed to load sales invoices",
+      );
     } finally {
       setLoading(false);
     }
@@ -269,7 +271,9 @@ const SalesInvoicePage = () => {
       toast.error("Please add at least one product line");
       return false;
     }
-    if (form.lines.some((line) => !line.productId || toNumber(line.quantity) <= 0)) {
+    if (
+      form.lines.some((line) => !line.productId || toNumber(line.quantity) <= 0)
+    ) {
       toast.error("Each line needs a product and quantity greater than zero");
       return false;
     }
@@ -340,7 +344,9 @@ const SalesInvoicePage = () => {
       await loadInvoices(page, search);
       await loadProductOptions(form.warehouseId);
     } catch (deleteError) {
-      toast.error(extractErrorMessage(deleteError) || "Failed to delete invoice");
+      toast.error(
+        extractErrorMessage(deleteError) || "Failed to delete invoice",
+      );
     }
   };
 
@@ -352,7 +358,6 @@ const SalesInvoicePage = () => {
             <h2 className="text-xl font-bold text-slate-900">
               {editingId ? "Edit Sales Invoice" : "Create Sales Invoice"}
             </h2>
-            
           </div>
           {editingId ? (
             <Button variant="secondary" onClick={resetForm}>
@@ -422,7 +427,10 @@ const SalesInvoicePage = () => {
           <div className="overflow-hidden rounded-2xl border border-slate-200">
             <div
               className="grid gap-2 bg-indigo-50 px-4 py-3 text-xs font-bold uppercase tracking-widest text-slate-500"
-              style={{ gridTemplateColumns: "1.8fr 80px 90px 70px 110px 110px 110px 110px 110px 110px 40px" }}
+              style={{
+                gridTemplateColumns:
+                  "1.8fr 80px 90px 70px 110px 110px 110px 110px 110px 110px 40px",
+              }}
             >
               <span>Product Name</span>
               <span>Qty</span>
@@ -446,13 +454,16 @@ const SalesInvoicePage = () => {
                     key={`${index}-${line.productId}`}
                     className="grid items-center gap-2 py-3"
                     style={{
-                      gridTemplateColumns: "1.8fr 80px 90px 70px 110px 110px 110px 110px 110px 110px 40px",
+                      gridTemplateColumns:
+                        "1.8fr 80px 90px 70px 110px 110px 110px 110px 110px 110px 40px",
                     }}
                   >
                     <select
                       className={selectClassName}
                       value={line.productId}
-                      onChange={(e) => handleLineChange(index, "productId", e.target.value)}
+                      onChange={(e) =>
+                        handleLineChange(index, "productId", e.target.value)
+                      }
                     >
                       <option value="">Select Product</option>
                       {productOptions.map((product) => (
@@ -468,7 +479,9 @@ const SalesInvoicePage = () => {
                       step="0.01"
                       placeholder="0"
                       value={line.quantity}
-                      onChange={(e) => handleLineChange(index, "quantity", e.target.value)}
+                      onChange={(e) =>
+                        handleLineChange(index, "quantity", e.target.value)
+                      }
                     />
 
                     <div className="flex items-center rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-500">
@@ -485,7 +498,9 @@ const SalesInvoicePage = () => {
                       step="0.01"
                       placeholder="0.00"
                       value={line.rate}
-                      onChange={(e) => handleLineChange(index, "rate", e.target.value)}
+                      onChange={(e) =>
+                        handleLineChange(index, "rate", e.target.value)
+                      }
                     />
 
                     <div className="flex items-center rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-semibold text-slate-700">
@@ -498,7 +513,9 @@ const SalesInvoicePage = () => {
                       step="0.01"
                       placeholder="0.00"
                       value={line.discount}
-                      onChange={(e) => handleLineChange(index, "discount", e.target.value)}
+                      onChange={(e) =>
+                        handleLineChange(index, "discount", e.target.value)
+                      }
                     />
 
                     <div className="flex items-center rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm font-semibold text-emerald-700">
@@ -535,46 +552,72 @@ const SalesInvoicePage = () => {
           <div className="flex flex-col items-end gap-3">
             <div className="flex gap-3">
               <div className="min-w-[180px] rounded-2xl border border-slate-200 bg-white px-5 py-3">
-                <p className="mb-1 text-xs text-slate-400">Invoice Discount (Amount)</p>
+                <p className="mb-1 text-xs text-slate-400">
+                  Invoice Discount (Amount)
+                </p>
                 <FormInput
                   type="number"
                   min="0"
                   step="0.01"
                   value={form.invoiceDiscount}
-                  onChange={(e) => handleChange("invoiceDiscount", e.target.value)}
+                  onChange={(e) =>
+                    handleChange("invoiceDiscount", e.target.value)
+                  }
                 />
               </div>
             </div>
 
             <div className="flex w-full justify-end gap-6 border-t border-slate-200 pt-3 text-sm text-slate-600">
               <div className="text-right">
-                <p className="mb-0.5 text-xs uppercase tracking-wide text-slate-400">Gross Amount</p>
-                <p className="text-base font-bold text-slate-800">{formatDecimal(grossAmount)}</p>
+                <p className="mb-0.5 text-xs uppercase tracking-wide text-slate-400">
+                  Gross Amount
+                </p>
+                <p className="text-base font-bold text-slate-800">
+                  {formatDecimal(grossAmount)}
+                </p>
               </div>
               <div className="text-right">
-                <p className="mb-0.5 text-xs uppercase tracking-wide text-slate-400">Invoice Discount</p>
+                <p className="mb-0.5 text-xs uppercase tracking-wide text-slate-400">
+                  Invoice Discount
+                </p>
                 <p className="text-base font-bold text-slate-800">
                   - {formatDecimal(toNumber(form.invoiceDiscount))}
                 </p>
               </div>
               <div className="border-l border-slate-200 pl-6 text-right">
-                <p className="mb-0.5 text-xs uppercase tracking-wide text-slate-400">Net Amount</p>
-                <p className="text-xl font-extrabold text-blue-600">{formatDecimal(netAmount)}</p>
+                <p className="mb-0.5 text-xs uppercase tracking-wide text-slate-400">
+                  Net Amount
+                </p>
+                <p className="text-xl font-extrabold text-blue-600">
+                  {formatDecimal(netAmount)}
+                </p>
               </div>
               <div className="border-l border-slate-200 pl-6 text-right">
-                <p className="mb-0.5 text-xs uppercase tracking-wide text-slate-400">Est. COGS</p>
-                <p className="text-base font-bold text-slate-800">{formatDecimal(estimatedCostTotal)}</p>
+                <p className="mb-0.5 text-xs uppercase tracking-wide text-slate-400">
+                  Est. COGS
+                </p>
+                <p className="text-base font-bold text-slate-800">
+                  {formatDecimal(estimatedCostTotal)}
+                </p>
               </div>
               <div className="border-l border-slate-200 pl-6 text-right">
-                <p className="mb-0.5 text-xs uppercase tracking-wide text-slate-400">Est. Profit</p>
-                <p className="text-xl font-extrabold text-emerald-600">{formatDecimal(estimatedProfit)}</p>
+                <p className="mb-0.5 text-xs uppercase tracking-wide text-slate-400">
+                  Est. Profit
+                </p>
+                <p className="text-xl font-extrabold text-emerald-600">
+                  {formatDecimal(estimatedProfit)}
+                </p>
               </div>
             </div>
           </div>
 
           <div className="flex justify-end border-t border-slate-100 pt-4">
             <Button type="submit" disabled={submitting}>
-              {submitting ? "Saving..." : editingId ? "Update Sales Invoice" : "Save Sales Invoice"}
+              {submitting
+                ? "Saving..."
+                : editingId
+                  ? "Update Sales Invoice"
+                  : "Save Sales Invoice"}
             </Button>
           </div>
         </form>
@@ -632,12 +675,18 @@ const SalesInvoicePage = () => {
                 <tbody className="divide-y divide-slate-100 bg-white">
                   {records.map((record) => (
                     <tr key={record.id}>
-                      <td className="px-4 py-3 font-semibold text-slate-900">{record.invoice_number}</td>
-                      <td className="px-4 py-3 text-slate-600">{record.date}</td>
+                      <td className="px-4 py-3 font-semibold text-slate-900">
+                        {record.invoice_number}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {record.date}
+                      </td>
                       <td className="px-4 py-3 text-slate-600">
                         {record.customer?.business_name}
                       </td>
-                      <td className="px-4 py-3 text-slate-600">{record.warehouse?.name}</td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {record.warehouse?.name}
+                      </td>
                       <td className="px-4 py-3 text-slate-600">
                         {formatDecimal(record.grossAmount)}
                       </td>
@@ -655,10 +704,16 @@ const SalesInvoicePage = () => {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex gap-2">
-                          <Button variant="secondary" onClick={() => handleEdit(record.id)}>
+                          <Button
+                            variant="secondary"
+                            onClick={() => handleEdit(record.id)}
+                          >
                             Edit
                           </Button>
-                          <Button variant="danger" onClick={() => setDeleteId(record.id)}>
+                          <Button
+                            variant="danger"
+                            onClick={() => setDeleteId(record.id)}
+                          >
                             Delete
                           </Button>
                         </div>
