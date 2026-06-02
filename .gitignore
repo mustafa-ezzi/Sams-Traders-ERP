@@ -166,4 +166,4 @@ cython_debug/
 
 
 myworld/*
-"GuideLine Files"
+guide/
