@@ -1,35 +1,55 @@
+# Django Framework
 Django==5.1.11
 djangorestframework==3.15.2
 django-cors-headers==4.4.0
+
+# Authentication & Security
 djangorestframework-simplejwt==5.5.1
+python-jose[cryptography]==3.5.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.3.0
+
+# Database
 psycopg2-binary==2.9.10
-gunicorn==23.0.0
-whitenoise==6.9.0
-python-decouple==3.8
+SQLAlchemy==2.0.43
 
-Pillow==10.2.0
+# Environment Variables
+python-dotenv==1.1.1
 
+# File Handling
+Pillow==11.0.0
 openpyxl==3.1.5
 xlsxwriter==3.2.5
 reportlab==4.4.3
+python-multipart==0.0.20
 
+# HTTP & Requests
 requests==2.32.3
 
+# Background Tasks & Caching
 celery==5.3.6
 redis==5.0.1
 django-celery-beat==2.5.0
 django-celery-results==2.5.1
 
+# API Documentation
 drf-spectacular==0.27.2
+drf-spectacular[sidecar]==0.27.2
 
-gunicorn==23.0.0
-whitenoise==6.6.0
-
+# Testing
 pytest==8.4.1
 pytest-django==4.7.0
 pytest-cov==4.1.0
+factory-boy==3.3.0
 
+# Development
 django-debug-toolbar==4.2.0
 django-extensions==3.2.3
 
+# Logging
 loguru==0.7.3
+
+# Production
+gunicorn==23.0.0
+whitenoise==6.9.0
+python-decouple==3.8
