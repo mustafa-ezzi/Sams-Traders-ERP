@@ -361,9 +361,11 @@ const navigation = [
 const pageTitles = {
   "/": { title: "Dashboard", eyebrow: "Overview" },
   "/raw-materials": { title: "Raw Materials", eyebrow: "Inventory" },
+  "/raw-materials/create": { title: "Create Raw Material", eyebrow: "Inventory" },
   "/products": { title: "Products", eyebrow: "Inventory" },
   "/products/create": { title: "Create Product", eyebrow: "Inventory" },
   "/accounts": { title: "Chart of Accounts", eyebrow: "Accounting" },
+  "/accounts/create": { title: "Create Account", eyebrow: "Accounting" },
   "/users/dimensions": { title: "Dimensions", eyebrow: "Users" },
   "/reports/balance-sheet": { title: "Balance Sheet", eyebrow: "Reports" },
   "/reports/ledger": { title: "Ledger Reports", eyebrow: "Reports" },
@@ -371,6 +373,7 @@ const pageTitles = {
   "/warehouses": { title: "Warehouses", eyebrow: "Inventory" },
   "/opening-stock": { title: "Opening Stock", eyebrow: "Inventory" },
   "/production": { title: "Production", eyebrow: "Inventory" },
+  "/production/create": { title: "Create Production", eyebrow: "Inventory" },
   "/purchase-invoices": { title: "Purchase Invoices", eyebrow: "Purchase" },
   "/purchase-returns": { title: "Purchase Returns", eyebrow: "Purchase" },
   "/purchase-bank-payments": { title: "Bank Payments", eyebrow: "Bank" },
@@ -380,6 +383,7 @@ const pageTitles = {
   "/sales-bank-receipts": { title: "Bank Receipts", eyebrow: "Bank" },
   "/masters/units": { title: "Units", eyebrow: "Masters" },
   "/masters/categories": { title: "Categories", eyebrow: "Masters" },
+  "/masters/categories/create": { title: "Create Category", eyebrow: "Masters" },
   "/masters/brands": { title: "Brands", eyebrow: "Masters" },
   "/support": { title: "Support", eyebrow: "Users" },
   "/settings/staff": { title: "Staff access", eyebrow: "Admin" },
@@ -558,8 +562,20 @@ const Layout = () => {
   const showDashboardNav = !isTenantChild || perms.includes("dashboard");
 
   const pageMeta = useMemo(() => {
+    if (pathname.startsWith("/raw-materials/") && pathname.endsWith("/edit")) {
+      return { title: "Edit Raw Material", eyebrow: "Inventory" };
+    }
     if (pathname.startsWith("/products/") && pathname.endsWith("/edit")) {
       return { title: "Edit Product", eyebrow: "Inventory" };
+    }
+    if (pathname.startsWith("/masters/categories/") && pathname.endsWith("/edit")) {
+      return { title: "Edit Category", eyebrow: "Masters" };
+    }
+    if (pathname.startsWith("/production/") && pathname.endsWith("/edit")) {
+      return { title: "Edit Production", eyebrow: "Inventory" };
+    }
+    if (pathname.startsWith("/accounts/") && pathname.endsWith("/edit")) {
+      return { title: "Edit Account", eyebrow: "Accounting" };
     }
     return pageTitles[pathname] || { title: "Workspace", eyebrow: "ERP" };
   }, [pathname]);

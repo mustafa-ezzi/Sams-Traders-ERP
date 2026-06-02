@@ -6,6 +6,10 @@ const rawMaterialService = {
     const response = await axiosInstance.get("/inventory/raw-materials", { params });
     return response.data;
   },
+  async getById(id) {
+    const response = await axiosInstance.get(`/inventory/raw-materials/${id}/`);
+    return response.data;
+  },
   async create(payload) {
     const { response } = await createAcrossDimensions((tenantId) =>
       axiosInstance.post("/inventory/raw-materials/", payload, {
