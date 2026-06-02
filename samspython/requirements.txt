@@ -30,7 +30,7 @@ requests==2.32.3
 # Background Tasks & Caching
 celery==5.3.6
 redis==5.0.1
-django-celery-beat==2.5.0
+django-celery-beat==2.6.2
 django-celery-results==2.5.1
 
 # API Documentation
