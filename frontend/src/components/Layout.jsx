@@ -318,7 +318,7 @@ const navigation = [
       },
       {
         to: "/production",
-        label: "Production",
+        label: "Assembly Process",
         icon: icons.products,
         perm: "production",
       },
