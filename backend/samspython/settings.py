@@ -87,7 +87,7 @@ MIDDLEWARE = [
     "config.tenant_middleware.TenantMiddleware",
 ]
 
-ROOT_URLCONF = "backend.urls"
+ROOT_URLCONF = "samspython.urls"
 
 TEMPLATES = [
     {
@@ -105,7 +105,7 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = "backend.wsgi.application"
+WSGI_APPLICATION = "samspython.wsgi.application"
 
 
 # Database
