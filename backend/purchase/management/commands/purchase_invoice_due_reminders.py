@@ -3,7 +3,7 @@ List purchase invoices that need attention before the due date.
 
 Schedule with cron (example: daily at 08:00 server local time):
 
-    0 8 * * * cd /path/to/samspython && python manage.py purchase_invoice_due_reminders
+    0 8 * * * cd /path/to/backend && python manage.py purchase_invoice_due_reminders
 
 - "Due tomorrow": unpaid balance and due_date is the calendar day after today.
 - "Overdue": unpaid balance and due_date is today or in the past.
