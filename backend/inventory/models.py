@@ -140,6 +140,7 @@ PRODUCT_TYPE_CHOICES = [
 
 class Product(BaseModel):
     name = models.CharField(max_length=255)
+    sku = models.CharField(max_length=50, blank=True, default="")
     product_type = models.CharField(max_length=20, choices=PRODUCT_TYPE_CHOICES)
     unit = models.ForeignKey(Unit, on_delete=models.PROTECT, null=True, blank=True)
 
@@ -170,6 +171,11 @@ class Product(BaseModel):
                 fields=["tenant_id", "name"],
                 condition=models.Q(deleted_at__isnull=True),
                 name="unique_active_product_per_tenant",
+            ),
+            models.UniqueConstraint(
+                fields=["tenant_id", "sku"],
+                condition=models.Q(deleted_at__isnull=True) & ~models.Q(sku=""),
+                name="unique_active_product_sku_per_tenant",
             )
         ]
         ordering = ["-created_at"]

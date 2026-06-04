@@ -221,8 +221,8 @@ class ProductViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, OrderingFilter]
-    search_fields = ["name"]
-    ordering_fields = ["name", "created_at"]
+    search_fields = ["name", "sku"]
+    ordering_fields = ["name", "sku", "created_at"]
     ordering = ["-created_at"]
 
     def get_queryset(self):

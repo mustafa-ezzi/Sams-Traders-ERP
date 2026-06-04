@@ -13,6 +13,7 @@ import { useToast } from "../../context/ToastContext";
 import {
   flattenAccountTree,
   getPostableInventoryAccounts,
+  getSelectablePostingAccounts,
 } from "../../utils/accounts";
 
 const extractErrorMessage = (error) => {
@@ -78,16 +79,10 @@ const ProductPage = () => {
         setUnitOptions(unitRes.data || []);
         setInventoryAccounts(getPostableInventoryAccounts(flatAccounts));
         setCogsAccounts(
-          flatAccounts.filter(
-            (account) =>
-              account.account_group === "COGS" && account.is_postable,
-          ),
+          getSelectablePostingAccounts(flatAccounts, "COGS"),
         );
         setRevenueAccounts(
-          flatAccounts.filter(
-            (account) =>
-              account.account_group === "REVENUE" && account.is_postable,
-          ),
+          getSelectablePostingAccounts(flatAccounts, "REVENUE"),
         );
       })
       .catch(() => toast.error("Failed to load product setup options"));
@@ -152,9 +147,12 @@ const ProductPage = () => {
       >
         <Card className="overflow-hidden p-0">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[980px] text-sm">
+            <table className="w-full min-w-[1060px] text-sm">
               <thead className="border-b border-slate-100 bg-slate-50 text-left">
                 <tr>
+                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">
+                    SKU
+                  </th>
                   <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">
                     Name
                   </th>
@@ -205,6 +203,9 @@ const ProductPage = () => {
                       key={row.id}
                       className="bg-white transition-colors hover:bg-slate-50"
                     >
+                      <td className="px-4 py-3 font-semibold text-slate-800">
+                        {row.sku || "-"}
+                      </td>
                       <td className="px-4 py-3 font-medium text-slate-800">
                         {row.name}
                       </td>

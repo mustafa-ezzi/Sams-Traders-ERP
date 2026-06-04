@@ -2,7 +2,7 @@ from django.test import TestCase
 from rest_framework.test import APIRequestFactory, force_authenticate
 from types import SimpleNamespace
 
-from accounts.models import Account, User
+from accounts.models import Account, Dimension, User
 from inventory.models import (
     Category,
     Customer,
@@ -28,6 +28,14 @@ class ProductCoaDefaultsTests(TestCase):
             password="secret",
             tenant_id=self.tenant_id,
         )
+        Dimension.objects.update_or_create(
+            code=self.tenant_id,
+            defaults={
+                "name": "Sams Traders",
+                "sku_code": "AME",
+                "is_active": True,
+            },
+        )
         self.factory = APIRequestFactory()
 
         self.assets = Account.objects.create(
@@ -47,6 +55,7 @@ class ProductCoaDefaultsTests(TestCase):
             name="Inventory",
             parent=self.assets,
             account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.INVENTORY,
             account_nature=Account.AccountNature.DEBIT,
             level=2,
             is_postable=True,
@@ -133,6 +142,38 @@ class ProductCoaDefaultsTests(TestCase):
         self.assertEqual(product.cogs_account_id, self.cogs_account.id)
         self.assertEqual(product.revenue_account_id, self.revenue_account.id)
         self.assertEqual(product.unit_id, self.unit.id)
+        self.assertEqual(product.sku, "AME - 0001")
+
+    def test_product_sku_can_be_manual_or_auto_generated_from_dimension(self):
+        manual_serializer = ProductSerializer(
+            data={
+                "name": "Manual SKU Product",
+                "sku": "AME - 0099",
+                "product_type": "FINISHED_GOOD",
+                "direct_price": "10.00",
+                "unit": self.unit.id,
+                "materials": [],
+            },
+            context={"request": SimpleNamespace(user=self.user)},
+        )
+        self.assertTrue(manual_serializer.is_valid(), manual_serializer.errors)
+        manual_product = manual_serializer.save()
+
+        auto_serializer = ProductSerializer(
+            data={
+                "name": "Auto SKU Product",
+                "product_type": "FINISHED_GOOD",
+                "direct_price": "12.00",
+                "unit": self.unit.id,
+                "materials": [],
+            },
+            context={"request": SimpleNamespace(user=self.user)},
+        )
+        self.assertTrue(auto_serializer.is_valid(), auto_serializer.errors)
+        auto_product = auto_serializer.save()
+
+        self.assertEqual(manual_product.sku, "AME - 0099")
+        self.assertEqual(auto_product.sku, "AME - 0100")
 
     def test_product_update_persists_unit(self):
         product = Product.objects.create(

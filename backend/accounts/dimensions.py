@@ -14,7 +14,11 @@ def ensure_default_dimensions():
     for item in DEFAULT_DIMENSIONS:
         Dimension.objects.get_or_create(
             code=item["code"],
-            defaults={"name": item["name"], "is_active": True},
+            defaults={
+                "name": item["name"],
+                "sku_code": item["code"],
+                "is_active": True,
+            },
         )
 
 
@@ -57,6 +61,7 @@ def seed_default_coa_for_dimension(dimension_code):
             "name": item["name"],
             "parent": parent,
             "account_group": item["group"],
+            "account_type": item.get("type", "GENERAL"),
             "account_nature": item["nature"],
             "level": item["level"],
             "is_postable": item["postable"],

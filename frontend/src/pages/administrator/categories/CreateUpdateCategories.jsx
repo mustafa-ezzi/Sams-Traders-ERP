@@ -13,6 +13,7 @@ import {
   flattenAccountTree,
   formatAccountLabel,
   getPostableInventoryAccounts,
+  getSelectablePostingAccounts,
 } from "../../../utils/accounts";
 const schema = z.object({
   name: z.string().trim().min(1, "Name is required"),
@@ -51,11 +52,10 @@ const CreateUpdateCategories = () => {
     [accounts],
   );
   const inventoryAccounts = getPostableInventoryAccounts(flattenedAccounts);
-  const cogsAccounts = flattenedAccounts.filter(
-    (account) => account.account_group === "COGS" && account.is_postable,
-  );
-  const revenueAccounts = flattenedAccounts.filter(
-    (account) => account.account_group === "REVENUE" && account.is_postable,
+  const cogsAccounts = getSelectablePostingAccounts(flattenedAccounts, "COGS");
+  const revenueAccounts = getSelectablePostingAccounts(
+    flattenedAccounts,
+    "REVENUE",
   );
   const loadAccounts = async () => {
     setLoadingAccounts(true);

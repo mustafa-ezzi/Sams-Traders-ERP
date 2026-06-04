@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -16,9 +16,11 @@ import {
   flattenAccountTree,
   formatAccountLabel,
   getPostableInventoryAccounts,
+  getSelectablePostingAccounts,
 } from "../../../utils/accounts";
 const schema = z.object({
   name: z.string().trim().min(1, "Name is required"),
+  sku: z.string().trim().optional(),
   productType: z.enum(["ASSEMBLY_PRODUCT", "FINISHED_GOOD"]),
   mouldingCharges: z.coerce.number().min(0),
   labourCharges: z.coerce.number().min(0),
@@ -42,6 +44,7 @@ const schema = z.object({
 });
 const defaultValues = {
   name: "",
+  sku: "",
   productType: "FINISHED_GOOD",
   mouldingCharges: 0,
   labourCharges: 0,
@@ -76,6 +79,7 @@ const getComponentSelectLabel = (componentType) => {
 };
 const mapProductToForm = (product) => ({
   name: product.name,
+  sku: product.sku || "",
   productType:
     product.product_type === "MANUFACTURED"
       ? "ASSEMBLY_PRODUCT"
@@ -113,6 +117,21 @@ const mapProductMaterials = (product) =>
           rate: 0,
         },
       ];
+
+const extractSubmitErrorMessage = (error) => {
+  const data = error?.response?.data;
+  if (!data) return error?.message || "Save failed";
+  if (typeof data === "string") return data;
+  if (data.message) return data.message;
+  if (data.detail) return data.detail;
+  const fieldEntry = Object.entries(data).find(
+    ([, value]) => typeof value === "string" || Array.isArray(value),
+  );
+  if (!fieldEntry) return "Save failed";
+  const [, value] = fieldEntry;
+  return Array.isArray(value) ? value.join(", ") : value;
+};
+
 const CreateUpdateProduct = () => {
   const { id } = useParams();
   const isEditing = Boolean(id);
@@ -140,24 +159,50 @@ const CreateUpdateProduct = () => {
   const form = useForm({ resolver: zodResolver(schema), defaultValues });
   const productType = form.watch("productType");
   const useCalculatedCost = form.watch("useCalculatedCost");
+
+  const loadProductSetupOptions = useCallback(async () => {
+    const [unitRes, accountRes] = await Promise.all([
+      unitService.list({ page: 1, limit: 100, search: "" }),
+      accountService.list(),
+    ]);
+    const flatAccounts = flattenAccountTree(accountRes || []);
+
+    setUnitOptions(unitRes.data || []);
+    setInventoryAccounts(getPostableInventoryAccounts(flatAccounts));
+    setCogsAccounts(
+      getSelectablePostingAccounts(flatAccounts, "COGS"),
+    );
+    setRevenueAccounts(
+      getSelectablePostingAccounts(flatAccounts, "REVENUE"),
+    );
+  }, []);
+
+  const refreshProductSetupOptions = useCallback(async () => {
+    try {
+      await loadProductSetupOptions();
+    } catch (refreshError) {
+      toast.error(
+        refreshError?.response?.data?.message ||
+          "Failed to refresh product setup options",
+      );
+    }
+  }, [loadProductSetupOptions, toast]);
+
   useEffect(() => {
     const loadSetup = async () => {
       setLoading(true);
       try {
         const [
           rawMaterialRes,
-          unitRes,
-          accountRes,
+          ,
           productOptionsRes,
           product,
         ] = await Promise.all([
           rawMaterialService.list({ page: 1, limit: 100, search: "" }),
-          unitService.list({ page: 1, limit: 100, search: "" }),
-          accountService.list(),
+          loadProductSetupOptions(),
           productService.list({ page: 1, limit: 100, search: "" }),
           isEditing ? productService.getById(id) : Promise.resolve(null),
         ]);
-        const flatAccounts = flattenAccountTree(accountRes || []);
         setRawMaterialOptions(rawMaterialRes.data || []);
         const otherProducts = (productOptionsRes.data || []).filter(
           (item) => String(item.id) !== String(id),
@@ -176,20 +221,6 @@ const CreateUpdateProduct = () => {
               item.product_type === "MANUFACTURED",
           ),
         );
-        setUnitOptions(unitRes.data || []);
-        setInventoryAccounts(getPostableInventoryAccounts(flatAccounts));
-        setCogsAccounts(
-          flatAccounts.filter(
-            (account) =>
-              account.account_group === "COGS" && account.is_postable,
-          ),
-        );
-        setRevenueAccounts(
-          flatAccounts.filter(
-            (account) =>
-              account.account_group === "REVENUE" && account.is_postable,
-          ),
-        );
         if (product) {
           form.reset(mapProductToForm(product));
           setMaterialRows(mapProductMaterials(product));
@@ -203,7 +234,28 @@ const CreateUpdateProduct = () => {
       }
     };
     loadSetup();
-  }, [form, id, isEditing, toast]);
+  }, [form, id, isEditing, loadProductSetupOptions, toast]);
+
+  useEffect(() => {
+    const handleWindowFocus = () => refreshProductSetupOptions();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        refreshProductSetupOptions();
+      }
+    };
+
+    window.addEventListener("focus", handleWindowFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.removeEventListener("focus", handleWindowFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [refreshProductSetupOptions]);
+
+  const refreshSelectOptionsProps = {
+    onFocus: refreshProductSetupOptions,
+    onMouseDown: refreshProductSetupOptions,
+  };
   const getComponentOptionsForRow = (componentType) => {
     if (componentType === "RAW_MATERIAL") return rawMaterialOptions;
     if (componentType === "FINISHED_GOOD") return finishedGoodOptions;
@@ -257,6 +309,7 @@ const CreateUpdateProduct = () => {
       }
       const payload = {
         name: values.name,
+        sku: values.sku?.trim() || "",
         product_type: values.productType,
         moulding_charges: values.mouldingCharges,
         labour_charges: values.labourCharges,
@@ -280,11 +333,7 @@ const CreateUpdateProduct = () => {
       }
       navigate("/products");
     } catch (submitError) {
-      toast.error(
-        submitError?.response?.data?.message ||
-          submitError.message ||
-          "Save failed",
-      );
+      toast.error(extractSubmitErrorMessage(submitError));
     } finally {
       setSaving(false);
     }
@@ -329,6 +378,12 @@ const CreateUpdateProduct = () => {
               error={form.formState.errors.name?.message}
               {...form.register("name")}
             />{" "}
+            <FormInput
+              label="SKU Number"
+              placeholder="Auto generated, for example AME - 0001"
+              error={form.formState.errors.sku?.message}
+              {...form.register("sku")}
+            />{" "}
             <div className="space-y-2">
               {" "}
               <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
@@ -358,7 +413,11 @@ const CreateUpdateProduct = () => {
               <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
                 Unit
               </label>{" "}
-              <select className={selectClassName} {...form.register("unit")}>
+              <select
+                className={selectClassName}
+                {...form.register("unit")}
+                {...refreshSelectOptionsProps}
+              >
                 {" "}
                 <option value="">Select unit</option>{" "}
                 {unitOptions.map((item) => (
@@ -382,6 +441,7 @@ const CreateUpdateProduct = () => {
               <select
                 className={selectClassName}
                 {...form.register("inventory_account")}
+                {...refreshSelectOptionsProps}
               >
                 {" "}
                 <option value="">Select inventory account</option>{" "}
@@ -401,6 +461,7 @@ const CreateUpdateProduct = () => {
               <select
                 className={selectClassName}
                 {...form.register("cogs_account")}
+                {...refreshSelectOptionsProps}
               >
                 {" "}
                 <option value="">Select COGS account</option>{" "}
@@ -420,6 +481,7 @@ const CreateUpdateProduct = () => {
               <select
                 className={selectClassName}
                 {...form.register("revenue_account")}
+                {...refreshSelectOptionsProps}
               >
                 {" "}
                 <option value="">Select revenue account</option>{" "}
@@ -623,6 +685,7 @@ const CreateUpdateProduct = () => {
                           <select
                             className={selectClassName}
                             value={row.uom_id}
+                            {...refreshSelectOptionsProps}
                             onChange={(event) =>
                               setMaterialRows((prev) =>
                                 prev.map((item, i) =>

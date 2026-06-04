@@ -17,10 +17,11 @@ class AdminLoginSerializer(serializers.Serializer):
 class DimensionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Dimension
-        fields = ["id", "code", "name", "is_active", "created_at", "updated_at"]
+        fields = ["id", "code", "name", "sku_code", "is_active", "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
         extra_kwargs = {
             "code": {"required": False, "allow_blank": True},
+            "sku_code": {"required": False, "allow_blank": True},
         }
 
     def validate(self, attrs):
@@ -42,8 +43,17 @@ class DimensionSerializer(serializers.ModelSerializer):
         if queryset.filter(name__iexact=name).exists():
             raise serializers.ValidationError({"name": "A dimension with this name already exists."})
 
+        sku_code = str(attrs.get("sku_code") or code).strip().upper()
+        if not sku_code:
+            raise serializers.ValidationError({"sku_code": "SKU code is required."})
+        if len(sku_code) > 20:
+            raise serializers.ValidationError({"sku_code": "SKU code cannot exceed 20 characters."})
+        if not sku_code.replace("_", "").replace("-", "").isalnum():
+            raise serializers.ValidationError({"sku_code": "SKU code can contain letters, numbers, hyphens, and underscores only."})
+
         attrs["name"] = name
         attrs["code"] = code
+        attrs["sku_code"] = sku_code
         return attrs
 
 
@@ -294,6 +304,12 @@ class AccountSerializer(serializers.ModelSerializer):
 
         if parent and parent.deleted_at is not None:
             raise serializers.ValidationError("Parent account cannot be soft deleted.")
+
+        if parent:
+            data["account_group"] = parent.account_group
+            data["account_nature"] = parent.account_nature
+            if parent.account_type != Account.AccountType.GENERAL:
+                data["account_type"] = parent.account_type
 
         code = (data.get("code") or "").strip()
         if self.instance is None:

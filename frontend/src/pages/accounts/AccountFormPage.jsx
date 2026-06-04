@@ -201,6 +201,9 @@ const AccountFormPage = () => {
     if (!parentAccount) return;
 
     form.setValue("account_group", parentAccount.account_group);
+    if (parentAccount.account_type && parentAccount.account_type !== "GENERAL") {
+      form.setValue("account_type", parentAccount.account_type);
+    }
     form.setValue("account_nature", parentAccount.account_nature);
   }, [flatAccounts, form, parentValue]);
 

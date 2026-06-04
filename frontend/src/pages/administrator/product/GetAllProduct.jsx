@@ -10,7 +10,11 @@ import Button from "../../../components/ui/Button";
 import ConfirmModal from "../../../components/ui/ConfirmModal";
 import IconButton from "../../../components/ui/IconButton";
 import { useToast } from "../../../context/ToastContext";
-import { flattenAccountTree, getPostableInventoryAccounts } from "../../../utils/accounts";
+import {
+  flattenAccountTree,
+  getPostableInventoryAccounts,
+  getSelectablePostingAccounts,
+} from "../../../utils/accounts";
 import { controlInputClass, pageHeroCardClass, pageTitleClass } from "../../../utils/themeClasses";
 
 const extractErrorMessage = (error) => {
@@ -87,10 +91,10 @@ const GetAllProduct = () => {
         setUnitOptions(unitRes.data || []);
         setInventoryAccounts(getPostableInventoryAccounts(flatAccounts));
         setCogsAccounts(
-          flatAccounts.filter((account) => account.account_group === "COGS" && account.is_postable)
+          getSelectablePostingAccounts(flatAccounts, "COGS")
         );
         setRevenueAccounts(
-          flatAccounts.filter((account) => account.account_group === "REVENUE" && account.is_postable)
+          getSelectablePostingAccounts(flatAccounts, "REVENUE")
         );
       })
       .catch(() => toast.error("Failed to load product setup options"));
@@ -165,6 +169,8 @@ const GetAllProduct = () => {
               >
                 <option value="name">Name (A–Z)</option>
                 <option value="-name">Name (Z–A)</option>
+                <option value="sku">SKU (A-Z)</option>
+                <option value="-sku">SKU (Z-A)</option>
                 <option value="-created_at">Newest first</option>
                 <option value="created_at">Oldest first</option>
               </select>
@@ -185,9 +191,10 @@ const GetAllProduct = () => {
       >
         <Card className="overflow-hidden p-0">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[980px] text-sm">
+            <table className="w-full min-w-[1060px] text-sm">
               <thead className="theme-table-head">
                 <tr>
+                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">SKU</th>
                   <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Name</th>
                   <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Type</th>
                   <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Unit</th>
@@ -208,6 +215,7 @@ const GetAllProduct = () => {
                     row.materials?.reduce((sum, m) => sum + (Number(m.amount) || 0), 0) || 0;
                   return (
                     <tr key={row.id} className="theme-table-row">
+                      <td className="px-4 py-3 font-semibold text-slate-800">{row.sku || "-"}</td>
                       <td className="px-4 py-3 font-medium text-slate-800">{row.name}</td>
                       <td className="px-4 py-3">
                         <span

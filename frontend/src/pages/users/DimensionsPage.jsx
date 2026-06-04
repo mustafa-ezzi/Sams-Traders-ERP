@@ -19,6 +19,7 @@ const DimensionsPage = () => {
   const [form, setForm] = useState({
     name: "",
     code: "",
+    sku_code: "",
     is_active: true,
   });
 
@@ -26,6 +27,7 @@ const DimensionsPage = () => {
     loadError?.response?.data?.detail ||
     loadError?.response?.data?.message ||
     loadError?.response?.data?.code?.[0] ||
+    loadError?.response?.data?.sku_code?.[0] ||
     loadError?.response?.data?.name?.[0] ||
     "Something went wrong";
 
@@ -84,10 +86,11 @@ const DimensionsPage = () => {
       const response = await dimensionService.create({
         name: form.name.trim(),
         code: form.code.trim(),
+        sku_code: form.sku_code.trim(),
         is_active: form.is_active,
       });
       toast.success(response.message || "Dimension created successfully");
-      setForm({ name: "", code: "", is_active: true });
+      setForm({ name: "", code: "", sku_code: "", is_active: true });
       await loadDimensions();
       window.location.href = "/";
     } catch (submitError) {
@@ -108,7 +111,7 @@ const DimensionsPage = () => {
       />
 
       <Card>
-        <form className="grid gap-4 md:grid-cols-3" onSubmit={handleSubmit}>
+        <form className="grid gap-4 md:grid-cols-4" onSubmit={handleSubmit}>
           <FormInput
             label="Dimension Name"
             required
@@ -126,6 +129,17 @@ const DimensionsPage = () => {
               setForm((current) => ({ ...current, code: event.target.value }))
             }
           />
+          <FormInput
+            label="SKU Code"
+            placeholder="AME"
+            value={form.sku_code}
+            onChange={(event) =>
+              setForm((current) => ({
+                ...current,
+                sku_code: event.target.value,
+              }))
+            }
+          />
           <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm font-medium text-slate-700 md:self-end">
             <input
               type="checkbox"
@@ -140,7 +154,7 @@ const DimensionsPage = () => {
             Active dimension
           </label>
 
-          <div className="md:col-span-3">
+          <div className="md:col-span-4">
             <Button type="submit" disabled={saving}>
               {saving ? "Creating..." : "Create Dimension"}
             </Button>
@@ -156,10 +170,13 @@ const DimensionsPage = () => {
       >
         <Card className="overflow-hidden p-0">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[700px] text-sm">
+            <table className="w-full min-w-[820px] text-sm">
               <thead className="bg-[linear-gradient(180deg,#edf4ff,#e1ebff)] text-left">
                 <tr>
                   <th className="px-5 py-4 font-bold text-slate-700">Code</th>
+                  <th className="px-5 py-4 font-bold text-slate-700">
+                    SKU Code
+                  </th>
                   <th className="px-5 py-4 font-bold text-slate-700">Name</th>
                   <th className="px-5 py-4 font-bold text-slate-700">Status</th>
                   <th className="px-5 py-4 font-bold text-slate-700">
@@ -178,6 +195,9 @@ const DimensionsPage = () => {
                   >
                     <td className="px-5 py-4 font-semibold text-slate-800">
                       {dimension.code}
+                    </td>
+                    <td className="px-5 py-4 font-semibold text-slate-800">
+                      {dimension.sku_code || "-"}
                     </td>
                     <td className="px-5 py-4 text-slate-700">
                       {dimension.name}

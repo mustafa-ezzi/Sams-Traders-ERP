@@ -856,6 +856,7 @@ class DimensionManagementTests(TestCase):
             email="dimension-admin@test.com",
             password="secret123",
             tenant_id="SAMS_TRADERS",
+            tenant_limit=5,
         )
         self.factory = APIRequestFactory()
 
@@ -872,6 +873,9 @@ class DimensionManagementTests(TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertTrue(
             Dimension.objects.filter(code="NORTH_DIVISION", name="North Division", is_active=True).exists()
+        )
+        self.assertTrue(
+            Dimension.objects.filter(code="NORTH_DIVISION", sku_code="NORTH_DIVISION").exists()
         )
         self.assertTrue(
             Account.objects.filter(tenant_id="NORTH_DIVISION", code="1000", deleted_at__isnull=True).exists()
@@ -893,8 +897,22 @@ class DimensionManagementTests(TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertTrue(Dimension.objects.filter(code="SOUTH_ZONE").exists())
 
+    def test_dimension_sku_code_can_be_set_for_product_numbering(self):
+        request = self.factory.post(
+            "/api/accounts/dimensions/",
+            {"name": "West Traders", "code": "WEST_TRADERS", "sku_code": "WTE", "is_active": True},
+            format="json",
+        )
+        force_authenticate(request, user=self.user)
+
+        response = DimensionViewSet.as_view({"post": "create"})(request)
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(Dimension.objects.filter(code="WEST_TRADERS", sku_code="WTE").exists())
+
     def test_can_delete_unused_dimension_and_seeded_accounts(self):
         dimension = Dimension.objects.create(code="TEMP_DIM", name="Temp Dimension", is_active=True)
+        self.user.allowed_dimensions.add(dimension)
         Account.objects.create(
             tenant_id="TEMP_DIM",
             code="1000",
@@ -918,6 +936,7 @@ class DimensionManagementTests(TestCase):
 
     def test_cannot_delete_dimension_with_active_users(self):
         dimension = Dimension.objects.create(code="LOCKED_DIM", name="Locked Dimension", is_active=True)
+        self.user.allowed_dimensions.add(dimension)
         User.objects.create_user(
             username="locked-user",
             email="locked@test.com",

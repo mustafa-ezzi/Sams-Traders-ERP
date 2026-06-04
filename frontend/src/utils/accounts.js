@@ -27,3 +27,13 @@ export const getPostableInventoryAccounts = (accounts = []) =>
       account.account_type === "INVENTORY" &&
       account.is_active
   );
+
+const isLeafAccount = (account) => (account.children || []).length === 0;
+
+export const getSelectablePostingAccounts = (accounts = [], accountGroup) =>
+  accounts.filter(
+    (account) =>
+      account.account_group === accountGroup &&
+      account.is_active &&
+      (account.is_postable || isLeafAccount(account))
+  );

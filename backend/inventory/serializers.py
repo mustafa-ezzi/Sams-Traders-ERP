@@ -1,7 +1,8 @@
 from rest_framework import serializers
 from decimal import Decimal
+import re
 from django.utils.timezone import now
-from accounts.models import Account
+from accounts.models import Account, Dimension
 from inventory.party_accounts import assign_default_party_account
 from .models import (
     Brand,
@@ -41,7 +42,8 @@ def validate_account_mapping(
             {field_name: "Selected account is inactive."}
         )
 
-    if require_postable and not account.is_postable:
+    has_children = account.children.filter(deleted_at__isnull=True).exists()
+    if require_postable and not account.is_postable and has_children:
         raise serializers.ValidationError(
             {field_name: "Selected account must be postable."}
         )
@@ -263,6 +265,7 @@ class ProductSerializer(serializers.ModelSerializer):
         model = Product
         fields = [
             "id",
+            "sku",
             "name",
             "product_type",
             "direct_price",
@@ -304,12 +307,72 @@ class ProductSerializer(serializers.ModelSerializer):
         state = self._get_cost_state(obj)
         return state.total_value if state else Decimal("0.00")
 
+    def _get_dimension_sku_code(self, tenant_id):
+        dimension = Dimension.objects.filter(code=tenant_id).first()
+        return str(getattr(dimension, "sku_code", "") or tenant_id or "SKU").strip().upper()
+
+    def _generate_next_sku(self, tenant_id):
+        sku_code = self._get_dimension_sku_code(tenant_id)
+        sku_prefix = f"{sku_code} - "
+        sku_numbers = []
+        for sku in Product.objects.filter(
+            tenant_id=tenant_id,
+            deleted_at__isnull=True,
+            sku__istartswith=sku_prefix,
+        ).values_list("sku", flat=True):
+            match = re.fullmatch(rf"{re.escape(sku_prefix)}(\d+)", sku or "", re.IGNORECASE)
+            if match:
+                sku_numbers.append(int(match.group(1)))
+
+        next_number = (max(sku_numbers) + 1) if sku_numbers else 1
+        while True:
+            sku = f"{sku_prefix}{next_number:04d}"
+            exists = Product.objects.filter(
+                tenant_id=tenant_id,
+                deleted_at__isnull=True,
+                sku=sku,
+            ).exists()
+            if not exists:
+                return sku
+            next_number += 1
+
+    def _validate_sku(self, sku, tenant_id):
+        normalized_sku = str(sku or "").strip().upper()
+        if not normalized_sku:
+            return ""
+
+        if not (
+            re.fullmatch(r"[A-Z0-9_-]+ - \d{4,}", normalized_sku)
+            or re.fullmatch(r"SKU-\d{4,}", normalized_sku)
+        ):
+            raise serializers.ValidationError(
+                {"sku": "SKU must use the format AME - 0001."}
+            )
+
+        existing = Product.objects.filter(
+            tenant_id=tenant_id,
+            deleted_at__isnull=True,
+            sku=normalized_sku,
+        )
+        if self.instance:
+            existing = existing.exclude(id=self.instance.id)
+        if existing.exists():
+            raise serializers.ValidationError(
+                {"sku": "Product with this SKU already exists."}
+            )
+
+        return normalized_sku
+
     def validate(self, data):
         tenant_id = self.context["request"].user.tenant_id
         product_type = data.get("product_type")
         materials = data.get("materials", [])
         category = data.get("category", getattr(self.instance, "category", None))
         unit = data.get("unit", getattr(self.instance, "unit", None))
+        data["sku"] = self._validate_sku(
+            data.get("sku", getattr(self.instance, "sku", "")),
+            tenant_id,
+        )
 
         normalized_product_type = (
             "ASSEMBLY_PRODUCT" if product_type in {"MANUFACTURED"} else
@@ -330,9 +393,9 @@ class ProductSerializer(serializers.ModelSerializer):
                 "Assembly products must include at least one component line item"
             )
 
-        if normalized_product_type == "FINISHED_GOOD" and data.get("direct_price", 0) <= 0:
+        if normalized_product_type == "FINISHED_GOOD" and data.get("direct_price", 0) < 0:
             raise serializers.ValidationError(
-                {"direct_price": "Direct finished goods must include per-unit price."}
+                {"direct_price": "Direct finished goods per-unit price cannot be negative."}
             )
 
         use_calculated_cost = data.get(
@@ -425,6 +488,8 @@ class ProductSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         materials_data = validated_data.pop("materials", [])
         tenant_id = self.context["request"].user.tenant_id
+        if not validated_data.get("sku"):
+            validated_data["sku"] = self._generate_next_sku(tenant_id)
 
         product = Product.objects.create(tenant_id=tenant_id, **validated_data)
 
@@ -474,6 +539,8 @@ class ProductSerializer(serializers.ModelSerializer):
         ).update(deleted_at=now())
 
         instance.name = validated_data.get("name", instance.name)
+        next_sku = validated_data.get("sku", instance.sku)
+        instance.sku = next_sku or self._generate_next_sku(tenant_id)
         instance.product_type = validated_data.get(
             "product_type", instance.product_type
         )

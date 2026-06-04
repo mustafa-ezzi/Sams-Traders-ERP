@@ -15,6 +15,7 @@ import {
   flattenAccountTree,
   formatAccountLabel,
   getPostableInventoryAccounts,
+  getSelectablePostingAccounts,
 } from "../../utils/accounts";
 
 const schema = z.object({
@@ -67,11 +68,10 @@ const CategoriesPage = () => {
     [accounts],
   );
   const inventoryAccounts = getPostableInventoryAccounts(flattenedAccounts);
-  const cogsAccounts = flattenedAccounts.filter(
-    (account) => account.account_group === "COGS" && account.is_postable,
-  );
-  const revenueAccounts = flattenedAccounts.filter(
-    (account) => account.account_group === "REVENUE" && account.is_postable,
+  const cogsAccounts = getSelectablePostingAccounts(flattenedAccounts, "COGS");
+  const revenueAccounts = getSelectablePostingAccounts(
+    flattenedAccounts,
+    "REVENUE",
   );
   const accountMap = useMemo(
     () =>
