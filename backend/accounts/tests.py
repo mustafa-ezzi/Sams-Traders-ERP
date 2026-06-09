@@ -812,6 +812,57 @@ class OpeningAccountsStructureTests(TestCase):
         self.assertTrue(created.is_postable)
         self.assertEqual(created.level, 5)
 
+    def test_nested_chart_account_appends_digit_after_level_three(self):
+        inventory = Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="1150",
+            name="Inventory",
+            parent=self.current_asset,
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.INVENTORY,
+            account_nature=Account.AccountNature.DEBIT,
+            level=3,
+            is_postable=False,
+            is_active=True,
+            sort_order=0,
+        )
+        finished_products = Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="1151",
+            name="Finished Products",
+            parent=inventory,
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.INVENTORY,
+            account_nature=Account.AccountNature.DEBIT,
+            level=4,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+        request = self._build_request(
+            "post",
+            "/accounts/accounts/",
+            {
+                "name": "Finished Product Batch",
+                "parent": str(finished_products.id),
+                "account_group": Account.AccountGroup.ASSET,
+                "account_type": Account.AccountType.INVENTORY,
+                "account_nature": Account.AccountNature.DEBIT,
+                "is_postable": True,
+                "is_active": True,
+            },
+        )
+
+        response = AccountViewSet.as_view({"post": "create"})(request)
+
+        self.assertEqual(response.status_code, 201)
+        created = Account.objects.get(name="Finished Product Batch")
+        self.assertEqual(created.code, "11510")
+        self.assertEqual(created.parent_id, finished_products.id)
+        self.assertEqual(created.level, 5)
+        finished_products.refresh_from_db()
+        self.assertFalse(finished_products.is_postable)
+
     def test_opening_accounts_endpoint_returns_banks_with_children(self):
         bank = Account.objects.create(
             tenant_id=self.tenant_id,

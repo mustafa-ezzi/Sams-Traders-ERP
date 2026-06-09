@@ -236,43 +236,59 @@ class AccountSerializer(serializers.ModelSerializer):
     def _generate_next_child_code(self, parent, tenant_id):
         normalized_parent_code = self._normalize_code_for_generation(parent.code)
 
-        child_codes = Account.objects.filter(
+        parent_level = parent.level or 1
+        parent_code_value = int(normalized_parent_code)
+        if parent_level <= 1:
+            child_code_width = len(normalized_parent_code)
+            step = 100
+            first_code_value = parent_code_value + step
+            branch_limit = parent_code_value + 1000
+        elif parent_level == 2:
+            child_code_width = len(normalized_parent_code)
+            step = 10
+            first_code_value = parent_code_value + step
+            branch_limit = parent_code_value + 100
+        elif parent_level == 3:
+            child_code_width = len(normalized_parent_code)
+            step = 1
+            first_code_value = parent_code_value + step
+            branch_limit = parent_code_value + 10
+        else:
+            child_code_width = len(normalized_parent_code) + 1
+            step = 1
+            first_code_value = parent_code_value * 10
+            branch_limit = first_code_value + 10
+
+        direct_child_codes = Account.objects.filter(
             tenant_id=tenant_id,
             parent=parent,
             deleted_at__isnull=True,
         ).values_list("code", flat=True)
+        tenant_codes = set(
+            Account.objects.filter(
+                tenant_id=tenant_id,
+                deleted_at__isnull=True,
+            ).values_list("code", flat=True)
+        )
 
         normalized_existing_codes = []
-        child_code_width = len(normalized_parent_code)
-        for code in child_codes:
+        for code in direct_child_codes:
             normalized_child_code = self._normalize_code_for_generation(code)
-            normalized_existing_codes.append(int(normalized_child_code))
-            child_code_width = max(child_code_width, len(normalized_child_code))
-
-        if normalized_existing_codes:
-            step = 10 ** max(child_code_width - len(normalized_parent_code), 0)
-            if child_code_width == len(normalized_parent_code):
-                step = max(1, 10 ** max(3 - parent.level, 0))
-            base_code = int(normalized_parent_code) * (
-                10 ** max(child_code_width - len(normalized_parent_code), 0)
-            )
-            branch_limit = base_code + (step * 10)
-        else:
-            if parent.level <= 1:
-                step = 100
-                branch_limit = int(normalized_parent_code) + 1000
-            elif parent.level == 2:
-                step = 10
-                branch_limit = int(normalized_parent_code) + 100
-            else:
-                step = 1
-                branch_limit = int(normalized_parent_code) + 10
+            child_code_value = int(normalized_child_code)
+            if (
+                len(normalized_child_code) == child_code_width
+                and first_code_value <= child_code_value < branch_limit
+            ):
+                normalized_existing_codes.append(child_code_value)
 
         next_code_value = (
             max(normalized_existing_codes) + step
             if normalized_existing_codes
-            else int(normalized_parent_code) + step
+            else first_code_value
         )
+
+        while next_code_value < branch_limit and str(next_code_value).zfill(child_code_width) in tenant_codes:
+            next_code_value += step
 
         if next_code_value >= branch_limit:
             raise serializers.ValidationError(

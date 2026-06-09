@@ -58,6 +58,58 @@ const defaultValues = {
 const selectClassName =
   "w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-800/90 dark:text-slate-100 dark:focus:ring-blue-900/40";
 
+const apiFieldLabels = {
+  code: "Code",
+  name: "Name",
+  parent: "Parent",
+  account_group: "Group",
+  account_type: "Account type",
+  account_nature: "Nature",
+  is_postable: "Postable account",
+  is_active: "Active account",
+  sort_order: "Sort order",
+  non_field_errors: "Error",
+};
+
+const formFieldNames = new Set(Object.keys(defaultValues));
+
+const flattenApiErrorValue = (value) => {
+  if (!value) return [];
+  if (typeof value === "string") return [value];
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => flattenApiErrorValue(item));
+  }
+  if (typeof value === "object") {
+    return Object.entries(value).flatMap(([key, nestedValue]) => {
+      const label = apiFieldLabels[key] || key.replaceAll("_", " ");
+      return flattenApiErrorValue(nestedValue).map((message) =>
+        label ? `${label}: ${message}` : message,
+      );
+    });
+  }
+  return [String(value)];
+};
+
+const extractApiErrorMessages = (error, fallback = "Something went wrong") => {
+  const data = error?.response?.data;
+  if (!data) return [error?.message || fallback];
+  if (typeof data === "string") return [data];
+
+  const preferredMessages = [
+    ...flattenApiErrorValue(data.detail),
+    ...flattenApiErrorValue(data.message),
+  ];
+  const fieldMessages = Object.entries(data)
+    .filter(([key]) => key !== "detail" && key !== "message")
+    .flatMap(([key, value]) => {
+      const label = apiFieldLabels[key] || key.replaceAll("_", " ");
+      return flattenApiErrorValue(value).map((message) => `${label}: ${message}`);
+    });
+
+  const messages = [...preferredMessages, ...fieldMessages].filter(Boolean);
+  return messages.length ? messages : [fallback];
+};
+
 const normalizeCodeForGeneration = (code) => {
   const codeText = String(code || "").trim();
   return /^\d+$/.test(codeText) ? codeText : "";
@@ -69,46 +121,58 @@ const getNextChildCode = (parentAccount, allAccounts) => {
   const normalizedParentCode = normalizeCodeForGeneration(parentAccount.code);
   if (!normalizedParentCode) return "";
 
+  const parentLevel = Number(parentAccount.level || 1);
+  const parentCodeValue = Number(normalizedParentCode);
   let childCodeWidth = normalizedParentCode.length;
+  let step;
+  let firstValue;
+  let branchLimit;
+  if (parentLevel <= 1) {
+    step = 100;
+    firstValue = parentCodeValue + step;
+    branchLimit = parentCodeValue + 1000;
+  } else if (parentLevel === 2) {
+    step = 10;
+    firstValue = parentCodeValue + step;
+    branchLimit = parentCodeValue + 100;
+  } else if (parentLevel === 3) {
+    step = 1;
+    firstValue = parentCodeValue + step;
+    branchLimit = parentCodeValue + 10;
+  } else {
+    childCodeWidth = normalizedParentCode.length + 1;
+    step = 1;
+    firstValue = parentCodeValue * 10;
+    branchLimit = firstValue + 10;
+  }
+
+  const usedCodes = new Set(
+    allAccounts.map((account) => normalizeCodeForGeneration(account.code)).filter(Boolean),
+  );
   const childCodes = allAccounts
     .filter((account) => account.parent === parentAccount.id)
     .map((account) => normalizeCodeForGeneration(account.code))
     .filter(Boolean)
-    .map((code) => {
-      childCodeWidth = Math.max(childCodeWidth, code.length);
-      return Number(code);
-    })
-    .filter((value) => Number.isFinite(value) && value > 0);
+    .map(Number)
+    .filter(
+      (value) =>
+        Number.isFinite(value) &&
+        String(value).length === childCodeWidth &&
+        value >= firstValue &&
+        value < branchLimit,
+    );
 
-  let step;
-  let branchLimit;
-  if (childCodes.length > 0) {
-    step = 10 ** Math.max(childCodeWidth - normalizedParentCode.length, 0);
-    if (childCodeWidth === normalizedParentCode.length) {
-      step = Math.max(
-        1,
-        10 ** Math.max(3 - Number(parentAccount.level || 1), 0),
-      );
-    }
-    const baseCode =
-      Number(normalizedParentCode) *
-      10 ** Math.max(childCodeWidth - normalizedParentCode.length, 0);
-    branchLimit = baseCode + step * 10;
-  } else if (Number(parentAccount.level || 1) <= 1) {
-    step = 100;
-    branchLimit = Number(normalizedParentCode) + 1000;
-  } else if (Number(parentAccount.level || 1) === 2) {
-    step = 10;
-    branchLimit = Number(normalizedParentCode) + 100;
-  } else {
-    step = 1;
-    branchLimit = Number(normalizedParentCode) + 10;
-  }
-
-  const nextValue =
+  let nextValue =
     childCodes.length > 0
       ? Math.max(...childCodes) + step
-      : Number(normalizedParentCode) + step;
+      : firstValue;
+
+  while (
+    nextValue < branchLimit &&
+    usedCodes.has(String(nextValue).padStart(childCodeWidth, "0"))
+  ) {
+    nextValue += step;
+  }
 
   if (nextValue >= branchLimit) return "";
 
@@ -180,8 +244,10 @@ const AccountFormPage = () => {
           });
         }
       } catch (loadError) {
-        const msg =
-          loadError?.response?.data?.message || "Failed to load account form";
+        const msg = extractApiErrorMessages(
+          loadError,
+          "Failed to load account form",
+        ).join("\n");
         setError(msg);
         toast.error(msg);
       } finally {
@@ -221,6 +287,7 @@ const AccountFormPage = () => {
   const onSubmit = form.handleSubmit(async (values) => {
     setSaving(true);
     setError("");
+    form.clearErrors();
     try {
       const payload = {
         ...values,
@@ -237,12 +304,21 @@ const AccountFormPage = () => {
 
       navigate("/accounts");
     } catch (submitError) {
-      const msg =
-        submitError?.response?.data?.detail ||
-        submitError?.response?.data?.message ||
-        "Save failed";
-      setError(msg);
-      toast.error(msg);
+      const data = submitError?.response?.data;
+      if (data && typeof data === "object" && !Array.isArray(data)) {
+        Object.entries(data).forEach(([field, value]) => {
+          if (!formFieldNames.has(field)) return;
+          const fieldMessage = flattenApiErrorValue(value).join(", ");
+          if (fieldMessage) {
+            form.setError(field, { type: "server", message: fieldMessage });
+          }
+        });
+      }
+
+      const messages = extractApiErrorMessages(submitError, "Save failed");
+      const messageText = messages.join("\n");
+      setError(messageText);
+      toast.error(messages[0]);
     } finally {
       setSaving(false);
     }
@@ -268,7 +344,7 @@ const AccountFormPage = () => {
       </Card>
 
       {error ? (
-        <p className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300">
+        <p className="whitespace-pre-line rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300">
           {error}
         </p>
       ) : null}
@@ -322,6 +398,11 @@ const AccountFormPage = () => {
                   </span>
                 </p>
               ) : null}
+              {form.formState.errors.parent?.message ? (
+                <p className="text-xs text-rose-600 dark:text-rose-300">
+                  {form.formState.errors.parent.message}
+                </p>
+              ) : null}
             </div>
             <FormInput
               label="Sort Order"
@@ -345,6 +426,11 @@ const AccountFormPage = () => {
                 <option value="TAX">Tax</option>
                 <option value="PURCHASE">Purchase</option>
               </select>
+              {form.formState.errors.account_group?.message ? (
+                <p className="text-xs text-rose-600 dark:text-rose-300">
+                  {form.formState.errors.account_group.message}
+                </p>
+              ) : null}
             </div>
             <div className="space-y-2">
               <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
@@ -360,6 +446,11 @@ const AccountFormPage = () => {
                 <option value="REVENUE">Revenue</option>
                 <option value="COGS">COGS</option>
               </select>
+              {form.formState.errors.account_type?.message ? (
+                <p className="text-xs text-rose-600 dark:text-rose-300">
+                  {form.formState.errors.account_type.message}
+                </p>
+              ) : null}
             </div>
             <div className="space-y-2">
               <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
@@ -369,6 +460,11 @@ const AccountFormPage = () => {
                 <option value="DEBIT">Debit</option>
                 <option value="CREDIT">Credit</option>
               </select>
+              {form.formState.errors.account_nature?.message ? (
+                <p className="text-xs text-rose-600 dark:text-rose-300">
+                  {form.formState.errors.account_nature.message}
+                </p>
+              ) : null}
             </div>
             <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200">
               <input type="checkbox" {...form.register("is_postable")} />
