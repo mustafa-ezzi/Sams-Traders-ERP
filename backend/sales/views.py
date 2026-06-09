@@ -35,6 +35,7 @@ from sales.services import (
     get_sales_return_line_metrics,
     quantize_money,
 )
+from common.tenancy import get_request_tenant_filter
 
 
 class SalesInvoiceViewSet(viewsets.ModelViewSet):
@@ -47,7 +48,7 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return (
             SalesInvoice.objects.filter(
-                tenant_id=self.request.user.tenant_id,
+                **get_request_tenant_filter(self.request),
                 deleted_at__isnull=True,
             )
             .select_related("customer", "warehouse")
@@ -192,7 +193,7 @@ class SalesReturnViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return (
             SalesReturn.objects.filter(
-                tenant_id=self.request.user.tenant_id,
+                **get_request_tenant_filter(self.request),
                 deleted_at__isnull=True,
             )
             .select_related("customer", "sales_invoice", "sales_invoice__warehouse")
@@ -407,7 +408,7 @@ class SalesBankReceiptViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return (
             SalesBankReceipt.objects.filter(
-                tenant_id=self.request.user.tenant_id,
+                **get_request_tenant_filter(self.request),
                 deleted_at__isnull=True,
             )
             .select_related("customer", "sales_invoice", "bank_account")

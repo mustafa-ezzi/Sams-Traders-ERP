@@ -9,6 +9,13 @@ const axiosInstance = axios.create({
 axiosInstance.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
   const tenantId = localStorage.getItem("tenantId");
+  let selectedTenantIds = [];
+  try {
+    const parsed = JSON.parse(localStorage.getItem("createTenantIds") || "[]");
+    selectedTenantIds = Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+  } catch {
+    selectedTenantIds = [];
+  }
 
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
@@ -21,6 +28,10 @@ axiosInstance.interceptors.request.use((config) => {
 
   if (tenantId && !hasRequestTenant) {
     config.headers["x-tenant-id"] = tenantId;
+  }
+
+  if (selectedTenantIds.length) {
+    config.headers["x-tenant-ids"] = [...new Set(selectedTenantIds)].join(",");
   }
 
   return config;

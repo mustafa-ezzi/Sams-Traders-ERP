@@ -42,6 +42,7 @@ from purchase.services import (
     get_purchase_return_line_metrics,
     quantize_money,
 )
+from common.tenancy import get_request_tenant_filter
 
 
 class PurchaseInvoiceViewSet(viewsets.ModelViewSet):
@@ -54,7 +55,7 @@ class PurchaseInvoiceViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return (
             PurchaseInvoice.objects.filter(
-                tenant_id=self.request.user.tenant_id,
+                **get_request_tenant_filter(self.request),
                 deleted_at__isnull=True,
             )
             .select_related("supplier", "warehouse")
@@ -270,7 +271,7 @@ class PurchaseReturnViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return (
             PurchaseReturn.objects.filter(
-                tenant_id=self.request.user.tenant_id,
+                **get_request_tenant_filter(self.request),
                 deleted_at__isnull=True,
             )
             .select_related("supplier", "purchase_invoice", "purchase_invoice__warehouse")
@@ -492,7 +493,7 @@ class PurchaseBankPaymentViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return (
             PurchaseBankPayment.objects.filter(
-                tenant_id=self.request.user.tenant_id,
+                **get_request_tenant_filter(self.request),
                 deleted_at__isnull=True,
             )
             .select_related("supplier", "purchase_invoice", "bank_account")

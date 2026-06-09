@@ -35,6 +35,7 @@ from purchase.services import get_purchase_invoice_financials
 from sales.models import SalesBankReceipt, SalesInvoice, SalesInvoiceLine, SalesReturn, SalesReturnLine
 from sales.services import get_sales_invoice_financials
 
+from common.tenancy import get_request_tenant_filter
 from .serializers import AccountSerializer, DimensionSerializer, ExpenseSerializer, LoginSerializer
 from .serializers import (
     AdminInquirySerializer,
@@ -201,7 +202,7 @@ class AccountViewSet(ModelViewSet):
     def get_queryset(self):
         queryset = (
             Account.objects.filter(
-                tenant_id=self.request.tenant_id,
+                **get_request_tenant_filter(self.request),
                 deleted_at__isnull=True,
             )
             .select_related("parent")
@@ -1160,7 +1161,7 @@ class ExpenseViewSet(ModelViewSet):
     def get_queryset(self):
         return (
             Expense.objects.filter(
-                tenant_id=self.request.user.tenant_id,
+                **get_request_tenant_filter(self.request),
                 deleted_at__isnull=True,
             )
             .select_related("bank_account", "expense_account")

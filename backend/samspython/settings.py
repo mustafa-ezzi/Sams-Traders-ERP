@@ -69,6 +69,7 @@ CORS_ALLOW_HEADERS = [
     "x-csrftoken",
     "x-requested-with",
     "x-tenant-id",
+    "x-tenant-ids",
 ]
 
 

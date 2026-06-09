@@ -28,7 +28,25 @@ class TenantJWTAuthentication(JWTAuthentication):
         if requested_tenant not in allowed_dimensions:
             raise AuthenticationFailed("Invalid dimension selection")
 
+        requested_tenants_header = request.headers.get("x-tenant-ids") or ""
+        requested_tenants = [
+            item.strip()
+            for item in requested_tenants_header.split(",")
+            if item.strip()
+        ]
+        if requested_tenants:
+            invalid_tenants = [
+                tenant_id
+                for tenant_id in requested_tenants
+                if tenant_id not in allowed_dimensions
+            ]
+            if invalid_tenants:
+                raise AuthenticationFailed("Invalid dimension selection")
+        else:
+            requested_tenants = [requested_tenant]
+
         request.tenant_id = requested_tenant
+        request.tenant_ids = requested_tenants
         user.tenant_id = requested_tenant
 
         return (user, token)

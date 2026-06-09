@@ -48,6 +48,7 @@ from rest_framework.exceptions import ValidationError
 
 from purchase.models import PurchaseInvoiceLine, PurchaseReturnLine
 from sales.models import SalesInvoiceLine, SalesReturnLine
+from common.tenancy import get_request_tenant_filter, get_request_tenant_ids
 
 
 def get_raw_material_stock_total(tenant_id, raw_material_ids):
@@ -90,7 +91,7 @@ class BaseTenantViewSet(ModelViewSet):
 
     def get_queryset(self):
         return self.queryset.filter(
-            tenant_id=self.request.user.tenant_id, deleted_at__isnull=True
+            **get_request_tenant_filter(self.request), deleted_at__isnull=True
         )
 
     def perform_create(self, serializer):
@@ -172,16 +173,16 @@ class RawMaterialViewSet(ModelViewSet):
         return RawMaterialDetailedSerializer
 
     def get_queryset(self):
-        tenant_id = self.request.user.tenant_id
+        tenant_ids = get_request_tenant_ids(self.request)
         qs = RawMaterial.objects.filter(
-            tenant_id=tenant_id, deleted_at__isnull=True
+            tenant_id__in=tenant_ids, deleted_at__isnull=True
         ).select_related("brand", "category", "purchase_unit")
         qs = qs.annotate(
             quantity=Coalesce(
                 Sum(
                     "stock__quantity",
                     filter=Q(
-                        stock__tenant_id=tenant_id,
+                        stock__tenant_id__in=tenant_ids,
                         stock__deleted_at__isnull=True,
                     ),
                 ),
@@ -229,8 +230,9 @@ class ProductViewSet(viewsets.ModelViewSet):
         active_materials = ProductMaterial.objects.filter(
             deleted_at__isnull=True
         ).select_related("raw_material", "component_product", "uom")
+        tenant_ids = get_request_tenant_ids(self.request)
         qs = Product.objects.filter(
-            tenant_id=self.request.user.tenant_id, deleted_at__isnull=True
+            tenant_id__in=tenant_ids, deleted_at__isnull=True
         ).select_related("unit").prefetch_related(
             Prefetch("materials", queryset=active_materials)
         )
@@ -246,7 +248,7 @@ class ProductViewSet(viewsets.ModelViewSet):
                 Sum(
                     "productstock__quantity",
                     filter=Q(
-                        productstock__tenant_id=self.request.user.tenant_id,
+                        productstock__tenant_id__in=tenant_ids,
                         productstock__deleted_at__isnull=True,
                     ),
                 ),
@@ -346,7 +348,7 @@ class OpeningStockViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return (
             OpeningStock.objects.filter(
-                tenant_id=self.request.user.tenant_id, deleted_at__isnull=True
+                **get_request_tenant_filter(self.request), deleted_at__isnull=True
             )
             .select_related(
                 "warehouse",
@@ -507,7 +509,7 @@ class ProductionViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return (
             Production.objects.filter(
-                tenant_id=self.request.user.tenant_id, deleted_at__isnull=True
+                **get_request_tenant_filter(self.request), deleted_at__isnull=True
             )
             .select_related("warehouse", "product")
             .order_by("-date", "-created_at")
@@ -944,8 +946,9 @@ class BasePartyViewSet(viewsets.ModelViewSet):
     party_model = None  # override in subclass
 
     def get_queryset(self):
-        tenant_id = getattr(self.request, "tenant_id", None) or self.request.user.tenant_id
-        qs = self.party_model.objects.filter(tenant_id=tenant_id, deleted_at__isnull=True)
+        qs = self.party_model.objects.filter(
+            **get_request_tenant_filter(self.request), deleted_at__isnull=True
+        )
         return qs
 
     def get_serializer_context(self):
@@ -1004,10 +1007,11 @@ class WarehouseViewSet(viewsets.ModelViewSet):
     search_fields = ["name", "location"]
 
     def get_queryset(self):
-        tenant_id = self.request.user.tenant_id
         search = self.request.query_params.get("search", "")
 
-        qs = Warehouse.objects.filter(tenant_id=tenant_id, deleted_at__isnull=True)
+        qs = Warehouse.objects.filter(
+            **get_request_tenant_filter(self.request), deleted_at__isnull=True
+        )
 
         # 🔥 Prisma-style OR search
         if search:

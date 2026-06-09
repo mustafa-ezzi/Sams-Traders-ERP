@@ -490,9 +490,7 @@ const CheckPill = ({
           ? "border-blue-200 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300"
           : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400 dark:hover:border-slate-500 dark:hover:bg-slate-700 dark:hover:text-slate-200"
     }`}
-    title={
-      disabled ? "Current dimension is always included" : `Create in ${label}`
-    }
+    title={`Show and create in ${label}`}
   >
     <span
       className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border transition-all duration-150 ${
@@ -528,7 +526,6 @@ const Layout = () => {
   const { pathname } = useLocation();
   const {
     tenantId,
-    setTenant,
     logout,
     allowedDimensions,
     createTenantIds,
@@ -597,14 +594,15 @@ const Layout = () => {
     const availableCodes = (
       dimensions.length ? dimensions : allowedDimensions || []
     ).map((i) => i.code);
-    if (!availableCodes.length || !tenantId) return;
+    if (!availableCodes.length) return;
     const nextSelected = [
       ...new Set(
-        [tenantId, ...createTenantIds].filter((c) =>
+        (createTenantIds.length ? createTenantIds : [tenantId]).filter((c) =>
           availableCodes.includes(c),
         ),
       ),
     ];
+    if (!nextSelected.length) nextSelected.push(availableCodes[0]);
     if (nextSelected.join("|") !== createTenantIds.join("|"))
       setCreateTenants(nextSelected);
   }, [
@@ -623,24 +621,36 @@ const Layout = () => {
   const creationCodes = creationDimensions.map((d) => d.code);
   const selectedCreateTenantIds = [
     ...new Set(
-      [tenantId, ...createTenantIds].filter((c) => creationCodes.includes(c)),
+      (createTenantIds.length ? createTenantIds : [tenantId]).filter((c) =>
+        creationCodes.includes(c),
+      ),
     ),
   ];
+  if (!selectedCreateTenantIds.length && creationCodes.length) {
+    selectedCreateTenantIds.push(creationCodes[0]);
+  }
   const allSelected =
     creationCodes.length > 0 &&
     creationCodes.every((c) => selectedCreateTenantIds.includes(c));
+  const selectedDimensionNames = creationDimensions
+    .filter((dimension) => selectedCreateTenantIds.includes(dimension.code))
+    .map((dimension) => dimension.name || dimension.code);
+  const selectionLabel =
+    selectedDimensionNames.length === creationDimensions.length &&
+    creationDimensions.length > 1
+      ? "All Dimensions"
+      : selectedDimensionNames.join(", ") || activeDimension?.name || tenantId;
+  const outletKey = selectedCreateTenantIds.join("|") || tenantId;
 
   const setCreateDimensionChecked = (code, checked) => {
-    if (code === tenantId && !checked) return;
     const next = checked
       ? [...new Set([...selectedCreateTenantIds, code])]
       : selectedCreateTenantIds.filter((c) => c !== code);
-    setCreateTenants([
-      ...new Set([tenantId, ...next].filter((c) => creationCodes.includes(c))),
-    ]);
+    if (!next.length) return;
+    setCreateTenants(next.filter((c) => creationCodes.includes(c)));
   };
   const setAllCreateDimensions = (checked) =>
-    setCreateTenants(checked ? creationCodes : [tenantId]);
+    setCreateTenants(checked ? creationCodes : [selectedCreateTenantIds[0] || tenantId]);
 
   /* ── Sidebar inner content ── */
   const SidebarContent = () => (
@@ -655,7 +665,7 @@ const Layout = () => {
           />
           <div className="min-w-0 flex-1">
             <p className="truncate text-[15px] font-bold text-white leading-tight">
-              {activeDimension?.name || tenantId}
+              {selectionLabel}
             </p>
             <div className="mt-1 flex flex-wrap items-center gap-2">
               <p className="text-[10px] text-slate-500 tracking-wide">
@@ -771,7 +781,7 @@ const Layout = () => {
   );
 
   /* ── Initials from tenant or user ── */
-  const initials = (activeDimension?.name || tenantId || "?")
+  const initials = (selectionLabel || tenantId || "?")
     .slice(0, 1)
     .toUpperCase();
 
@@ -846,40 +856,6 @@ const Layout = () => {
 
             {/* Right actions */}
             <div className="flex shrink-0 items-center gap-2">
-              {/* Tenant selector */}
-              {!isOnboardingOnly && (
-                <div className="relative hidden sm:block">
-                  <select
-                    className="h-8 appearance-none rounded-lg border border-slate-200 bg-slate-50 pl-3 pr-8 text-xs font-semibold text-slate-700 outline-none transition focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-100/50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:focus:bg-slate-800 dark:focus:ring-blue-900/40 cursor-pointer"
-                    value={tenantId}
-                    onChange={(e) => {
-                      setTenant(e.target.value);
-                      window.location.reload();
-                    }}
-                  >
-                    {(dimensions.length
-                      ? dimensions
-                      : [{ code: tenantId, name: tenantId }]
-                    ).map((d) => (
-                      <option key={d.code} value={d.code}>
-                        {d.name}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-400">
-                    <svg
-                      className="h-3 w-3"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.5"
-                    >
-                      <path d="M6 9l6 6 6-6" />
-                    </svg>
-                  </span>
-                </div>
-              )}
-
               <button
                 type="button"
                 onClick={toggleTheme}
@@ -904,7 +880,7 @@ const Layout = () => {
             <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-1.5 dark:border-slate-700 dark:bg-slate-900/50 lg:px-6">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400 dark:text-slate-500">
-                  Create in
+                  Dimensions
                 </span>
 
                 {creationDimensions.length > 1 && (
@@ -916,52 +892,15 @@ const Layout = () => {
                   />
                 )}
 
-                {/* Mobile: tenant selector here */}
-                {!isOnboardingOnly && (
-                  <div className="relative sm:hidden ml-auto">
-                    <select
-                      className="h-7 appearance-none rounded-lg border border-slate-200 bg-white pl-2.5 pr-7 text-xs font-semibold text-slate-700 outline-none transition focus:border-blue-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
-                      value={tenantId}
-                      onChange={(e) => {
-                        setTenant(e.target.value);
-                        window.location.reload();
-                      }}
-                    >
-                      {(dimensions.length
-                        ? dimensions
-                        : [{ code: tenantId, name: tenantId }]
-                      ).map((d) => (
-                        <option key={d.code} value={d.code}>
-                          {d.name}
-                        </option>
-                      ))}
-                    </select>
-                    <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-400">
-                      <svg
-                        className="h-3 w-3"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2.5"
-                      >
-                        <path d="M6 9l6 6 6-6" />
-                      </svg>
-                    </span>
-                  </div>
-                )}
-
                 {creationDimensions.map((dimension) => {
                   const checked = selectedCreateTenantIds.includes(
                     dimension.code,
                   );
-                  const isCurrent = dimension.code === tenantId;
                   return (
                     <CheckPill
                       key={dimension.code}
                       label={dimension.name || dimension.code}
                       checked={checked}
-                      disabled={isCurrent}
-                      isCurrent={isCurrent}
                       onChange={(e) =>
                         setCreateDimensionChecked(
                           dimension.code,
@@ -979,7 +918,7 @@ const Layout = () => {
         {/* ── Page content ── */}
         <main className="px-3 py-5 sm:px-5 lg:px-7 lg:py-6">
           <div className="mx-auto max-w-[1600px]">
-            <Outlet />
+            <Outlet key={outletKey} />
           </div>
         </main>
 
