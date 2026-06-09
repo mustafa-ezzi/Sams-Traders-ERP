@@ -3,6 +3,7 @@ from decimal import Decimal
 import re
 from django.utils.timezone import now
 from accounts.models import Account, Dimension
+from accounts.dimensions import get_user_active_dimension_codes
 from inventory.party_accounts import assign_default_party_account
 from .models import (
     Brand,
@@ -82,6 +83,14 @@ def resolve_product_coa_defaults(category, attrs, instance=None):
     return attrs
 
 
+def get_request_user_dimension_codes(request):
+    tenant_ids = get_user_active_dimension_codes(request.user)
+    tenant_id = getattr(request, "tenant_id", None) or request.user.tenant_id
+    if tenant_id and tenant_id not in tenant_ids:
+        tenant_ids.append(tenant_id)
+    return tenant_ids
+
+
 class TenantUniqueNameSerializer(serializers.ModelSerializer):
     duplicate_name_message = "Record with this name already exists."
 
@@ -102,13 +111,36 @@ class TenantUniqueNameSerializer(serializers.ModelSerializer):
         return value
 
 
-class BrandSerializer(TenantUniqueNameSerializer):
+class SharedUniqueNameSerializer(serializers.ModelSerializer):
+    duplicate_name_message = "Record with this name already exists."
+
+    def get_shared_tenant_ids(self):
+        return get_request_user_dimension_codes(self.context["request"])
+
+    def validate_name(self, value):
+        qs = self.Meta.model.objects.filter(
+            tenant_id__in=self.get_shared_tenant_ids(),
+            name=value,
+            deleted_at__isnull=True,
+        )
+
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+
+        if qs.exists():
+            raise serializers.ValidationError(self.duplicate_name_message)
+
+        return value
+
+
+class BrandSerializer(SharedUniqueNameSerializer):
     duplicate_name_message = "Brand with this name already exists."
 
     class Meta:
         model = Brand
         fields = "__all__"
         read_only_fields = ["tenant_id"]
+        extra_kwargs = {"name": {"validators": []}}
 
 
 class CategorySerializer(TenantUniqueNameSerializer):
@@ -153,13 +185,14 @@ class SizeSerializer(TenantUniqueNameSerializer):
         read_only_fields = ["tenant_id"]
 
 
-class UnitSerializer(TenantUniqueNameSerializer):
+class UnitSerializer(SharedUniqueNameSerializer):
     duplicate_name_message = "Unit with this name already exists."
 
     class Meta:
         model = Unit
         fields = "__all__"
         read_only_fields = ["tenant_id"]
+        extra_kwargs = {"name": {"validators": []}}
 
     def validate_base_quantity(self, value):
         if value is None or value <= 0:
@@ -365,6 +398,7 @@ class ProductSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         tenant_id = self.context["request"].user.tenant_id
+        shared_tenant_ids = get_request_user_dimension_codes(self.context["request"])
         product_type = data.get("product_type")
         materials = data.get("materials", [])
         category = data.get("category", getattr(self.instance, "category", None))
@@ -413,6 +447,12 @@ class ProductSerializer(serializers.ModelSerializer):
                 )
         component_keys = []
         for material in materials:
+            uom = material.get("uom")
+            if uom and (uom.tenant_id not in shared_tenant_ids or uom.deleted_at is not None):
+                raise serializers.ValidationError(
+                    {"uom_id": "Selected unit is not available for this tenant."}
+                )
+
             if material["component_type"] == "RAW_MATERIAL":
                 raw_material = material["raw_material"]
                 if raw_material.tenant_id != tenant_id:
@@ -454,7 +494,9 @@ class ProductSerializer(serializers.ModelSerializer):
         if len(set(component_keys)) != len(component_keys):
             raise serializers.ValidationError("Duplicate assembly components are not allowed")
 
-        if unit and (unit.tenant_id != tenant_id or unit.deleted_at is not None):
+        if unit and (
+            unit.tenant_id not in shared_tenant_ids or unit.deleted_at is not None
+        ):
             raise serializers.ValidationError(
                 {"unit": "Selected unit is not available for this tenant."}
             )
@@ -700,14 +742,31 @@ class RawMaterialSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         tenant_id = self.context["request"].user.tenant_id
+        shared_tenant_ids = get_request_user_dimension_codes(self.context["request"])
         if "purchase_price" in attrs:
             attrs["purchase_price"] = attrs.get("purchase_price") or 0
+
+        brand = attrs.get("brand") or getattr(self.instance, "brand", None)
+        if brand and (
+            brand.tenant_id not in shared_tenant_ids or brand.deleted_at is not None
+        ):
+            raise serializers.ValidationError(
+                {"brand": "Selected brand is not available for this tenant."}
+            )
 
         category = attrs.get("category") or getattr(self.instance, "category", None)
         if category and getattr(category, "inventory_account", None):
             attrs["inventory_account"] = category.inventory_account
 
         purchase_unit = attrs.get("purchase_unit") or getattr(self.instance, "purchase_unit", None)
+        if purchase_unit and (
+            purchase_unit.tenant_id not in shared_tenant_ids
+            or purchase_unit.deleted_at is not None
+        ):
+            raise serializers.ValidationError(
+                {"purchase_unit": "Selected unit is not available for this tenant."}
+            )
+
         if purchase_unit:
             attrs["selling_unit"] = purchase_unit
         attrs["selling_price"] = 0

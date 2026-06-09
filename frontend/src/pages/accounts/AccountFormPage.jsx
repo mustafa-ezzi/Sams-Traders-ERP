@@ -14,7 +14,7 @@ const schema = z.object({
   code: z
     .string()
     .trim()
-    .regex(/^\d{4,5}$/, "Code must be a 4 or 5 digit account code"),
+    .regex(/^\d{4,10}$/, "Code must be a 4 to 10 digit account code"),
   name: z.string().trim().min(1, "Name is required"),
   parent: z.union([z.string().uuid("Parent must be valid"), z.literal("")]),
   account_group: z.enum([
@@ -149,8 +149,18 @@ const getNextChildCode = (parentAccount, allAccounts) => {
   const usedCodes = new Set(
     allAccounts.map((account) => normalizeCodeForGeneration(account.code)).filter(Boolean),
   );
+  const accountById = new Map(allAccounts.map((account) => [account.id, account]));
   const childCodes = allAccounts
-    .filter((account) => account.parent === parentAccount.id)
+    .filter((account) => {
+      if (parentLevel < 3) {
+        return account.parent === parentAccount.id;
+      }
+      const accountParent = accountById.get(account.parent);
+      return (
+        accountParent?.code === parentAccount.code &&
+        Number(accountParent?.level || 1) === parentLevel
+      );
+    })
     .map((account) => normalizeCodeForGeneration(account.code))
     .filter(Boolean)
     .map(Number)
@@ -276,8 +286,8 @@ const AccountFormPage = () => {
   useEffect(() => {
     if (isEditing) return;
 
-    if (parentValue && generatedChildCode) {
-      form.setValue("code", generatedChildCode, {
+    if (parentValue) {
+      form.setValue("code", generatedChildCode || "", {
         shouldDirty: true,
         shouldValidate: true,
       });
@@ -362,6 +372,8 @@ const AccountFormPage = () => {
               placeholder={parentValue ? "Auto generated from parent" : "1000"}
               error={form.formState.errors.code?.message}
               readOnly={Boolean(isEditing) || Boolean(parentValue)}
+              inputMode="numeric"
+              maxLength={10}
               className={Boolean(isEditing) || Boolean(parentValue) ? "bg-slate-100 dark:bg-slate-900/60" : ""}
               {...form.register("code")}
             />
@@ -396,6 +408,11 @@ const AccountFormPage = () => {
                   <span className="font-semibold text-slate-700 dark:text-slate-200">
                     {generatedChildCode}
                   </span>
+                </p>
+              ) : null}
+              {parentValue && !generatedChildCode ? (
+                <p className="text-xs text-rose-600 dark:text-rose-300">
+                  No child account codes are available under this parent.
                 </p>
               ) : null}
               {form.formState.errors.parent?.message ? (

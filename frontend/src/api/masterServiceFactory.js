@@ -3,10 +3,10 @@ import { createAcrossDimensions } from "./createAcrossDimensions";
 
 /**
  * @param {string} resource - inventory API path segment
- * @param {{ mutateCreatePayloadPerTenant?: (payload: object, tenantId: string) => object }} [options]
+ * @param {{ createAcrossTenants?: boolean, mutateCreatePayloadPerTenant?: (payload: object, tenantId: string) => object }} [options]
  */
 export const createMasterService = (resource, options = {}) => {
-  const { mutateCreatePayloadPerTenant } = options;
+  const { createAcrossTenants = true, mutateCreatePayloadPerTenant } = options;
 
   return {
     async list(params) {
@@ -18,6 +18,11 @@ export const createMasterService = (resource, options = {}) => {
       return response.data;
     },
     async create(payload) {
+      if (!createAcrossTenants) {
+        const response = await axiosInstance.post(`/inventory/${resource}/`, payload);
+        return response.data;
+      }
+
       const { response } = await createAcrossDimensions((tenantId) =>
         axiosInstance.post(
           `/inventory/${resource}/`,

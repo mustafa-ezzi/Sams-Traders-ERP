@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from accounts.dimensions import build_dimension_code
+from accounts.dimensions import build_dimension_code, get_user_active_dimension_codes
 from accounts.models import Account, Dimension, Expense, Inquiry, User
 
 
@@ -25,13 +25,17 @@ class DimensionSerializer(serializers.ModelSerializer):
         }
 
     def validate(self, attrs):
-        name = (attrs.get("name") or "").strip()
-        code = build_dimension_code(name, attrs.get("code", ""))
+        existing_code = self.instance.code if self.instance else ""
+        name = (attrs.get("name") or getattr(self.instance, "name", "") or "").strip()
+        requested_code = str(attrs.get("code", existing_code if self.instance else "") or "").strip()
+        code = existing_code if self.instance else build_dimension_code(name, requested_code)
 
         if not name:
             raise serializers.ValidationError({"name": "Dimension name is required."})
         if not code:
             raise serializers.ValidationError({"code": "Dimension code could not be generated."})
+        if self.instance and requested_code and requested_code != existing_code:
+            raise serializers.ValidationError({"code": "Dimension code cannot be changed."})
 
         queryset = Dimension.objects.all()
         if self.instance:
@@ -43,7 +47,8 @@ class DimensionSerializer(serializers.ModelSerializer):
         if queryset.filter(name__iexact=name).exists():
             raise serializers.ValidationError({"name": "A dimension with this name already exists."})
 
-        sku_code = str(attrs.get("sku_code") or code).strip().upper()
+        existing_sku_code = self.instance.sku_code if self.instance else ""
+        sku_code = str(attrs.get("sku_code") or existing_sku_code or code).strip().upper()
         if not sku_code:
             raise serializers.ValidationError({"sku_code": "SKU code is required."})
         if len(sku_code) > 20:
@@ -259,14 +264,30 @@ class AccountSerializer(serializers.ModelSerializer):
             first_code_value = parent_code_value * 10
             branch_limit = first_code_value + 10
 
+        request = self.context.get("request")
+        scoped_tenant_ids = [tenant_id]
+        if parent_level >= 3 and request:
+            scoped_tenant_ids = get_user_active_dimension_codes(request.user) or [
+                tenant_id
+            ]
+
+        direct_child_filter = {
+            "tenant_id__in": scoped_tenant_ids,
+            "deleted_at__isnull": True,
+        }
+        if parent_level >= 3:
+            direct_child_filter["parent__code"] = parent.code
+            direct_child_filter["parent__level"] = parent.level
+        else:
+            direct_child_filter["tenant_id"] = tenant_id
+            direct_child_filter["parent"] = parent
+
         direct_child_codes = Account.objects.filter(
-            tenant_id=tenant_id,
-            parent=parent,
-            deleted_at__isnull=True,
+            **direct_child_filter
         ).values_list("code", flat=True)
         tenant_codes = set(
             Account.objects.filter(
-                tenant_id=tenant_id,
+                tenant_id__in=scoped_tenant_ids,
                 deleted_at__isnull=True,
             ).values_list("code", flat=True)
         )
@@ -308,7 +329,7 @@ class AccountSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         request = self.context["request"]
-        tenant_id = request.tenant_id
+        tenant_id = self.instance.tenant_id if self.instance is not None else request.tenant_id
 
         parent_provided = "parent" in data
         parent = data.get("parent")
@@ -316,7 +337,18 @@ class AccountSerializer(serializers.ModelSerializer):
             parent = self.instance.parent
 
         if parent and parent.tenant_id != tenant_id:
-            raise serializers.ValidationError("Invalid parent for this tenant.")
+            parent = (
+                Account.objects.filter(
+                    tenant_id=tenant_id,
+                    code=parent.code,
+                    deleted_at__isnull=True,
+                )
+                .order_by("level", "code")
+                .first()
+            )
+            if not parent:
+                raise serializers.ValidationError("Invalid parent for this tenant.")
+            data["parent"] = parent
 
         if parent and parent.deleted_at is not None:
             raise serializers.ValidationError("Parent account cannot be soft deleted.")

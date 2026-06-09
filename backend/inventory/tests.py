@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 from accounts.models import Account, Dimension, User
 from inventory.models import (
+    Brand,
     Category,
     Customer,
     Product,
@@ -15,7 +16,7 @@ from inventory.models import (
 )
 from inventory.services import rebuild_product_costing
 from inventory.serializers import ProductSerializer, UnitSerializer
-from inventory.views import CategoryViewSet, ProductViewSet
+from inventory.views import BrandViewSet, CategoryViewSet, ProductViewSet, UnitViewSet
 from purchase.models import PurchaseInvoice, PurchaseInvoiceLine
 from sales.models import SalesInvoice, SalesInvoiceLine
 
@@ -28,7 +29,7 @@ class ProductCoaDefaultsTests(TestCase):
             password="secret",
             tenant_id=self.tenant_id,
         )
-        Dimension.objects.update_or_create(
+        self.dimension, _ = Dimension.objects.update_or_create(
             code=self.tenant_id,
             defaults={
                 "name": "Sams Traders",
@@ -36,6 +37,7 @@ class ProductCoaDefaultsTests(TestCase):
                 "is_active": True,
             },
         )
+        self.user.allowed_dimensions.add(self.dimension)
         self.factory = APIRequestFactory()
 
         self.assets = Account.objects.create(
@@ -207,6 +209,29 @@ class ProductCoaDefaultsTests(TestCase):
 
         self.assertEqual(updated_product.unit_id, updated_unit.id)
 
+    def test_product_accepts_shared_unit_from_another_tenant(self):
+        other_dimension = Dimension.objects.create(
+            code="OTHER_TENANT",
+            name="Other Tenant",
+            is_active=True,
+        )
+        self.user.allowed_dimensions.add(other_dimension)
+        shared_unit = Unit.objects.create(tenant_id="OTHER_TENANT", name="Shared Box")
+        serializer = ProductSerializer(
+            data={
+                "name": "Shared Unit Product",
+                "product_type": "FINISHED_GOOD",
+                "direct_price": "10.00",
+                "unit": shared_unit.id,
+                "materials": [],
+            },
+            context={"request": SimpleNamespace(user=self.user)},
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        product = serializer.save()
+        self.assertEqual(product.unit_id, shared_unit.id)
+
     def test_unit_duplicate_name_returns_validation_error(self):
         Unit.objects.create(
             tenant_id=self.tenant_id,
@@ -228,6 +253,58 @@ class ProductCoaDefaultsTests(TestCase):
             serializer.errors["name"][0],
             "Unit with this name already exists.",
         )
+
+    def test_brand_and_unit_lists_include_records_from_users_allowed_dimensions(self):
+        other_dimension = Dimension.objects.create(
+            code="OTHER_TENANT",
+            name="Other Tenant",
+            is_active=True,
+        )
+        self.user.allowed_dimensions.add(other_dimension)
+        brand = Brand.objects.create(tenant_id="OTHER_TENANT", name="Shared Brand")
+        unit = Unit.objects.create(
+            tenant_id="OTHER_TENANT",
+            name="Shared Carton",
+            breakdown_unit="Piece",
+        )
+
+        brand_request = self.factory.get("/inventory/brands/")
+        force_authenticate(brand_request, user=self.user)
+        brand_response = BrandViewSet.as_view({"get": "list"})(brand_request)
+        brand_items = brand_response.data.get("data", brand_response.data)
+        brand_ids = {item["id"] for item in brand_items}
+
+        unit_request = self.factory.get("/inventory/units/")
+        force_authenticate(unit_request, user=self.user)
+        unit_response = UnitViewSet.as_view({"get": "list"})(unit_request)
+        unit_items = unit_response.data.get("data", unit_response.data)
+        unit_ids = {item["id"] for item in unit_items}
+
+        self.assertIn(str(brand.id), brand_ids)
+        self.assertIn(str(unit.id), unit_ids)
+
+    def test_brand_and_unit_lists_do_not_include_unowned_dimensions(self):
+        brand = Brand.objects.create(tenant_id="UNOWNED_TENANT", name="Hidden Brand")
+        unit = Unit.objects.create(
+            tenant_id="UNOWNED_TENANT",
+            name="Hidden Carton",
+            breakdown_unit="Piece",
+        )
+
+        brand_request = self.factory.get("/inventory/brands/")
+        force_authenticate(brand_request, user=self.user)
+        brand_response = BrandViewSet.as_view({"get": "list"})(brand_request)
+        brand_items = brand_response.data.get("data", brand_response.data)
+        brand_ids = {item["id"] for item in brand_items}
+
+        unit_request = self.factory.get("/inventory/units/")
+        force_authenticate(unit_request, user=self.user)
+        unit_response = UnitViewSet.as_view({"get": "list"})(unit_request)
+        unit_items = unit_response.data.get("data", unit_response.data)
+        unit_ids = {item["id"] for item in unit_items}
+
+        self.assertNotIn(str(brand.id), brand_ids)
+        self.assertNotIn(str(unit.id), unit_ids)
 
     def test_product_moving_average_cost_updates_sale_profit(self):
         warehouse = Warehouse.objects.create(

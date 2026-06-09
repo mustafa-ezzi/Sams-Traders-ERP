@@ -863,6 +863,171 @@ class OpeningAccountsStructureTests(TestCase):
         finished_products.refresh_from_db()
         self.assertFalse(finished_products.is_postable)
 
+    def test_custom_chart_codes_are_shared_across_dimensions_after_level_three(self):
+        sams_dimension, _ = Dimension.objects.get_or_create(
+            code=self.tenant_id,
+            defaults={"name": "SAMS Traders", "sku_code": "SAMS", "is_active": True},
+        )
+        am_dimension, _ = Dimension.objects.get_or_create(
+            code="AM_TRADERS",
+            defaults={"name": "AM Traders", "sku_code": "AM", "is_active": True},
+        )
+        self.user.allowed_dimensions.add(sams_dimension, am_dimension)
+        sams_inventory = Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="1150",
+            name="Inventory",
+            parent=self.current_asset,
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.INVENTORY,
+            account_nature=Account.AccountNature.DEBIT,
+            level=3,
+            is_postable=False,
+            is_active=True,
+            sort_order=0,
+        )
+        Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="1151",
+            name="PI Household",
+            parent=sams_inventory,
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.INVENTORY,
+            account_nature=Account.AccountNature.DEBIT,
+            level=4,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+        am_assets = Account.objects.create(
+            tenant_id="AM_TRADERS",
+            code="1000",
+            name="Assets",
+            account_group=Account.AccountGroup.ASSET,
+            account_nature=Account.AccountNature.DEBIT,
+            level=1,
+            is_postable=False,
+            is_active=True,
+            sort_order=0,
+        )
+        am_current_asset = Account.objects.create(
+            tenant_id="AM_TRADERS",
+            code="1100",
+            name="Current Asset",
+            parent=am_assets,
+            account_group=Account.AccountGroup.ASSET,
+            account_nature=Account.AccountNature.DEBIT,
+            level=2,
+            is_postable=False,
+            is_active=True,
+            sort_order=0,
+        )
+        am_inventory = Account.objects.create(
+            tenant_id="AM_TRADERS",
+            code="1150",
+            name="Inventory",
+            parent=am_current_asset,
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.INVENTORY,
+            account_nature=Account.AccountNature.DEBIT,
+            level=3,
+            is_postable=False,
+            is_active=True,
+            sort_order=0,
+        )
+        request = self._build_request(
+            "post",
+            "/accounts/accounts/",
+            {
+                "name": "Finished Good",
+                "parent": str(sams_inventory.id),
+                "account_group": Account.AccountGroup.ASSET,
+                "account_type": Account.AccountType.INVENTORY,
+                "account_nature": Account.AccountNature.DEBIT,
+                "is_postable": True,
+                "is_active": True,
+            },
+        )
+        request.tenant_id = "AM_TRADERS"
+
+        response = AccountViewSet.as_view({"post": "create"})(request)
+
+        self.assertEqual(response.status_code, 201)
+        created = Account.objects.get(tenant_id="AM_TRADERS", name="Finished Good")
+        self.assertEqual(created.code, "1152")
+        self.assertEqual(created.parent_id, am_inventory.id)
+
+    def test_can_update_account_when_request_tenant_differs_from_account_tenant(self):
+        Dimension.objects.get_or_create(
+            code=self.tenant_id,
+            defaults={"name": "SAMS Traders", "sku_code": "SAMS", "is_active": True},
+        )
+        am_dimension, _ = Dimension.objects.get_or_create(
+            code="AM_TRADERS",
+            defaults={"name": "AM Traders", "sku_code": "AM", "is_active": True},
+        )
+        self.user.allowed_dimensions.add(am_dimension)
+        am_assets = Account.objects.create(
+            tenant_id="AM_TRADERS",
+            code="1000",
+            name="Assets",
+            account_group=Account.AccountGroup.ASSET,
+            account_nature=Account.AccountNature.DEBIT,
+            level=1,
+            is_postable=False,
+            is_active=True,
+            sort_order=0,
+        )
+        am_inventory = Account.objects.create(
+            tenant_id="AM_TRADERS",
+            code="1150",
+            name="Inventory",
+            parent=am_assets,
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.INVENTORY,
+            account_nature=Account.AccountNature.DEBIT,
+            level=2,
+            is_postable=False,
+            is_active=True,
+            sort_order=0,
+        )
+        am_child = Account.objects.create(
+            tenant_id="AM_TRADERS",
+            code="1151",
+            name="Finished Good",
+            parent=am_inventory,
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.INVENTORY,
+            account_nature=Account.AccountNature.DEBIT,
+            level=3,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+        request = self._build_request(
+            "put",
+            f"/accounts/accounts/{am_child.id}/",
+            {
+                "code": am_child.code,
+                "name": "Finished Good Updated",
+                "parent": str(am_inventory.id),
+                "account_group": Account.AccountGroup.ASSET,
+                "account_type": Account.AccountType.INVENTORY,
+                "account_nature": Account.AccountNature.DEBIT,
+                "is_postable": True,
+                "is_active": True,
+                "sort_order": 0,
+            },
+        )
+        request.tenant_id = self.tenant_id
+
+        response = AccountViewSet.as_view({"put": "update"})(request, pk=am_child.id)
+
+        self.assertEqual(response.status_code, 200)
+        am_child.refresh_from_db()
+        self.assertEqual(am_child.name, "Finished Good Updated")
+        self.assertEqual(am_child.parent_id, am_inventory.id)
+
     def test_opening_accounts_endpoint_returns_banks_with_children(self):
         bank = Account.objects.create(
             tenant_id=self.tenant_id,
@@ -960,6 +1125,51 @@ class DimensionManagementTests(TestCase):
 
         self.assertEqual(response.status_code, 201)
         self.assertTrue(Dimension.objects.filter(code="WEST_TRADERS", sku_code="WTE").exists())
+
+    def test_can_update_dimension_without_changing_code(self):
+        dimension = Dimension.objects.create(
+            code="EDIT_DIMENSION",
+            name="Edit Dimension",
+            sku_code="EDI",
+            is_active=True,
+        )
+        self.user.allowed_dimensions.add(dimension)
+        request = self.factory.patch(
+            f"/api/accounts/dimensions/{dimension.id}/",
+            {"name": "AM Traders Updated", "sku_code": "AMU", "is_active": False},
+            format="json",
+        )
+        force_authenticate(request, user=self.user)
+
+        response = DimensionViewSet.as_view({"patch": "partial_update"})(request, pk=dimension.id)
+
+        self.assertEqual(response.status_code, 200)
+        dimension.refresh_from_db()
+        self.assertEqual(dimension.code, "EDIT_DIMENSION")
+        self.assertEqual(dimension.name, "AM Traders Updated")
+        self.assertEqual(dimension.sku_code, "AMU")
+        self.assertFalse(dimension.is_active)
+
+    def test_cannot_update_dimension_code(self):
+        dimension = Dimension.objects.create(
+            code="LOCK_CODE_DIMENSION",
+            name="Lock Code Dimension",
+            sku_code="LCD",
+            is_active=True,
+        )
+        self.user.allowed_dimensions.add(dimension)
+        request = self.factory.patch(
+            f"/api/accounts/dimensions/{dimension.id}/",
+            {"code": "NEW_CODE", "name": "Lock Code Dimension"},
+            format="json",
+        )
+        force_authenticate(request, user=self.user)
+
+        response = DimensionViewSet.as_view({"patch": "partial_update"})(request, pk=dimension.id)
+
+        self.assertEqual(response.status_code, 400)
+        dimension.refresh_from_db()
+        self.assertEqual(dimension.code, "LOCK_CODE_DIMENSION")
 
     def test_can_delete_unused_dimension_and_seeded_accounts(self):
         dimension = Dimension.objects.create(code="TEMP_DIM", name="Temp Dimension", is_active=True)

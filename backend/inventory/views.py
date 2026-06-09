@@ -49,6 +49,7 @@ from rest_framework.exceptions import ValidationError
 from purchase.models import PurchaseInvoiceLine, PurchaseReturnLine
 from sales.models import SalesInvoiceLine, SalesReturnLine
 from common.tenancy import get_request_tenant_filter, get_request_tenant_ids
+from accounts.dimensions import get_user_active_dimension_codes
 
 
 def get_raw_material_stock_total(tenant_id, raw_material_ids):
@@ -102,7 +103,21 @@ class BaseTenantViewSet(ModelViewSet):
         instance.save()
 
 
-class BrandViewSet(BaseTenantViewSet):
+class SharedMasterViewSet(BaseTenantViewSet):
+    """Master records shared across the current user's allowed dimensions."""
+
+    def get_queryset(self):
+        tenant_ids = get_user_active_dimension_codes(self.request.user)
+        tenant_id = getattr(self.request, "tenant_id", None) or self.request.user.tenant_id
+        if tenant_id and tenant_id not in tenant_ids:
+            tenant_ids.append(tenant_id)
+        return self.queryset.filter(
+            tenant_id__in=tenant_ids,
+            deleted_at__isnull=True,
+        )
+
+
+class BrandViewSet(SharedMasterViewSet):
     queryset = Brand.objects.all()
     serializer_class = BrandSerializer
 
@@ -154,7 +169,7 @@ class SizeViewSet(BaseTenantViewSet):
     serializer_class = SizeSerializer
 
 
-class UnitViewSet(BaseTenantViewSet):
+class UnitViewSet(SharedMasterViewSet):
     queryset = Unit.objects.all()
     serializer_class = UnitSerializer
 

@@ -10,18 +10,20 @@ import { useAuth } from "../../context/AuthContext";
 
 const DimensionsPage = () => {
   const toast = useToast();
-  const { setAllowedDimensions, setTenant } = useAuth();
+  const { createTenantIds, setAllowedDimensions, setCreateTenants, setTenant, tenantId } = useAuth();
   const [dimensions, setDimensions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [editingDimension, setEditingDimension] = useState(null);
   const [form, setForm] = useState({
     name: "",
     code: "",
     sku_code: "",
     is_active: true,
   });
+  const isEditing = Boolean(editingDimension);
 
   const extractErrorMessage = (loadError) =>
     loadError?.response?.data?.detail ||
@@ -74,6 +76,21 @@ const DimensionsPage = () => {
     }
   };
 
+  const resetForm = () => {
+    setEditingDimension(null);
+    setForm({ name: "", code: "", sku_code: "", is_active: true });
+  };
+
+  const handleEdit = (dimension) => {
+    setEditingDimension(dimension);
+    setForm({
+      name: dimension.name || "",
+      code: dimension.code || "",
+      sku_code: dimension.sku_code || "",
+      is_active: Boolean(dimension.is_active),
+    });
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (!form.name.trim()) {
@@ -83,16 +100,47 @@ const DimensionsPage = () => {
 
     setSaving(true);
     try {
-      const response = await dimensionService.create({
+      const payload = {
         name: form.name.trim(),
-        code: form.code.trim(),
         sku_code: form.sku_code.trim(),
         is_active: form.is_active,
-      });
-      toast.success(response.message || "Dimension created successfully");
-      setForm({ name: "", code: "", sku_code: "", is_active: true });
+      };
+      const response = isEditing
+        ? await dimensionService.update(editingDimension.id, payload)
+        : await dimensionService.create({
+            ...payload,
+            code: form.code.trim(),
+          });
+      toast.success(
+        response.message ||
+          (isEditing
+            ? "Dimension updated successfully"
+            : "Dimension created successfully"),
+      );
+      if (isEditing && !payload.is_active) {
+        const remainingSelected = createTenantIds.filter(
+          (code) => code !== editingDimension.code,
+        );
+        const fallbackDimension = dimensions.find(
+          (dimension) =>
+            dimension.code !== editingDimension.code && dimension.is_active,
+        );
+        if (tenantId === editingDimension.code && fallbackDimension) {
+          setTenant(fallbackDimension.code);
+        }
+        setCreateTenants(
+          remainingSelected.length
+            ? remainingSelected
+            : fallbackDimension
+              ? [fallbackDimension.code]
+              : [],
+        );
+      }
+      resetForm();
       await loadDimensions();
-      window.location.href = "/";
+      if (!isEditing) {
+        window.location.href = "/";
+      }
     } catch (submitError) {
       toast.error(extractErrorMessage(submitError));
     } finally {
@@ -123,8 +171,12 @@ const DimensionsPage = () => {
           />
           <FormInput
             label="Dimension Code"
-            placeholder="Optional, auto-generated if blank"
+            placeholder={
+              isEditing ? "Code cannot be changed" : "Optional, auto-generated if blank"
+            }
             value={form.code}
+            readOnly={isEditing}
+            className={isEditing ? "bg-slate-100" : ""}
             onChange={(event) =>
               setForm((current) => ({ ...current, code: event.target.value }))
             }
@@ -154,10 +206,21 @@ const DimensionsPage = () => {
             Active dimension
           </label>
 
-          <div className="md:col-span-4">
+          <div className="flex flex-col gap-3 sm:flex-row md:col-span-4">
             <Button type="submit" disabled={saving}>
-              {saving ? "Creating..." : "Create Dimension"}
+              {saving
+                ? isEditing
+                  ? "Updating..."
+                  : "Creating..."
+                : isEditing
+                  ? "Update Dimension"
+                  : "Create Dimension"}
             </Button>
+            {isEditing ? (
+              <Button type="button" variant="secondary" onClick={resetForm}>
+                Cancel Edit
+              </Button>
+            ) : null}
           </div>
         </form>
       </Card>
@@ -211,6 +274,13 @@ const DimensionsPage = () => {
                         : "-"}
                     </td>
                     <td className="px-5 py-4 text-right">
+                      <button
+                        type="button"
+                        className="mr-4 font-semibold text-blue-600 transition hover:text-blue-800"
+                        onClick={() => handleEdit(dimension)}
+                      >
+                        Edit
+                      </button>
                       <button
                         type="button"
                         className="font-semibold text-rose-600 transition hover:text-rose-800"

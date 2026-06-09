@@ -11,6 +11,10 @@ const dimensionService = {
     const response = await axiosInstance.post(BASE_URL, payload);
     return response.data;
   },
+  async update(id, payload) {
+    const response = await axiosInstance.patch(`${BASE_URL}${id}/`, payload);
+    return response.data;
+  },
   async remove(id) {
     const response = await axiosInstance.delete(`${BASE_URL}${id}/`);
     return response.data;
