@@ -120,6 +120,7 @@ class ProductCoaDefaultsTests(TestCase):
             cogs_account=self.cogs_account,
             revenue_account=self.revenue_account,
         )
+        self.brand = Brand.objects.create(tenant_id=self.tenant_id, name="Nike")
         self.unit = Unit.objects.create(tenant_id=self.tenant_id, name="Pair")
 
     def test_product_inherits_missing_coas_from_category(self):
@@ -128,6 +129,7 @@ class ProductCoaDefaultsTests(TestCase):
                 "name": "Runner",
                 "product_type": "READY_MADE",
                 "packaging_cost": "15.00",
+                "brand": self.brand.id,
                 "category": self.category.id,
                 "unit": self.unit.id,
                 "inventory_account": None,
@@ -143,6 +145,7 @@ class ProductCoaDefaultsTests(TestCase):
         self.assertEqual(product.inventory_account_id, self.inventory_account.id)
         self.assertEqual(product.cogs_account_id, self.cogs_account.id)
         self.assertEqual(product.revenue_account_id, self.revenue_account.id)
+        self.assertEqual(product.brand_id, self.brand.id)
         self.assertEqual(product.unit_id, self.unit.id)
         self.assertEqual(product.sku, "AME - 0001")
 
@@ -231,6 +234,40 @@ class ProductCoaDefaultsTests(TestCase):
         self.assertTrue(serializer.is_valid(), serializer.errors)
         product = serializer.save()
         self.assertEqual(product.unit_id, shared_unit.id)
+
+    def test_assembly_product_can_use_assembly_product_component(self):
+        component = Product.objects.create(
+            tenant_id=self.tenant_id,
+            name="Inner Assembly",
+            product_type="ASSEMBLY_PRODUCT",
+            unit=self.unit,
+            net_amount="25.00",
+            confirmed_unit_cost="25.00",
+        )
+        serializer = ProductSerializer(
+            data={
+                "name": "Outer Assembly",
+                "product_type": "ASSEMBLY_PRODUCT",
+                "unit": self.unit.id,
+                "materials": [
+                    {
+                        "component_type": "ASSEMBLY_PRODUCT",
+                        "component_product_id": component.id,
+                        "uom_id": self.unit.id,
+                        "quantity": "2",
+                        "rate": "25.00",
+                    }
+                ],
+            },
+            context={"request": SimpleNamespace(user=self.user)},
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        product = serializer.save()
+        self.assertEqual(product.materials.count(), 1)
+        material = product.materials.first()
+        self.assertEqual(material.component_type, "ASSEMBLY_PRODUCT")
+        self.assertEqual(material.component_product_id, component.id)
 
     def test_unit_duplicate_name_returns_validation_error(self):
         Unit.objects.create(

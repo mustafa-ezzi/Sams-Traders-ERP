@@ -142,6 +142,7 @@ class Product(BaseModel):
     name = models.CharField(max_length=255)
     sku = models.CharField(max_length=50, blank=True, default="")
     product_type = models.CharField(max_length=20, choices=PRODUCT_TYPE_CHOICES)
+    brand = models.ForeignKey(Brand, on_delete=models.PROTECT, null=True, blank=True)
     unit = models.ForeignKey(Unit, on_delete=models.PROTECT, null=True, blank=True)
 
     packaging_cost = models.DecimalField(max_digits=12, decimal_places=2, default=0)

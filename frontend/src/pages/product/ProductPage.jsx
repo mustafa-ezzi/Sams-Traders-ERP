@@ -239,7 +239,9 @@ const ProductPage = () => {
                                 key={i}
                                 className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700"
                               >
-                                {m.raw_material_name ?? "Unknown"}
+                                {m.raw_material_name ??
+                                  m.component_product_name ??
+                                  "Unknown"}
                               </span>
                             ))}
                           </div>

@@ -374,6 +374,7 @@ class ProductSerializer(serializers.ModelSerializer):
             "use_calculated_cost",
             "confirmed_unit_cost",
             "net_amount",
+            "brand",
             "category",
             "unit",
             "inventory_account",
@@ -467,6 +468,7 @@ class ProductSerializer(serializers.ModelSerializer):
         shared_tenant_ids = get_request_user_dimension_codes(self.context["request"])
         product_type = data.get("product_type")
         materials = data.get("materials", [])
+        brand = data.get("brand", getattr(self.instance, "brand", None))
         category = data.get("category", getattr(self.instance, "category", None))
         unit = data.get("unit", getattr(self.instance, "unit", None))
         data["sku"] = self._validate_sku(
@@ -559,6 +561,13 @@ class ProductSerializer(serializers.ModelSerializer):
 
         if len(set(component_keys)) != len(component_keys):
             raise serializers.ValidationError("Duplicate assembly components are not allowed")
+
+        if brand and (
+            brand.tenant_id not in shared_tenant_ids or brand.deleted_at is not None
+        ):
+            raise serializers.ValidationError(
+                {"brand": "Selected brand is not available for this tenant."}
+            )
 
         if category and (
             category.tenant_id not in shared_tenant_ids or category.deleted_at is not None
@@ -662,6 +671,7 @@ class ProductSerializer(serializers.ModelSerializer):
             "product_type", instance.product_type
         )
         instance.direct_price = validated_data.get("direct_price", instance.direct_price)
+        instance.brand = validated_data.get("brand", instance.brand)
         instance.moulding_charges = validated_data.get(
             "moulding_charges", instance.moulding_charges
         )

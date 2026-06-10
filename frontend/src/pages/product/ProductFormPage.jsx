@@ -7,6 +7,7 @@ import productService from "../../api/services/productService";
 import rawMaterialService from "../../api/services/rawMaterialService";
 import accountService from "../../api/services/accountService";
 import unitService from "../../api/services/unitService";
+import brandService from "../../api/services/brandService";
 import { formatDecimal } from "../../utils/format";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
@@ -29,6 +30,7 @@ const schema = z.object({
   directPrice: z.coerce.number().min(0),
   useCalculatedCost: z.boolean(),
   confirmedUnitCost: z.coerce.number().min(0),
+  brand: z.union([z.string().uuid("Brand must be a valid UUID"), z.literal("")]),
   unit: z.union([z.string().uuid("Unit must be a valid UUID"), z.literal("")]),
   inventory_account: z.union([
     z.string().uuid("Inventory account must be a valid UUID"),
@@ -54,6 +56,7 @@ const defaultValues = {
   directPrice: 0,
   useCalculatedCost: true,
   confirmedUnitCost: 0,
+  brand: "",
   unit: "",
   inventory_account: "",
   cogs_account: "",
@@ -83,6 +86,7 @@ const mapProductToForm = (product) => ({
   directPrice: Number(product.direct_price || 0),
   useCalculatedCost: product.use_calculated_cost ?? true,
   confirmedUnitCost: Number(product.confirmed_unit_cost || 0),
+  brand: product.brand || "",
   unit: product.unit || "",
   inventory_account: product.inventory_account || "",
   cogs_account: product.cogs_account || "",
@@ -132,11 +136,12 @@ const ProductFormPage = () => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [rawMaterialOptions, setRawMaterialOptions] = useState([]);
+  const [brandOptions, setBrandOptions] = useState([]);
   const [unitOptions, setUnitOptions] = useState([]);
   const [inventoryAccounts, setInventoryAccounts] = useState([]);
   const [cogsAccounts, setCogsAccounts] = useState([]);
   const [revenueAccounts, setRevenueAccounts] = useState([]);
-  const [finishedGoodOptions, setFinishedGoodOptions] = useState([]);
+  const [componentProductOptions, setComponentProductOptions] = useState([]);
   const [materialRows, setMaterialRows] = useState([
     {
       component_type: "RAW_MATERIAL",
@@ -153,12 +158,14 @@ const ProductFormPage = () => {
   const useCalculatedCost = form.watch("useCalculatedCost");
 
   const loadProductSetupOptions = useCallback(async () => {
-    const [unitRes, accountRes] = await Promise.all([
+    const [brandRes, unitRes, accountRes] = await Promise.all([
+      brandService.list({ page: 1, limit: 100, search: "" }),
       unitService.list({ page: 1, limit: 100, search: "" }),
       accountService.list(),
     ]);
     const flatAccounts = flattenAccountTree(accountRes || []);
 
+    setBrandOptions(brandRes.data || []);
     setUnitOptions(unitRes.data || []);
     setInventoryAccounts(getPostableInventoryAccounts(flatAccounts));
     setCogsAccounts(
@@ -197,11 +204,13 @@ const ProductFormPage = () => {
         ]);
 
         setRawMaterialOptions(rawMaterialRes.data || []);
-        setFinishedGoodOptions(
+        setComponentProductOptions(
           (productOptionsRes.data || []).filter(
             (item) =>
               (item.product_type === "FINISHED_GOOD" ||
-                item.product_type === "READY_MADE") &&
+                item.product_type === "READY_MADE" ||
+                item.product_type === "ASSEMBLY_PRODUCT" ||
+                item.product_type === "MANUFACTURED") &&
               String(item.id) !== String(id),
           ),
         );
@@ -247,7 +256,7 @@ const ProductFormPage = () => {
     .map((row) =>
       row.component_type === "RAW_MATERIAL"
         ? `RAW_MATERIAL:${row.raw_material_id}`
-        : `FINISHED_GOOD:${row.component_product_id}`,
+        : `${row.component_type}:${row.component_product_id}`,
     )
     .filter((key) => !key.endsWith(":"));
   const materialCost = materialRows.reduce(
@@ -274,9 +283,7 @@ const ProductFormPage = () => {
           raw_material_id:
             row.component_type === "RAW_MATERIAL" ? row.raw_material_id : null,
           component_product_id:
-            row.component_type === "FINISHED_GOOD"
-              ? row.component_product_id
-              : null,
+            row.component_type !== "RAW_MATERIAL" ? row.component_product_id : null,
           uom_id: row.uom_id || null,
           quantity: Number(row.quantity),
           rate: Number(row.rate),
@@ -302,6 +309,7 @@ const ProductFormPage = () => {
         direct_price: values.directPrice,
         use_calculated_cost: values.useCalculatedCost,
         confirmed_unit_cost: values.confirmedUnitCost,
+        brand: values.brand || null,
         unit: values.unit || null,
         inventory_account: values.inventory_account || null,
         cogs_account: values.cogs_account || null,
@@ -388,6 +396,29 @@ const ProductFormPage = () => {
                 {...form.register("directPrice")}
               />
             )}
+
+            <div className="space-y-2">
+              <label className="block text-sm font-semibold text-slate-700">
+                Brand
+              </label>
+              <select
+                className={selectClassName}
+                {...form.register("brand")}
+                {...refreshSelectOptionsProps}
+              >
+                <option value="">Select brand</option>
+                {brandOptions.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+              {form.formState.errors.brand?.message ? (
+                <p className="text-sm text-rose-500">
+                  {form.formState.errors.brand.message}
+                </p>
+              ) : null}
+            </div>
 
             <div className="space-y-2">
               <label className="block text-sm font-semibold text-slate-700">
@@ -509,17 +540,21 @@ const ProductFormPage = () => {
                     const selectedMaterial = rawMaterialOptions.find(
                       (material) => material.id === row.raw_material_id,
                     );
-                    const selectedFinishedGood = finishedGoodOptions.find(
+                    const selectedComponentProduct = componentProductOptions.find(
                       (product) => product.id === row.component_product_id,
                     );
                     const selectedOption =
                       row.component_type === "RAW_MATERIAL"
                         ? selectedMaterial
-                        : selectedFinishedGood;
+                        : selectedComponentProduct;
                     const currentComponentKey =
                       row.component_type === "RAW_MATERIAL"
                         ? `RAW_MATERIAL:${row.raw_material_id}`
-                        : `FINISHED_GOOD:${row.component_product_id}`;
+                        : `${row.component_type}:${row.component_product_id}`;
+                    const componentProductLabel =
+                      row.component_type === "ASSEMBLY_PRODUCT"
+                        ? "Assembly Product"
+                        : "Finished Good";
                     return (
                       <div
                         key={index}
@@ -552,27 +587,28 @@ const ProductFormPage = () => {
                           >
                             <option value="RAW_MATERIAL">Raw Material</option>
                             <option value="FINISHED_GOOD">Finished Good</option>
+                            <option value="ASSEMBLY_PRODUCT">Assembly Product</option>
                           </select>
                         </div>
 
                         <div className="space-y-2">
                           <label className="text-xs font-semibold text-slate-600">
-                            {row.component_type === "FINISHED_GOOD"
-                              ? "Finished Good"
-                              : "Raw Material"}
+                            {row.component_type === "RAW_MATERIAL"
+                              ? "Raw Material"
+                              : componentProductLabel}
                           </label>
                           <select
                             className={selectClassName}
                             value={
-                              row.component_type === "FINISHED_GOOD"
-                                ? row.component_product_id
-                                : row.raw_material_id
+                              row.component_type === "RAW_MATERIAL"
+                                ? row.raw_material_id
+                                : row.component_product_id
                             }
                             onChange={(event) => {
                               const itemId = event.target.value;
                               const selected =
-                                row.component_type === "FINISHED_GOOD"
-                                  ? finishedGoodOptions.find(
+                                row.component_type !== "RAW_MATERIAL"
+                                  ? componentProductOptions.find(
                                       (item) => item.id === itemId,
                                     )
                                   : rawMaterialOptions.find(
@@ -588,7 +624,7 @@ const ProductFormPage = () => {
                                             ? itemId
                                             : "",
                                         component_product_id:
-                                          row.component_type === "FINISHED_GOOD"
+                                          row.component_type !== "RAW_MATERIAL"
                                             ? itemId
                                             : "",
                                         uom_id:
@@ -599,9 +635,9 @@ const ProductFormPage = () => {
                                         rate: selected
                                           ? Number(
                                               row.component_type ===
-                                                "FINISHED_GOOD"
-                                                ? selected.net_amount
-                                                : selected.purchase_price,
+                                                "RAW_MATERIAL"
+                                                ? selected.purchase_price
+                                                : selected.net_amount
                                             )
                                           : 0,
                                       }
@@ -612,13 +648,19 @@ const ProductFormPage = () => {
                           >
                             <option value="">
                               Select{" "}
-                              {row.component_type === "FINISHED_GOOD"
-                                ? "finished good"
-                                : "raw material"}
+                              {row.component_type === "RAW_MATERIAL"
+                                ? "raw material"
+                                : componentProductLabel.toLowerCase()}
                             </option>
-                            {(row.component_type === "FINISHED_GOOD"
-                              ? finishedGoodOptions
-                              : rawMaterialOptions
+                            {(row.component_type === "RAW_MATERIAL"
+                              ? rawMaterialOptions
+                              : componentProductOptions.filter((option) =>
+                                  row.component_type === "ASSEMBLY_PRODUCT"
+                                    ? option.product_type === "ASSEMBLY_PRODUCT" ||
+                                      option.product_type === "MANUFACTURED"
+                                    : option.product_type === "FINISHED_GOOD" ||
+                                      option.product_type === "READY_MADE",
+                                )
                             ).map((option) => {
                               const optionKey = `${row.component_type}:${option.id}`;
                               return (
@@ -630,7 +672,7 @@ const ProductFormPage = () => {
                                     optionKey !== currentComponentKey
                                   }
                                 >
-                                  {row.component_type === "FINISHED_GOOD"
+                                  {row.component_type !== "RAW_MATERIAL"
                                     ? `${option.name} | Cost: ${formatDecimal(option.net_amount)}`
                                     : getRawMaterialOptionLabel(option)}
                                 </option>
@@ -720,8 +762,8 @@ const ProductFormPage = () => {
                           />
                           {selectedOption && (
                             <p className="text-xs text-slate-500">
-                              {row.component_type === "FINISHED_GOOD"
-                                ? `${selectedFinishedGood.name} unit cost: ${formatDecimal(selectedFinishedGood.net_amount)}`
+                              {row.component_type !== "RAW_MATERIAL"
+                                ? `${selectedComponentProduct.name} unit cost: ${formatDecimal(selectedComponentProduct.net_amount)}`
                                 : `${getRawMaterialOptionLabel(selectedMaterial)} purchase price: ${selectedMaterial.purchase_price}`}
                             </p>
                           )}

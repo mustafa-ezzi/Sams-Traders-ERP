@@ -253,7 +253,7 @@ class ProductViewSet(viewsets.ModelViewSet):
         tenant_ids = get_request_tenant_ids(self.request)
         qs = Product.objects.filter(
             tenant_id__in=tenant_ids, deleted_at__isnull=True
-        ).select_related("unit").prefetch_related(
+        ).select_related("brand", "unit").prefetch_related(
             Prefetch("materials", queryset=active_materials)
         )
         product_type = self.request.query_params.get("product_type", "").strip()
