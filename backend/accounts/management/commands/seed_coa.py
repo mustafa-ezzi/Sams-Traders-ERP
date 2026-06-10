@@ -249,7 +249,7 @@ class Command(BaseCommand):
         },
         {
             "code": "5100",
-            "name": "Sales - Parent Co",
+            "name": "Sales",
             "parent": "5000",
             "level": 2,
             "group": "REVENUE",
