@@ -15,7 +15,7 @@ from inventory.models import (
     Warehouse,
 )
 from inventory.services import rebuild_product_costing
-from inventory.serializers import ProductSerializer, UnitSerializer
+from inventory.serializers import CategorySerializer, ProductSerializer, UnitSerializer
 from inventory.views import BrandViewSet, CategoryViewSet, ProductViewSet, UnitViewSet
 from purchase.models import PurchaseInvoice, PurchaseInvoiceLine
 from sales.models import SalesInvoice, SalesInvoiceLine
@@ -254,7 +254,132 @@ class ProductCoaDefaultsTests(TestCase):
             "Unit with this name already exists.",
         )
 
-    def test_brand_and_unit_lists_include_records_from_users_allowed_dimensions(self):
+    def test_product_accepts_shared_category_and_maps_coa_defaults_to_current_tenant(self):
+        other_dimension = Dimension.objects.create(
+            code="OTHER_TENANT",
+            name="Other Tenant",
+            is_active=True,
+        )
+        self.user.allowed_dimensions.add(other_dimension)
+        other_assets = Account.objects.create(
+            tenant_id="OTHER_TENANT",
+            code="1000",
+            name="Assets",
+            account_group=Account.AccountGroup.ASSET,
+            account_nature=Account.AccountNature.DEBIT,
+            level=1,
+            is_postable=False,
+            is_active=True,
+            sort_order=0,
+        )
+        other_inventory = Account.objects.create(
+            tenant_id="OTHER_TENANT",
+            code=self.inventory_account.code,
+            name="Inventory",
+            parent=other_assets,
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.INVENTORY,
+            account_nature=Account.AccountNature.DEBIT,
+            level=2,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+        other_revenue_root = Account.objects.create(
+            tenant_id="OTHER_TENANT",
+            code="4000",
+            name="Revenue",
+            account_group=Account.AccountGroup.REVENUE,
+            account_nature=Account.AccountNature.CREDIT,
+            level=1,
+            is_postable=False,
+            is_active=True,
+            sort_order=0,
+        )
+        other_revenue = Account.objects.create(
+            tenant_id="OTHER_TENANT",
+            code=self.revenue_account.code,
+            name="Sales Revenue",
+            parent=other_revenue_root,
+            account_group=Account.AccountGroup.REVENUE,
+            account_type=Account.AccountType.REVENUE,
+            account_nature=Account.AccountNature.CREDIT,
+            level=2,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+        other_cogs_root = Account.objects.create(
+            tenant_id="OTHER_TENANT",
+            code="5000",
+            name="Cost of Sales",
+            account_group=Account.AccountGroup.COGS,
+            account_nature=Account.AccountNature.DEBIT,
+            level=1,
+            is_postable=False,
+            is_active=True,
+            sort_order=0,
+        )
+        other_cogs = Account.objects.create(
+            tenant_id="OTHER_TENANT",
+            code=self.cogs_account.code,
+            name="COGS",
+            parent=other_cogs_root,
+            account_group=Account.AccountGroup.COGS,
+            account_type=Account.AccountType.COGS,
+            account_nature=Account.AccountNature.DEBIT,
+            level=2,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+        shared_category = Category.objects.create(
+            tenant_id="OTHER_TENANT",
+            name="Shared Category",
+            inventory_account=other_inventory,
+            cogs_account=other_cogs,
+            revenue_account=other_revenue,
+        )
+
+        serializer = ProductSerializer(
+            data={
+                "name": "Shared Category Product",
+                "product_type": "FINISHED_GOOD",
+                "direct_price": "10.00",
+                "category": shared_category.id,
+                "unit": self.unit.id,
+                "materials": [],
+            },
+            context={"request": SimpleNamespace(user=self.user)},
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        product = serializer.save()
+        self.assertEqual(product.category_id, shared_category.id)
+        self.assertEqual(product.inventory_account_id, self.inventory_account.id)
+        self.assertEqual(product.cogs_account_id, self.cogs_account.id)
+        self.assertEqual(product.revenue_account_id, self.revenue_account.id)
+
+    def test_category_duplicate_name_returns_validation_error_across_owned_dimensions(self):
+        other_dimension = Dimension.objects.create(
+            code="OTHER_TENANT",
+            name="Other Tenant",
+            is_active=True,
+        )
+        self.user.allowed_dimensions.add(other_dimension)
+        Category.objects.create(tenant_id="OTHER_TENANT", name="Packaging")
+        serializer = CategorySerializer(
+            data={"name": "Packaging"},
+            context={"request": SimpleNamespace(user=self.user)},
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertEqual(
+            serializer.errors["name"][0],
+            "Category with this name already exists.",
+        )
+
+    def test_brand_unit_and_category_lists_include_records_from_users_allowed_dimensions(self):
         other_dimension = Dimension.objects.create(
             code="OTHER_TENANT",
             name="Other Tenant",
@@ -262,6 +387,7 @@ class ProductCoaDefaultsTests(TestCase):
         )
         self.user.allowed_dimensions.add(other_dimension)
         brand = Brand.objects.create(tenant_id="OTHER_TENANT", name="Shared Brand")
+        category = Category.objects.create(tenant_id="OTHER_TENANT", name="Shared Category")
         unit = Unit.objects.create(
             tenant_id="OTHER_TENANT",
             name="Shared Carton",
@@ -280,11 +406,22 @@ class ProductCoaDefaultsTests(TestCase):
         unit_items = unit_response.data.get("data", unit_response.data)
         unit_ids = {item["id"] for item in unit_items}
 
+        category_request = self.factory.get("/inventory/categories/")
+        force_authenticate(category_request, user=self.user)
+        category_response = CategoryViewSet.as_view({"get": "list"})(category_request)
+        category_items = category_response.data.get("data", category_response.data)
+        category_ids = {item["id"] for item in category_items}
+
         self.assertIn(str(brand.id), brand_ids)
+        self.assertIn(str(category.id), category_ids)
         self.assertIn(str(unit.id), unit_ids)
 
-    def test_brand_and_unit_lists_do_not_include_unowned_dimensions(self):
+    def test_brand_unit_and_category_lists_do_not_include_unowned_dimensions(self):
         brand = Brand.objects.create(tenant_id="UNOWNED_TENANT", name="Hidden Brand")
+        category = Category.objects.create(
+            tenant_id="UNOWNED_TENANT",
+            name="Hidden Category",
+        )
         unit = Unit.objects.create(
             tenant_id="UNOWNED_TENANT",
             name="Hidden Carton",
@@ -303,7 +440,14 @@ class ProductCoaDefaultsTests(TestCase):
         unit_items = unit_response.data.get("data", unit_response.data)
         unit_ids = {item["id"] for item in unit_items}
 
+        category_request = self.factory.get("/inventory/categories/")
+        force_authenticate(category_request, user=self.user)
+        category_response = CategoryViewSet.as_view({"get": "list"})(category_request)
+        category_items = category_response.data.get("data", category_response.data)
+        category_ids = {item["id"] for item in category_items}
+
         self.assertNotIn(str(brand.id), brand_ids)
+        self.assertNotIn(str(category.id), category_ids)
         self.assertNotIn(str(unit.id), unit_ids)
 
     def test_product_moving_average_cost_updates_sale_profit(self):

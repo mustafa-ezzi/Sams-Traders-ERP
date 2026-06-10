@@ -957,6 +957,95 @@ class OpeningAccountsStructureTests(TestCase):
         self.assertEqual(created.code, "1152")
         self.assertEqual(created.parent_id, am_inventory.id)
 
+    def test_account_list_collapses_top_three_tiers_across_dimensions(self):
+        am_assets = Account.objects.create(
+            tenant_id="AM_TRADERS",
+            code="1000",
+            name="Assets",
+            account_group=Account.AccountGroup.ASSET,
+            account_nature=Account.AccountNature.DEBIT,
+            level=1,
+            is_postable=False,
+            is_active=True,
+            sort_order=0,
+        )
+        am_current_asset = Account.objects.create(
+            tenant_id="AM_TRADERS",
+            code="1100",
+            name="Current Asset",
+            parent=am_assets,
+            account_group=Account.AccountGroup.ASSET,
+            account_nature=Account.AccountNature.DEBIT,
+            level=2,
+            is_postable=False,
+            is_active=True,
+            sort_order=0,
+        )
+        am_bank_root = Account.objects.create(
+            tenant_id="AM_TRADERS",
+            code="1110",
+            name="Bank",
+            parent=am_current_asset,
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.BANK,
+            account_nature=Account.AccountNature.DEBIT,
+            level=3,
+            is_postable=False,
+            is_active=True,
+            sort_order=0,
+        )
+        Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="1111",
+            name="SAMS Bank",
+            parent=self.bank_root,
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.BANK,
+            account_nature=Account.AccountNature.DEBIT,
+            level=4,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+        Account.objects.create(
+            tenant_id="AM_TRADERS",
+            code="1112",
+            name="AM Bank",
+            parent=am_bank_root,
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.BANK,
+            account_nature=Account.AccountNature.DEBIT,
+            level=4,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+
+        request = self._build_request("get", "/accounts/accounts/")
+        request.tenant_ids = [self.tenant_id, "AM_TRADERS"]
+
+        response = AccountViewSet.as_view({"get": "list"})(request)
+
+        self.assertEqual(response.status_code, 200)
+        root_codes = [account["code"] for account in response.data]
+        self.assertEqual(root_codes.count("1000"), 1)
+
+        assets = next(account for account in response.data if account["code"] == "1000")
+        current_asset_codes = [account["code"] for account in assets["children"]]
+        self.assertEqual(current_asset_codes.count("1100"), 1)
+
+        current_asset = next(
+            account for account in assets["children"] if account["code"] == "1100"
+        )
+        bank_root_codes = [account["code"] for account in current_asset["children"]]
+        self.assertEqual(bank_root_codes.count("1110"), 1)
+
+        bank_root = next(
+            account for account in current_asset["children"] if account["code"] == "1110"
+        )
+        child_codes = [account["code"] for account in bank_root["children"]]
+        self.assertEqual(child_codes, ["1111", "1112"])
+
     def test_can_update_account_when_request_tenant_differs_from_account_tenant(self):
         Dimension.objects.get_or_create(
             code=self.tenant_id,

@@ -2,6 +2,7 @@ from rest_framework import serializers
 
 from accounts.dimensions import build_dimension_code, get_user_active_dimension_codes
 from accounts.models import Account, Dimension, Expense, Inquiry, User
+from common.tenancy import get_request_tenant_ids
 
 
 class LoginSerializer(serializers.Serializer):
@@ -209,6 +210,7 @@ class TenantStaffSerializer(serializers.ModelSerializer):
 
 class AccountSerializer(serializers.ModelSerializer):
     children = serializers.SerializerMethodField(read_only=True)
+    SHARED_DISPLAY_LEVEL = 3
 
     class Meta:
         model = Account
@@ -323,9 +325,56 @@ class AccountSerializer(serializers.ModelSerializer):
             parent.is_postable = False
             parent.save(update_fields=["is_postable", "updated_at"])
 
+    def _get_display_tenant_ids(self):
+        request = self.context.get("request")
+        if not request:
+            return []
+
+        tenant_ids = get_request_tenant_ids(request)
+        if tenant_ids:
+            return tenant_ids
+
+        tenant_ids = get_user_active_dimension_codes(request.user)
+        tenant_id = getattr(request, "tenant_id", None) or request.user.tenant_id
+        if tenant_id and tenant_id not in tenant_ids:
+            tenant_ids.append(tenant_id)
+        return tenant_ids
+
+    def _dedupe_shared_display_accounts(self, accounts):
+        deduped = []
+        seen = set()
+
+        for account in accounts:
+            if account.level <= self.SHARED_DISPLAY_LEVEL:
+                key = (account.level, account.code)
+                if key in seen:
+                    continue
+                seen.add(key)
+            deduped.append(account)
+
+        return deduped
+
     def get_children(self, obj):
-        queryset = obj.children.filter(deleted_at__isnull=True).order_by("code")
-        return AccountSerializer(queryset, many=True, context=self.context).data
+        if obj.level <= self.SHARED_DISPLAY_LEVEL:
+            parent_queryset = Account.objects.filter(
+                tenant_id__in=self._get_display_tenant_ids(),
+                code=obj.code,
+                level=obj.level,
+                deleted_at__isnull=True,
+            )
+            queryset = Account.objects.filter(
+                parent__in=parent_queryset,
+                deleted_at__isnull=True,
+            ).order_by("code", "tenant_id", "created_at")
+            accounts = self._dedupe_shared_display_accounts(list(queryset))
+        else:
+            accounts = list(
+                obj.children.filter(deleted_at__isnull=True).order_by(
+                    "code", "tenant_id", "created_at"
+                )
+            )
+
+        return AccountSerializer(accounts, many=True, context=self.context).data
 
     def validate(self, data):
         request = self.context["request"]

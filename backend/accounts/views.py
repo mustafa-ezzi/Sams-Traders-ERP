@@ -35,7 +35,7 @@ from purchase.services import get_purchase_invoice_financials
 from sales.models import SalesBankReceipt, SalesInvoice, SalesInvoiceLine, SalesReturn, SalesReturnLine
 from sales.services import get_sales_invoice_financials
 
-from common.tenancy import get_request_tenant_filter
+from common.tenancy import get_request_tenant_filter, get_request_tenant_ids
 from .serializers import AccountSerializer, DimensionSerializer, ExpenseSerializer, LoginSerializer
 from .serializers import (
     AdminInquirySerializer,
@@ -198,22 +198,57 @@ class AccountViewSet(ModelViewSet):
     serializer_class = AccountSerializer
     permission_classes = [IsAuthenticated]
     OPENING_BANK_ROOT_CODE = "1110"
+    SHARED_DISPLAY_LEVEL = 3
+
+    def _get_detail_tenant_ids(self):
+        tenant_ids = get_user_active_dimension_codes(self.request.user)
+        requested_tenant_ids = get_request_tenant_ids(self.request)
+        for tenant_id in requested_tenant_ids:
+            if tenant_id and tenant_id not in tenant_ids:
+                tenant_ids.append(tenant_id)
+        return tenant_ids
 
     def get_queryset(self):
+        tenant_filter = get_request_tenant_filter(self.request)
+        if self.action in {"retrieve", "update", "partial_update", "destroy"}:
+            tenant_filter = {"tenant_id__in": self._get_detail_tenant_ids()}
+
         queryset = (
             Account.objects.filter(
-                **get_request_tenant_filter(self.request),
+                **tenant_filter,
                 deleted_at__isnull=True,
             )
             .select_related("parent")
             .prefetch_related("children")
-            .order_by("code")   
+            .order_by("code", "tenant_id", "created_at")
         )
 
         if self.action == "list":
             queryset = queryset.filter(parent__isnull=True)
 
         return queryset
+
+    def _dedupe_shared_display_accounts(self, accounts):
+        deduped = []
+        seen = set()
+
+        for account in accounts:
+            if account.level <= self.SHARED_DISPLAY_LEVEL:
+                key = (account.level, account.code)
+                if key in seen:
+                    continue
+                seen.add(key)
+            deduped.append(account)
+
+        return deduped
+
+    def list(self, request, *args, **kwargs):
+        queryset = list(self.filter_queryset(self.get_queryset()))
+        serializer = self.get_serializer(
+            self._dedupe_shared_display_accounts(queryset),
+            many=True,
+        )
+        return Response(serializer.data)
 
     def perform_create(self, serializer):
         serializer.save(tenant_id=self.request.tenant_id)

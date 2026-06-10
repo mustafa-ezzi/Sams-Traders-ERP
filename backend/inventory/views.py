@@ -26,6 +26,7 @@ from .models import (
 from .serializers import (
     BrandSerializer,
     CategorySerializer,
+    get_category_account_for_tenant,
     OpeningStockSerializer,
     PartySerializer,
     ProductionSerializer,
@@ -122,7 +123,7 @@ class BrandViewSet(SharedMasterViewSet):
     serializer_class = BrandSerializer
 
 
-class CategoryViewSet(BaseTenantViewSet):
+class CategoryViewSet(SharedMasterViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
 
@@ -142,7 +143,11 @@ class CategoryViewSet(BaseTenantViewSet):
         for product in products:
             changed_fields = []
             for field_name in fields:
-                category_value = getattr(category, field_name)
+                category_value = get_category_account_for_tenant(
+                    category,
+                    field_name,
+                    request.user.tenant_id,
+                )
                 if category_value and getattr(product, field_name) is None:
                     setattr(product, field_name, category_value)
                     changed_fields.append(field_name)

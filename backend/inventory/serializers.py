@@ -68,6 +68,52 @@ def validate_account_mapping(
         )
 
 
+def validate_shared_account_mapping(
+    account,
+    tenant_ids,
+    field_name,
+    allowed_groups,
+    allowed_types=None,
+    require_postable=True,
+):
+    if account is None:
+        return
+
+    if account.tenant_id not in tenant_ids or account.deleted_at is not None:
+        raise serializers.ValidationError(
+            {field_name: "Selected account is not available for this tenant."}
+        )
+
+    if not account.is_active:
+        raise serializers.ValidationError(
+            {field_name: "Selected account is inactive."}
+        )
+
+    has_children = account.children.filter(deleted_at__isnull=True).exists()
+    if require_postable and not account.is_postable and has_children:
+        raise serializers.ValidationError(
+            {field_name: "Selected account must be postable."}
+        )
+
+    if allowed_groups and account.account_group not in allowed_groups:
+        raise serializers.ValidationError(
+            {
+                field_name: (
+                    f"Selected account must belong to: {', '.join(allowed_groups)}."
+                )
+            }
+        )
+
+    if allowed_types and account.account_type not in allowed_types:
+        raise serializers.ValidationError(
+            {
+                field_name: (
+                    f"Selected account must have account type: {', '.join(allowed_types)}."
+                )
+            }
+        )
+
+
 def resolve_product_coa_defaults(category, attrs, instance=None):
     if not category:
         return attrs
@@ -75,12 +121,31 @@ def resolve_product_coa_defaults(category, attrs, instance=None):
     for field_name in ["inventory_account", "cogs_account", "revenue_account"]:
         incoming_value = attrs.get(field_name)
         current_value = getattr(instance, field_name, None) if instance else None
-        category_value = getattr(category, field_name, None)
+        category_value = get_category_account_for_tenant(
+            category,
+            field_name,
+            attrs.get("tenant_id") or getattr(instance, "tenant_id", None),
+        )
 
         if incoming_value is None and current_value is None and category_value is not None:
             attrs[field_name] = category_value
 
     return attrs
+
+
+def get_category_account_for_tenant(category, field_name, tenant_id):
+    account = getattr(category, field_name, None)
+    if not account:
+        return None
+
+    if account.tenant_id == tenant_id:
+        return account
+
+    return Account.objects.filter(
+        tenant_id=tenant_id,
+        code=account.code,
+        deleted_at__isnull=True,
+    ).first()
 
 
 def get_request_user_dimension_codes(request):
@@ -143,33 +208,34 @@ class BrandSerializer(SharedUniqueNameSerializer):
         extra_kwargs = {"name": {"validators": []}}
 
 
-class CategorySerializer(TenantUniqueNameSerializer):
+class CategorySerializer(SharedUniqueNameSerializer):
     duplicate_name_message = "Category with this name already exists."
 
     class Meta:
         model = Category
         fields = "__all__"
         read_only_fields = ["tenant_id"]
+        extra_kwargs = {"name": {"validators": []}}
 
     def validate(self, attrs):
-        tenant_id = self.context["request"].user.tenant_id
-        validate_account_mapping(
+        tenant_ids = get_request_user_dimension_codes(self.context["request"])
+        validate_shared_account_mapping(
             attrs.get("inventory_account"),
-            tenant_id,
+            tenant_ids,
             "inventory_account",
             [Account.AccountGroup.ASSET],
             [Account.AccountType.INVENTORY],
             require_postable=False,
         )
-        validate_account_mapping(
+        validate_shared_account_mapping(
             attrs.get("cogs_account"),
-            tenant_id,
+            tenant_ids,
             "cogs_account",
             [Account.AccountGroup.COGS],
         )
-        validate_account_mapping(
+        validate_shared_account_mapping(
             attrs.get("revenue_account"),
-            tenant_id,
+            tenant_ids,
             "revenue_account",
             [Account.AccountGroup.REVENUE],
         )
@@ -494,6 +560,13 @@ class ProductSerializer(serializers.ModelSerializer):
         if len(set(component_keys)) != len(component_keys):
             raise serializers.ValidationError("Duplicate assembly components are not allowed")
 
+        if category and (
+            category.tenant_id not in shared_tenant_ids or category.deleted_at is not None
+        ):
+            raise serializers.ValidationError(
+                {"category": "Selected category is not available for this tenant."}
+            )
+
         if unit and (
             unit.tenant_id not in shared_tenant_ids or unit.deleted_at is not None
         ):
@@ -501,7 +574,9 @@ class ProductSerializer(serializers.ModelSerializer):
                 {"unit": "Selected unit is not available for this tenant."}
             )
 
+        data["tenant_id"] = tenant_id
         data = resolve_product_coa_defaults(category, data, instance=self.instance)
+        data.pop("tenant_id", None)
 
         validate_account_mapping(
             data.get("inventory_account"),
@@ -755,8 +830,19 @@ class RawMaterialSerializer(serializers.ModelSerializer):
             )
 
         category = attrs.get("category") or getattr(self.instance, "category", None)
+        if category and (
+            category.tenant_id not in shared_tenant_ids
+            or category.deleted_at is not None
+        ):
+            raise serializers.ValidationError(
+                {"category": "Selected category is not available for this tenant."}
+            )
         if category and getattr(category, "inventory_account", None):
-            attrs["inventory_account"] = category.inventory_account
+            attrs["inventory_account"] = get_category_account_for_tenant(
+                category,
+                "inventory_account",
+                tenant_id,
+            )
 
         purchase_unit = attrs.get("purchase_unit") or getattr(self.instance, "purchase_unit", None)
         if purchase_unit and (
