@@ -22,6 +22,7 @@ export const TENANT_UI_PERMISSION_GROUPS = [
       { id: "sales_invoices", label: "Sales invoices" },
       { id: "sales_returns", label: "Sales returns" },
       { id: "customers", label: "Customers" },
+      { id: "salesmen", label: "Salesmen" },
     ],
   },
   {

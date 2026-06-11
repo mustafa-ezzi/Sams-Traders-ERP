@@ -386,7 +386,14 @@ class AccountSerializer(serializers.ModelSerializer):
             parent = self.instance.parent
 
         if parent and parent.tenant_id != tenant_id:
-            parent = (
+            # The chart of accounts is shared across the user's dimensions,
+            # so the chosen parent may come from a different tenant than the
+            # one currently selected. Prefer a same-tenant clone of the
+            # parent (typical for seeded headers like 1100, 1110), but if
+            # none exists - which is normal for a custom level-4+ branch
+            # that was created in another dimension - fall back to the
+            # original parent and let the child inherit its tenant on save.
+            same_tenant_parent = (
                 Account.objects.filter(
                     tenant_id=tenant_id,
                     code=parent.code,
@@ -395,9 +402,9 @@ class AccountSerializer(serializers.ModelSerializer):
                 .order_by("level", "code")
                 .first()
             )
-            if not parent:
-                raise serializers.ValidationError("Invalid parent for this tenant.")
-            data["parent"] = parent
+            if same_tenant_parent:
+                parent = same_tenant_parent
+                data["parent"] = parent
 
         if parent and parent.deleted_at is not None:
             raise serializers.ValidationError("Parent account cannot be soft deleted.")
@@ -448,8 +455,16 @@ class AccountSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         request = self.context["request"]
-        validated_data["tenant_id"] = request.tenant_id
-        self._ensure_parent_is_header(validated_data.get("parent"))
+        parent = validated_data.get("parent")
+        # COA is shared across the user's dimensions. New leaves inherit
+        # the parent's tenant so the Account.parent.tenant_id == self.tenant_id
+        # invariant holds even when the user is currently viewing another
+        # dimension. Top-level roots fall back to the request tenant.
+        if parent:
+            validated_data["tenant_id"] = parent.tenant_id
+        else:
+            validated_data["tenant_id"] = request.tenant_id
+        self._ensure_parent_is_header(parent)
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
@@ -494,16 +509,26 @@ class ExpenseSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
 
+    def _allowed_account_tenant_ids(self):
+        # COA is shared across every dimension the user owns, so any of
+        # them is a valid source for a bank / expense account.
+        request = self.context["request"]
+        tenant_ids = get_user_active_dimension_codes(request.user)
+        current = getattr(request, "tenant_id", "") or request.user.tenant_id
+        if current and current not in tenant_ids:
+            tenant_ids.append(current)
+        return tenant_ids
+
     def validate_bank_account_id(self, value):
-        tenant_id = self.context["request"].user.tenant_id
+        tenant_ids = self._allowed_account_tenant_ids()
         try:
             account = Account.objects.get(
                 id=value,
-                tenant_id=tenant_id,
+                tenant_id__in=tenant_ids,
                 deleted_at__isnull=True,
             )
         except Account.DoesNotExist:
-            raise serializers.ValidationError("Bank account not found for this tenant")
+            raise serializers.ValidationError("Bank account not found")
 
         if not account.is_active:
             raise serializers.ValidationError("Selected bank account is inactive")
@@ -516,15 +541,15 @@ class ExpenseSerializer(serializers.ModelSerializer):
         return value
 
     def validate_expense_account_id(self, value):
-        tenant_id = self.context["request"].user.tenant_id
+        tenant_ids = self._allowed_account_tenant_ids()
         try:
             account = Account.objects.get(
                 id=value,
-                tenant_id=tenant_id,
+                tenant_id__in=tenant_ids,
                 deleted_at__isnull=True,
             )
         except Account.DoesNotExist:
-            raise serializers.ValidationError("Expense account not found for this tenant")
+            raise serializers.ValidationError("Expense account not found")
 
         if not account.is_active:
             raise serializers.ValidationError("Selected expense account is inactive")

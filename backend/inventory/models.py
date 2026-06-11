@@ -282,6 +282,28 @@ class Supplier(BaseModel):
         return self.business_name
 
 
+class Salesman(BaseModel):
+    code = models.CharField(max_length=20)
+    name = models.CharField(max_length=255)
+    email = models.EmailField(null=True, blank=True)
+    phone_number = models.CharField(max_length=50, blank=True, default="")
+    commission_on_sales = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    commission_on_recovery = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant_id", "code"],
+                condition=models.Q(deleted_at__isnull=True),
+                name="unique_active_salesman_code_per_tenant",
+            ),
+        ]
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.code} - {self.name}"
+
+
 # =========================
 # WAREHOUSE + STOCK
 # =========================

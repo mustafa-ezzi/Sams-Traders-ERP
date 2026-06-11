@@ -23,6 +23,7 @@ import SalesReturnPage from "./pages/sales/SalesReturnPage";
 import SalesBankReceiptPage from "./pages/sales/SalesBankReceiptPage";
 import CustomersPage from "./pages/parties/CustomersPage";
 import SuppliersPage from "./pages/parties/SuppliersPage";
+import SalesmenPage from "./pages/sales/SalesmenPage";
 import AccountsPage from "./pages/accounts/AccountsPage";
 import AccountFormPage from "./pages/accounts/AccountFormPage";
 import ExpensePage from "./pages/accounts/ExpensePage";
@@ -133,6 +134,7 @@ const App = () => (
         <Route path="sales-returns" element={<SalesReturnPage />} />
         <Route path="sales-bank-receipts" element={<SalesBankReceiptPage />} />
         <Route path="customers" element={<CustomersPage />} />
+        <Route path="salesmen" element={<SalesmenPage />} />
         <Route path="suppliers" element={<SuppliersPage />} />
         <Route path="support" element={<SupportPage />} />
         <Route path="settings/staff" element={<TenantStaffPage />} />

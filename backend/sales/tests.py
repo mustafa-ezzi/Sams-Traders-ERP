@@ -4,7 +4,7 @@ from django.test import TestCase
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from accounts.models import Account, User
-from inventory.models import Category, Customer, Product, ProductStock, Unit, Warehouse
+from inventory.models import Category, Customer, Product, ProductStock, Salesman, Unit, Warehouse
 from sales.models import SalesBankReceipt, SalesInvoice, SalesReturn
 from sales.serializers import SalesBankReceiptSerializer, SalesInvoiceSerializer
 from sales.views import SalesInvoiceViewSet
@@ -285,6 +285,41 @@ class SalesInvoiceSerializerTests(TestCase):
         )
 
         self.assertTrue(serializer.is_valid(), serializer.errors)
+
+    def test_salesman_commission_is_calculated_from_net_amount(self):
+        salesman = Salesman.objects.create(
+            tenant_id=self.tenant_id,
+            code="SM-00099",
+            name="Commission Tester",
+            commission_on_sales=Decimal("10.00"),
+            commission_on_recovery=Decimal("0.00"),
+        )
+        serializer = SalesInvoiceSerializer(
+            data={
+                "date": "2026-04-22",
+                "customer_id": str(self.customer.id),
+                "warehouse_id": str(self.warehouse.id),
+                "salesman_id": str(salesman.id),
+                "remarks": "Commission invoice",
+                "invoice_discount": "0.00",
+                "lines": [
+                    {
+                        "product_id": str(self.product.id),
+                        "quantity": "1.00",
+                        "rate": "50.00",
+                        "discount": "0.00",
+                    }
+                ],
+            },
+            context={"request": self._get_request()},
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        invoice = serializer.save()
+        self.assertEqual(invoice.net_amount, Decimal("50.00"))
+        self.assertEqual(invoice.salesman_id, salesman.id)
+        self.assertEqual(invoice.salesman_commission_rate, Decimal("10.00"))
+        self.assertEqual(invoice.salesman_commission_amount, Decimal("5.00"))
 
     def test_product_options_include_product_unit(self):
         request = self.factory.get(

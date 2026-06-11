@@ -6,6 +6,7 @@ import ConfirmModal from "../../components/ui/ConfirmModal";
 import StateView from "../../components/StateView";
 import customerService from "../../api/services/customerService";
 import warehouseService from "../../api/services/warehouseService";
+import salesmanService from "../../api/services/salesmanService";
 import salesInvoiceService from "../../api/services/salesInvoiceService";
 import { formatDecimal } from "../../utils/format";
 import { useToast } from "../../context/ToastContext";
@@ -18,6 +19,7 @@ const createEmptyLine = () => ({
   quantity: "1",
   rate: "0",
   discount: "0",
+  discountPercent: "0",
 });
 
 const toNumber = (value) => {
@@ -26,6 +28,66 @@ const toNumber = (value) => {
 };
 
 const toRateString = (value) => String(toNumber(value));
+
+const roundMoney = (value) => Math.round(toNumber(value) * 100) / 100;
+
+const roundPercent = (value) => Math.round(toNumber(value) * 100) / 100;
+
+const formatInputNumber = (value) => {
+  const rounded = roundMoney(value);
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2);
+};
+
+const amountFromPercent = (baseAmount, percent) => {
+  const base = roundMoney(baseAmount);
+  if (base <= 0) return 0;
+  const normalizedPercent = Math.min(100, Math.max(0, toNumber(percent)));
+  return roundMoney(Math.min(base, (base * normalizedPercent) / 100));
+};
+
+const percentFromAmount = (baseAmount, amount) => {
+  const base = roundMoney(baseAmount);
+  if (base <= 0) return 0;
+  return roundPercent(
+    (Math.min(base, Math.max(0, toNumber(amount))) / base) * 100,
+  );
+};
+
+const recalcLineFromPercent = (line) => {
+  const baseAmount = toNumber(line.quantity) * toNumber(line.rate);
+  const percent = Math.min(100, Math.max(0, toNumber(line.discountPercent)));
+  const discount = amountFromPercent(baseAmount, percent);
+  return {
+    ...line,
+    discountPercent: formatInputNumber(percent),
+    discount: formatInputNumber(discount),
+  };
+};
+
+const recalcLineFromAmount = (line) => {
+  const baseAmount = toNumber(line.quantity) * toNumber(line.rate);
+  const discount = Math.min(
+    baseAmount,
+    Math.max(0, toNumber(line.discount)),
+  );
+  return {
+    ...line,
+    discount: formatInputNumber(discount),
+    discountPercent: formatInputNumber(percentFromAmount(baseAmount, discount)),
+  };
+};
+
+const mapLineFromInvoice = (line) => {
+  const baseAmount = toNumber(line.quantity) * toNumber(line.rate);
+  const discount = toNumber(line.discount);
+  return {
+    productId: line.productId,
+    quantity: String(line.quantity),
+    rate: String(line.rate),
+    discount: String(line.discount ?? 0),
+    discountPercent: formatInputNumber(percentFromAmount(baseAmount, discount)),
+  };
+};
 
 const extractErrorMessage = (error) => {
   const data = error?.response?.data;
@@ -63,13 +125,16 @@ const SalesInvoicePage = () => {
   const [records, setRecords] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
+  const [salesmen, setSalesmen] = useState([]);
   const [productOptions, setProductOptions] = useState([]);
   const [form, setForm] = useState({
     date: new Date().toISOString().slice(0, 10),
     customerId: "",
     warehouseId: "",
+    salesmanId: "",
     remarks: "",
     invoiceDiscount: "0",
+    invoiceDiscountPercent: "0",
     lines: [createEmptyLine()],
   });
   const [editingId, setEditingId] = useState("");
@@ -130,6 +195,15 @@ const SalesInvoicePage = () => {
     () => netAmount - estimatedCostTotal,
     [estimatedCostTotal, netAmount],
   );
+  const selectedSalesman = useMemo(
+    () => salesmen.find((salesman) => salesman.id === form.salesmanId) || null,
+    [form.salesmanId, salesmen],
+  );
+  const estimatedSalesmanCommission = useMemo(() => {
+    const rate = toNumber(selectedSalesman?.commission_on_sales);
+    if (!form.salesmanId || rate <= 0) return 0;
+    return (netAmount * rate) / 100;
+  }, [form.salesmanId, netAmount, selectedSalesman]);
 
   const loadInvoices = async (nextPage = page, nextSearch = search) => {
     setLoading(true);
@@ -166,10 +240,12 @@ const SalesInvoicePage = () => {
     Promise.all([
       customerService.list({ page: 1, limit: 100, search: "" }),
       warehouseService.list({ page: 1, limit: 100, search: "" }),
+      salesmanService.list({ page: 1, limit: 100, search: "" }),
     ])
-      .then(([customerResponse, warehouseResponse]) => {
+      .then(([customerResponse, warehouseResponse, salesmanResponse]) => {
         setCustomers(customerResponse.data || []);
         setWarehouses(warehouseResponse.data || []);
+        setSalesmen(salesmanResponse.data || []);
       })
       .catch(() => toast.error("Failed to load sales setup options"));
   }, []);
@@ -178,13 +254,33 @@ const SalesInvoicePage = () => {
     loadProductOptions(form.warehouseId);
   }, [form.warehouseId]);
 
+  useEffect(() => {
+    const percent = toNumber(form.invoiceDiscountPercent);
+    if (percent <= 0) {
+      return;
+    }
+
+    const nextAmount = amountFromPercent(grossAmount, percent);
+    setForm((current) => {
+      if (roundMoney(current.invoiceDiscount) === nextAmount) {
+        return current;
+      }
+      return {
+        ...current,
+        invoiceDiscount: formatInputNumber(nextAmount),
+      };
+    });
+  }, [grossAmount, form.invoiceDiscountPercent]);
+
   const resetForm = () => {
     setForm({
       date: new Date().toISOString().slice(0, 10),
       customerId: "",
       warehouseId: "",
+      salesmanId: "",
       remarks: "",
       invoiceDiscount: "0",
+      invoiceDiscountPercent: "0",
       lines: [createEmptyLine()],
     });
     setEditingId("");
@@ -197,23 +293,49 @@ const SalesInvoicePage = () => {
     }));
   };
 
+  const handleInvoiceDiscountAmount = (value) => {
+    const amount = Math.min(grossAmount, Math.max(0, toNumber(value)));
+    setForm((current) => ({
+      ...current,
+      invoiceDiscount: formatInputNumber(amount),
+      invoiceDiscountPercent: formatInputNumber(
+        percentFromAmount(grossAmount, amount),
+      ),
+    }));
+  };
+
+  const handleInvoiceDiscountPercent = (value) => {
+    const percent = Math.min(100, Math.max(0, toNumber(value)));
+    const amount = amountFromPercent(grossAmount, percent);
+    setForm((current) => ({
+      ...current,
+      invoiceDiscountPercent: formatInputNumber(percent),
+      invoiceDiscount: formatInputNumber(amount),
+    }));
+  };
+
   const handleLineChange = (index, field, value) => {
     setForm((current) => {
       const nextLines = [...current.lines];
-      const nextLine =
-        field === "productId"
-          ? {
-              ...nextLines[index],
-              productId: value,
-              rate: value ? toRateString(productMap[value]?.net_amount) : "0",
-            }
-          : {
-              ...nextLines[index],
-              [field]: value,
-            };
-      nextLines[index] = {
-        ...nextLine,
-      };
+      let nextLine = { ...nextLines[index], [field]: value };
+
+      if (field === "productId") {
+        nextLine.productId = value;
+        nextLine.rate = value ? toRateString(productMap[value]?.net_amount) : "0";
+      }
+
+      if (field === "discountPercent") {
+        nextLine = recalcLineFromPercent(nextLine);
+      } else if (field === "discount") {
+        nextLine = recalcLineFromAmount(nextLine);
+      } else if (["quantity", "rate", "productId"].includes(field)) {
+        nextLine =
+          toNumber(nextLine.discountPercent) > 0
+            ? recalcLineFromPercent(nextLine)
+            : recalcLineFromAmount(nextLine);
+      }
+
+      nextLines[index] = nextLine;
       return {
         ...current,
         lines: nextLines,
@@ -242,6 +364,7 @@ const SalesInvoicePage = () => {
     date: form.date,
     customer_id: form.customerId,
     warehouse_id: form.warehouseId,
+    salesman_id: form.salesmanId || null,
     remarks: form.remarks,
     invoice_discount: toNumber(form.invoiceDiscount),
     lines: form.lines
@@ -310,20 +433,21 @@ const SalesInvoicePage = () => {
     try {
       const invoice = await salesInvoiceService.getById(recordId);
       setEditingId(invoice.id);
+      const loadedGross = toNumber(invoice.grossAmount);
+      const loadedInvoiceDiscount = toNumber(invoice.invoiceDiscount);
       setForm({
         date: invoice.date,
         customerId: invoice.customerId,
         warehouseId: invoice.warehouseId,
+        salesmanId: invoice.salesmanId || "",
         remarks: invoice.remarks || "",
-        invoiceDiscount: String(invoice.invoiceDiscount || 0),
+        invoiceDiscount: String(loadedInvoiceDiscount),
+        invoiceDiscountPercent: formatInputNumber(
+          percentFromAmount(loadedGross, loadedInvoiceDiscount),
+        ),
         lines:
           invoice.lines?.length > 0
-            ? invoice.lines.map((line) => ({
-                productId: line.productId,
-                quantity: String(line.quantity),
-                rate: String(line.rate),
-                discount: String(line.discount),
-              }))
+            ? invoice.lines.map(mapLineFromInvoice)
             : [createEmptyLine()],
       });
       await loadProductOptions(invoice.warehouseId);
@@ -411,6 +535,31 @@ const SalesInvoicePage = () => {
                 ))}
               </select>
             </div>
+
+            <div className="space-y-1">
+              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Salesman
+              </label>
+              <select
+                className={selectClassName}
+                value={form.salesmanId}
+                onChange={(e) => handleChange("salesmanId", e.target.value)}
+              >
+                <option value="">No salesman</option>
+                {salesmen.map((salesman) => (
+                  <option key={salesman.id} value={salesman.id}>
+                    {salesman.code} - {salesman.name} (
+                    {toNumber(salesman.commission_on_sales)}% sales)
+                  </option>
+                ))}
+              </select>
+              {form.salesmanId ? (
+                <p className="text-xs text-slate-500">
+                  Commission is tracked separately and does not change the invoice
+                  total.
+                </p>
+              ) : null}
+            </div>
           </div>
 
           <div className="grid grid-cols-1 gap-3">
@@ -429,7 +578,7 @@ const SalesInvoicePage = () => {
               className="grid gap-2 bg-indigo-50 px-4 py-3 text-xs font-bold uppercase tracking-widest text-slate-500"
               style={{
                 gridTemplateColumns:
-                  "1.8fr 80px 90px 70px 110px 110px 110px 110px 110px 110px 40px",
+                  "1.8fr 80px 90px 70px 110px 110px 85px 85px 110px 110px 110px 40px",
               }}
             >
               <span>Product Name</span>
@@ -438,7 +587,8 @@ const SalesInvoicePage = () => {
               <span>Unit</span>
               <span>Rate (Price)</span>
               <span>Amount</span>
-              <span>Disc (Amt)</span>
+              <span>Disc %</span>
+              <span>Disc Amt</span>
               <span>Avg Cost</span>
               <span>COGS</span>
               <span>Profit</span>
@@ -455,7 +605,7 @@ const SalesInvoicePage = () => {
                     className="grid items-center gap-2 py-3"
                     style={{
                       gridTemplateColumns:
-                        "1.8fr 80px 90px 70px 110px 110px 110px 110px 110px 110px 40px",
+                        "1.8fr 80px 90px 70px 110px 110px 85px 85px 110px 110px 110px 40px",
                     }}
                   >
                     <select
@@ -510,6 +660,22 @@ const SalesInvoicePage = () => {
                     <FormInput
                       type="number"
                       min="0"
+                      max="100"
+                      step="0.01"
+                      placeholder="0"
+                      value={line.discountPercent}
+                      onChange={(e) =>
+                        handleLineChange(
+                          index,
+                          "discountPercent",
+                          e.target.value,
+                        )
+                      }
+                    />
+
+                    <FormInput
+                      type="number"
+                      min="0"
                       step="0.01"
                       placeholder="0.00"
                       value={line.discount}
@@ -550,7 +716,22 @@ const SalesInvoicePage = () => {
           </div>
 
           <div className="flex flex-col items-end gap-3">
-            <div className="flex gap-3">
+            <div className="flex flex-wrap justify-end gap-3">
+              <div className="min-w-[180px] rounded-2xl border border-slate-200 bg-white px-5 py-3">
+                <p className="mb-1 text-xs text-slate-400">
+                  Invoice Discount (%)
+                </p>
+                <FormInput
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={form.invoiceDiscountPercent}
+                  onChange={(e) =>
+                    handleInvoiceDiscountPercent(e.target.value)
+                  }
+                />
+              </div>
               <div className="min-w-[180px] rounded-2xl border border-slate-200 bg-white px-5 py-3">
                 <p className="mb-1 text-xs text-slate-400">
                   Invoice Discount (Amount)
@@ -561,7 +742,7 @@ const SalesInvoicePage = () => {
                   step="0.01"
                   value={form.invoiceDiscount}
                   onChange={(e) =>
-                    handleChange("invoiceDiscount", e.target.value)
+                    handleInvoiceDiscountAmount(e.target.value)
                   }
                 />
               </div>
@@ -582,6 +763,9 @@ const SalesInvoicePage = () => {
                 </p>
                 <p className="text-base font-bold text-slate-800">
                   - {formatDecimal(toNumber(form.invoiceDiscount))}
+                </p>
+                <p className="text-xs text-slate-400">
+                  {formatDecimal(toNumber(form.invoiceDiscountPercent))}%
                 </p>
               </div>
               <div className="border-l border-slate-200 pl-6 text-right">
@@ -608,6 +792,19 @@ const SalesInvoicePage = () => {
                   {formatDecimal(estimatedProfit)}
                 </p>
               </div>
+              {form.salesmanId ? (
+                <div className="border-l border-slate-200 pl-6 text-right">
+                  <p className="mb-0.5 text-xs uppercase tracking-wide text-slate-400">
+                    Salesman Commission
+                  </p>
+                  <p className="text-base font-bold text-violet-600">
+                    {formatDecimal(estimatedSalesmanCommission)}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    {toNumber(selectedSalesman?.commission_on_sales)}% of net
+                  </p>
+                </div>
+              ) : null}
             </div>
           </div>
 
@@ -664,6 +861,8 @@ const SalesInvoicePage = () => {
                     <th className="px-4 py-3">Date</th>
                     <th className="px-4 py-3">Customer</th>
                     <th className="px-4 py-3">Warehouse</th>
+                    <th className="px-4 py-3">Salesman</th>
+                    <th className="px-4 py-3">Commission</th>
                     <th className="px-4 py-3">Gross</th>
                     <th className="px-4 py-3">Net</th>
                     <th className="px-4 py-3">COGS</th>
@@ -686,6 +885,14 @@ const SalesInvoicePage = () => {
                       </td>
                       <td className="px-4 py-3 text-slate-600">
                         {record.warehouse?.name}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {record.salesman
+                          ? `${record.salesman.code} - ${record.salesman.name}`
+                          : "—"}
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-violet-600">
+                        {formatDecimal(record.salesmanCommissionAmount || 0)}
                       </td>
                       <td className="px-4 py-3 text-slate-600">
                         {formatDecimal(record.grossAmount)}

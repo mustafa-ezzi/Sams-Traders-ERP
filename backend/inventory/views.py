@@ -19,6 +19,7 @@ from .models import (
     RawMaterial,
     Size,
     Stock,
+    Salesman,
     Supplier,
     Unit,
     Warehouse,
@@ -29,6 +30,7 @@ from .serializers import (
     get_category_account_for_tenant,
     OpeningStockSerializer,
     PartySerializer,
+    SalesmanSerializer,
     ProductionSerializer,
     ProductSerializer,
     RawMaterialDetailedSerializer,
@@ -1017,6 +1019,12 @@ class CustomerViewSet(BasePartyViewSet):
 
 class SupplierViewSet(BasePartyViewSet):
     party_model = Supplier
+
+
+class SalesmanViewSet(BaseTenantViewSet):
+    queryset = Salesman.objects.all()
+    serializer_class = SalesmanSerializer
+    search_fields = ["code", "name", "email", "phone_number"]
 
 
 class WarehouseViewSet(viewsets.ModelViewSet):

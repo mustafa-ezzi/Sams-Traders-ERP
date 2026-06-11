@@ -2,7 +2,7 @@ from django.db import models
 
 from accounts.models import Account
 from common.models import BaseModel
-from inventory.models import Customer, Product, Warehouse
+from inventory.models import Customer, Product, Salesman, Warehouse
 
 
 class SalesInvoice(BaseModel):
@@ -22,6 +22,15 @@ class SalesInvoice(BaseModel):
     invoice_discount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     gross_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     net_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    salesman = models.ForeignKey(
+        Salesman,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="sales_invoices",
+    )
+    salesman_commission_rate = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    salesman_commission_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
 
     class Meta:
         constraints = [

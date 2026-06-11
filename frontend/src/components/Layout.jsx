@@ -214,6 +214,12 @@ const navigation = [
         icon: icons.parties,
         perm: "customers",
       },
+      {
+        to: "/salesmen",
+        label: "Salesmen",
+        icon: icons.parties,
+        perm: "salesmen",
+      },
     ],
   },
   {

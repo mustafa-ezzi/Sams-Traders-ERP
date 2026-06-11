@@ -26,6 +26,7 @@ from inventory.models import (
     ProductStock,
     Production,
     RawMaterial,
+    Salesman,
     Stock,
     Supplier,
     Warehouse,
@@ -200,18 +201,29 @@ class AccountViewSet(ModelViewSet):
     OPENING_BANK_ROOT_CODE = "1110"
     SHARED_DISPLAY_LEVEL = 3
 
-    def _get_detail_tenant_ids(self):
+    def _get_shared_tenant_ids(self):
+        """Chart of Accounts is shared across every dimension the user owns,
+        so account queries always span the user's allowed dimensions instead
+        of being scoped to the currently selected one."""
+
         tenant_ids = get_user_active_dimension_codes(self.request.user)
         requested_tenant_ids = get_request_tenant_ids(self.request)
         for tenant_id in requested_tenant_ids:
             if tenant_id and tenant_id not in tenant_ids:
                 tenant_ids.append(tenant_id)
+        if not tenant_ids:
+            current = getattr(self.request, "tenant_id", "") or getattr(
+                self.request.user, "tenant_id", ""
+            )
+            if current:
+                tenant_ids = [current]
         return tenant_ids
 
+    def _get_detail_tenant_ids(self):
+        return self._get_shared_tenant_ids()
+
     def get_queryset(self):
-        tenant_filter = get_request_tenant_filter(self.request)
-        if self.action in {"retrieve", "update", "partial_update", "destroy"}:
-            tenant_filter = {"tenant_id__in": self._get_detail_tenant_ids()}
+        tenant_filter = {"tenant_id__in": self._get_shared_tenant_ids()}
 
         queryset = (
             Account.objects.filter(
@@ -269,10 +281,26 @@ class AccountViewSet(ModelViewSet):
 
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-    def _get_descendant_account_codes(self, account):
+    def _get_descendant_account_codes(self, account, tenant_ids=None):
         codes = {account.code}
-        for child in account.children.filter(deleted_at__isnull=True):
-            codes.update(self._get_descendant_account_codes(child))
+        if tenant_ids:
+            # Walk the descendants by code across every dimension so the
+            # tree reflects the unified COA the user actually sees.
+            parents = Account.objects.filter(
+                tenant_id__in=tenant_ids,
+                code=account.code,
+                level=account.level,
+                deleted_at__isnull=True,
+            )
+            children = Account.objects.filter(
+                tenant_id__in=tenant_ids,
+                parent__in=parents,
+                deleted_at__isnull=True,
+            )
+        else:
+            children = account.children.filter(deleted_at__isnull=True)
+        for child in children:
+            codes.update(self._get_descendant_account_codes(child, tenant_ids))
         return codes
 
     def _resolve_tenant_ids(self, tenant_scope):
@@ -307,10 +335,14 @@ class AccountViewSet(ModelViewSet):
         return bank_root
 
     def _get_next_opening_bank_code(self, bank_root):
+        # Bank codes under 1110 are shared across every dimension the user
+        # owns so that we never duplicate a code (e.g. SAMS=1111 and AM=1111).
+        tenant_ids = self._get_shared_tenant_ids() or [bank_root.tenant_id]
         existing_codes = (
             Account.objects.filter(
-                tenant_id=bank_root.tenant_id,
-                parent=bank_root,
+                tenant_id__in=tenant_ids,
+                parent__code=bank_root.code,
+                parent__level=bank_root.level,
                 deleted_at__isnull=True,
             )
             .values_list("code", flat=True)
@@ -328,10 +360,12 @@ class AccountViewSet(ModelViewSet):
         return f"{bank_root.code[:-1]}{next_suffix}"
 
     def _get_next_opening_account_code(self, bank_account):
+        tenant_ids = self._get_shared_tenant_ids() or [bank_account.tenant_id]
         existing_codes = (
             Account.objects.filter(
-                tenant_id=bank_account.tenant_id,
-                parent=bank_account,
+                tenant_id__in=tenant_ids,
+                parent__code=bank_account.code,
+                parent__level=bank_account.level,
                 deleted_at__isnull=True,
             )
             .values_list("code", flat=True)
@@ -355,22 +389,36 @@ class AccountViewSet(ModelViewSet):
 
     def _serialize_opening_banks(self, tenant_id):
         bank_root = self._get_opening_bank_root(tenant_id)
+        # Opening banks are sourced from every dimension the user owns so the
+        # COA appears as one unified tree, irrespective of where each bank was
+        # originally created.
+        tenant_ids = self._get_shared_tenant_ids() or [tenant_id]
         queryset = (
             Account.objects.filter(
-                tenant_id=tenant_id,
-                parent=bank_root,
+                tenant_id__in=tenant_ids,
+                parent__code=bank_root.code,
+                parent__level=bank_root.level,
                 deleted_at__isnull=True,
             )
             .prefetch_related("children")
-            .order_by("code")
+            .order_by("code", "tenant_id", "created_at")
         )
+        deduped = []
+        seen_codes = set()
+        for bank in queryset:
+            if bank.code in seen_codes:
+                continue
+            seen_codes.add(bank.code)
+            deduped.append(bank)
         return {
             "root": {
                 "id": str(bank_root.id),
                 "code": bank_root.code,
                 "name": bank_root.name,
             },
-            "banks": AccountSerializer(queryset, many=True, context=self.get_serializer_context()).data,
+            "banks": AccountSerializer(
+                deduped, many=True, context=self.get_serializer_context()
+            ).data,
         }
 
     @action(detail=False, methods=["get"], url_path="opening-accounts")
@@ -420,12 +468,15 @@ class AccountViewSet(ModelViewSet):
         if not account_name:
             raise ValidationError({"name": "Opening account name is required."})
 
-        bank_root = self._get_opening_bank_root(tenant_id)
+        # The selected bank can live in any of the user's dimensions because
+        # the chart of accounts is shared. The new account inherits the
+        # bank's tenant so the parent/child invariant still holds.
+        tenant_ids = self._get_shared_tenant_ids() or [tenant_id]
         try:
             bank_account = Account.objects.get(
                 id=bank_id,
-                tenant_id=tenant_id,
-                parent=bank_root,
+                tenant_id__in=tenant_ids,
+                parent__code=self.OPENING_BANK_ROOT_CODE,
                 deleted_at__isnull=True,
             )
         except Account.DoesNotExist:
@@ -434,7 +485,7 @@ class AccountViewSet(ModelViewSet):
         code = self._get_next_opening_account_code(bank_account)
 
         account = Account.objects.create(
-            tenant_id=tenant_id,
+            tenant_id=bank_account.tenant_id,
             code=code,
             name=account_name,
             parent=bank_account,
@@ -482,16 +533,20 @@ class AccountViewSet(ModelViewSet):
         if from_date > to_date:
             raise ValidationError({"date": "From date cannot be greater than to date."})
 
+        user_tenant_ids = self._get_shared_tenant_ids() or [tenant_id]
+
         try:
             head_account = Account.objects.get(
                 id=head_account_id,
-                tenant_id=tenant_id,
+                tenant_id__in=user_tenant_ids,
                 deleted_at__isnull=True,
             )
         except Account.DoesNotExist:
-            raise ValidationError({"head_account_id": "Account head not found for this tenant."})
+            raise ValidationError({"head_account_id": "Account head not found."})
 
-        descendant_codes = self._get_descendant_account_codes(head_account)
+        descendant_codes = self._get_descendant_account_codes(
+            head_account, tenant_ids=user_tenant_ids
+        )
 
         tenant_ids = self._resolve_tenant_ids(tenant_scope)
 
@@ -499,11 +554,11 @@ class AccountViewSet(ModelViewSet):
             try:
                 account = Account.objects.get(
                     id=ledger_id,
-                    tenant_id=tenant_id,
+                    tenant_id__in=user_tenant_ids,
                     deleted_at__isnull=True,
                 )
             except Account.DoesNotExist:
-                raise ValidationError({"ledger_id": "COA account not found for this tenant."})
+                raise ValidationError({"ledger_id": "COA account not found."})
             if account.code not in descendant_codes:
                 raise ValidationError({"ledger_id": "Selected COA does not belong to the chosen head."})
             ledger_key = {"code": account.code}
@@ -1276,6 +1331,7 @@ class DimensionViewSet(ModelViewSet):
             Product.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
             Customer.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
             Supplier.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
+            Salesman.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
             Warehouse.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
             OpeningStock.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
             Stock.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),

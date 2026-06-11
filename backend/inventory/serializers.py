@@ -16,6 +16,7 @@ from .models import (
     ProductCostState,
     ProductMaterial,
     RawMaterial,
+    Salesman,
     Size,
     Unit,
     Warehouse,
@@ -787,6 +788,76 @@ class PartySerializer(serializers.ModelSerializer):
             allowed_types=[allowed_type],
         )
         return attrs
+
+
+class SalesmanSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Salesman
+        fields = [
+            "id",
+            "code",
+            "name",
+            "email",
+            "phone_number",
+            "commission_on_sales",
+            "commission_on_recovery",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "code", "created_at", "updated_at"]
+
+    def _generate_salesman_code(self, tenant_id):
+        prefix = "SM-"
+        numbers = []
+        for code in Salesman.objects.filter(
+            tenant_id=tenant_id,
+            deleted_at__isnull=True,
+            code__startswith=prefix,
+        ).values_list("code", flat=True):
+            match = re.fullmatch(r"SM-(\d+)", code or "")
+            if match:
+                numbers.append(int(match.group(1)))
+
+        next_number = (max(numbers) + 1) if numbers else 1
+        while True:
+            candidate = f"{prefix}{next_number:05d}"
+            if not Salesman.objects.filter(
+                tenant_id=tenant_id,
+                deleted_at__isnull=True,
+                code=candidate,
+            ).exists():
+                return candidate
+            next_number += 1
+
+    def _validate_commission(self, value):
+        if value is None:
+            return Decimal("0.00")
+        if value < 0 or value > 100:
+            raise serializers.ValidationError(
+                "Commission must be between 0 and 100 percent."
+            )
+        return value
+
+    def validate_commission_on_sales(self, value):
+        return self._validate_commission(value)
+
+    def validate_commission_on_recovery(self, value):
+        return self._validate_commission(value)
+
+    def validate_email(self, value):
+        if value == "":
+            return None
+        return value
+
+    def create(self, validated_data):
+        tenant_id = self.context["request"].user.tenant_id
+        validated_data["tenant_id"] = tenant_id
+        validated_data["code"] = self._generate_salesman_code(tenant_id)
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        validated_data.pop("code", None)
+        return super().update(instance, validated_data)
 
 
 class WarehouseSerializer(serializers.ModelSerializer):

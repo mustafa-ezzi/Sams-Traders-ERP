@@ -4,8 +4,9 @@ from django.db import transaction
 from django.utils.timezone import now
 from rest_framework import serializers
 
+from accounts.dimensions import get_user_active_dimension_codes
 from accounts.models import Account
-from inventory.models import Customer, Product, ProductStock, Warehouse
+from inventory.models import Customer, Product, ProductStock, Salesman, Warehouse
 from inventory.serializers import ProductDetailedSerializer
 from sales.models import SalesBankReceipt, SalesInvoice, SalesInvoiceLine, SalesReturn, SalesReturnLine
 from sales.services import (
@@ -23,6 +24,12 @@ class CustomerMiniSerializer(serializers.Serializer):
 
 class WarehouseMiniSerializer(serializers.Serializer):
     id = serializers.UUIDField()
+    name = serializers.CharField()
+
+
+class SalesmanMiniSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    code = serializers.CharField()
     name = serializers.CharField()
 
 
@@ -125,6 +132,8 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
     customer_id = serializers.UUIDField(write_only=True)
     warehouse = WarehouseMiniSerializer(read_only=True)
     warehouse_id = serializers.UUIDField(write_only=True)
+    salesman = SalesmanMiniSerializer(read_only=True)
+    salesman_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
     lines = SalesInvoiceLineSerializer(many=True)
     returned_amount = serializers.SerializerMethodField()
     received_amount = serializers.SerializerMethodField()
@@ -140,6 +149,10 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
             "customer_id",
             "warehouse",
             "warehouse_id",
+            "salesman",
+            "salesman_id",
+            "salesman_commission_rate",
+            "salesman_commission_amount",
             "remarks",
             "invoice_discount",
             "gross_amount",
@@ -156,6 +169,8 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
             "invoice_number",
             "gross_amount",
             "net_amount",
+            "salesman_commission_rate",
+            "salesman_commission_amount",
             "created_at",
             "updated_at",
         ]
@@ -210,6 +225,30 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
         ).exists():
             raise serializers.ValidationError("Warehouse not found for this tenant")
         return value
+
+    def validate_salesman_id(self, value):
+        if not value:
+            return None
+
+        tenant_id = self.context["request"].user.tenant_id
+        if not Salesman.objects.filter(
+            id=value,
+            tenant_id=tenant_id,
+            deleted_at__isnull=True,
+        ).exists():
+            raise serializers.ValidationError("Salesman not found for this tenant")
+        return value
+
+    def _calculate_salesman_commission(self, salesman, net_amount):
+        if not salesman:
+            return Decimal("0.00"), Decimal("0.00")
+
+        rate = quantize_money(salesman.commission_on_sales)
+        if rate <= 0:
+            return rate, Decimal("0.00")
+
+        amount = quantize_money((quantize_money(net_amount) * rate) / Decimal("100"))
+        return rate, amount
 
     def validate_invoice_discount(self, value):
         if value < 0:
@@ -279,7 +318,28 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
             )
 
         attrs["gross_amount"] = gross_amount
-        attrs["net_amount"] = quantize_money(gross_amount - invoice_discount)
+        net_amount = quantize_money(gross_amount - invoice_discount)
+        attrs["net_amount"] = net_amount
+
+        salesman_id_provided = "salesman_id" in attrs
+        salesman_id = attrs.pop("salesman_id", None)
+        if salesman_id_provided:
+            salesman = (
+                Salesman.objects.get(
+                    id=salesman_id,
+                    tenant_id=tenant_id,
+                    deleted_at__isnull=True,
+                )
+                if salesman_id
+                else None
+            )
+        else:
+            salesman = getattr(self.instance, "salesman", None) if self.instance else None
+
+        rate, amount = self._calculate_salesman_commission(salesman, net_amount)
+        attrs["salesman"] = salesman
+        attrs["salesman_commission_rate"] = rate
+        attrs["salesman_commission_amount"] = amount
         return attrs
 
     def _generate_invoice_number(self, tenant_id):
@@ -305,11 +365,13 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
         lines_data = validated_data.pop("lines", [])
         customer_id = validated_data.pop("customer_id")
         warehouse_id = validated_data.pop("warehouse_id")
+        salesman = validated_data.pop("salesman", None)
 
         invoice = SalesInvoice.objects.create(
             tenant_id=tenant_id,
             customer_id=customer_id,
             warehouse_id=warehouse_id,
+            salesman=salesman,
             invoice_number=self._generate_invoice_number(tenant_id),
             **validated_data,
         )
@@ -321,11 +383,21 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
         lines_data = validated_data.pop("lines", [])
         instance.customer_id = validated_data.pop("customer_id", instance.customer_id)
         instance.warehouse_id = validated_data.pop("warehouse_id", instance.warehouse_id)
+        if "salesman" in validated_data:
+            instance.salesman = validated_data.pop("salesman")
         instance.date = validated_data.get("date", instance.date)
         instance.remarks = validated_data.get("remarks", instance.remarks)
         instance.invoice_discount = validated_data.get("invoice_discount", instance.invoice_discount)
         instance.gross_amount = validated_data.get("gross_amount", instance.gross_amount)
         instance.net_amount = validated_data.get("net_amount", instance.net_amount)
+        instance.salesman_commission_rate = validated_data.get(
+            "salesman_commission_rate",
+            instance.salesman_commission_rate,
+        )
+        instance.salesman_commission_amount = validated_data.get(
+            "salesman_commission_amount",
+            instance.salesman_commission_amount,
+        )
         instance.save()
 
         instance.lines.filter(deleted_at__isnull=True).update(deleted_at=now())
@@ -697,15 +769,21 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
         return value
 
     def validate_bank_account_id(self, value):
-        tenant_id = self.context["request"].user.tenant_id
+        # COA is shared across every dimension the user owns, so a bank
+        # account belonging to any of them is a valid choice for a receipt.
+        request = self.context["request"]
+        tenant_ids = get_user_active_dimension_codes(request.user)
+        current = getattr(request, "tenant_id", "") or request.user.tenant_id
+        if current and current not in tenant_ids:
+            tenant_ids.append(current)
         try:
             account = Account.objects.get(
                 id=value,
-                tenant_id=tenant_id,
+                tenant_id__in=tenant_ids,
                 deleted_at__isnull=True,
             )
         except Account.DoesNotExist:
-            raise serializers.ValidationError("Bank account not found for this tenant")
+            raise serializers.ValidationError("Bank account not found")
 
         if not account.is_active:
             raise serializers.ValidationError("Selected bank account is inactive")

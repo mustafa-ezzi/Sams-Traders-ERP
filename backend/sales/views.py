@@ -51,7 +51,7 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
                 **get_request_tenant_filter(self.request),
                 deleted_at__isnull=True,
             )
-            .select_related("customer", "warehouse")
+            .select_related("customer", "warehouse", "salesman")
             .prefetch_related(
                 Prefetch(
                     "lines",

@@ -4,6 +4,7 @@ from django.db import transaction
 from django.utils.timezone import now
 from rest_framework import serializers
 
+from accounts.dimensions import get_user_active_dimension_codes
 from accounts.models import Account
 from inventory.models import Product, ProductStock, RawMaterial, Stock, Supplier, Warehouse
 from inventory.serializers import ProductDetailedSerializer, RawMaterialDetailedSerializer
@@ -727,15 +728,21 @@ class PurchaseBankPaymentSerializer(serializers.ModelSerializer):
         return value
 
     def validate_bank_account_id(self, value):
-        tenant_id = self.context["request"].user.tenant_id
+        # COA is shared across every dimension the user owns, so a bank
+        # account belonging to any of them is a valid choice for a payment.
+        request = self.context["request"]
+        tenant_ids = get_user_active_dimension_codes(request.user)
+        current = getattr(request, "tenant_id", "") or request.user.tenant_id
+        if current and current not in tenant_ids:
+            tenant_ids.append(current)
         try:
             account = Account.objects.get(
                 id=value,
-                tenant_id=tenant_id,
+                tenant_id__in=tenant_ids,
                 deleted_at__isnull=True,
             )
         except Account.DoesNotExist:
-            raise serializers.ValidationError("Bank account not found for this tenant")
+            raise serializers.ValidationError("Bank account not found")
 
         if not account.is_active:
             raise serializers.ValidationError("Selected bank account is inactive")
