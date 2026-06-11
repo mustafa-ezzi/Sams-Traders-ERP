@@ -47,6 +47,7 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
     search_fields = [
         "invoice_number",
         "dc_number",
+        "due_date",
         "customer__business_name",
         "remarks",
         "warehouse__name",

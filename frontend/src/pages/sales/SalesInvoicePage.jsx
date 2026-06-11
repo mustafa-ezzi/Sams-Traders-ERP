@@ -10,6 +10,13 @@ import salesmanService from "../../api/services/salesmanService";
 import salesInvoiceService from "../../api/services/salesInvoiceService";
 import { formatDecimal } from "../../utils/format";
 import { useToast } from "../../context/ToastContext";
+import {
+  formatDisplayDate,
+  getReceiptStatus,
+  isDueReceiptAlertRow,
+  ReceiptDetailsEye,
+  statusMeta,
+} from "./invoice/salesInvoiceShared";
 
 const selectClassName =
   "w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100";
@@ -133,6 +140,7 @@ const SalesInvoicePage = () => {
     warehouseId: "",
     salesmanId: "",
     dcNumber: "",
+    dueDate: "",
     remarks: "",
     invoiceDiscount: "0",
     invoiceDiscountPercent: "0",
@@ -206,6 +214,15 @@ const SalesInvoicePage = () => {
     if (!form.salesmanId || rate <= 0) return 0;
     return (netAmount * rate) / 100;
   }, [form.salesmanId, netAmount, selectedSalesman]);
+
+  const unpaidPageTotal = useMemo(
+    () =>
+      records.reduce(
+        (sum, record) => sum + Math.max(toNumber(record.balanceAmount), 0),
+        0,
+      ),
+    [records],
+  );
 
   const loadInvoices = async (nextPage = page, nextSearch = search) => {
     setLoading(true);
@@ -281,6 +298,7 @@ const SalesInvoicePage = () => {
       warehouseId: "",
       salesmanId: "",
       dcNumber: "",
+      dueDate: "",
       remarks: "",
       invoiceDiscount: "0",
       invoiceDiscountPercent: "0",
@@ -370,6 +388,7 @@ const SalesInvoicePage = () => {
     warehouse_id: form.warehouseId,
     salesman_id: form.salesmanId || null,
     dc_number: form.dcNumber.trim(),
+    due_date: form.dueDate || null,
     remarks: form.remarks,
     invoice_discount: toNumber(form.invoiceDiscount),
     lines: form.lines
@@ -447,6 +466,7 @@ const SalesInvoicePage = () => {
         warehouseId: invoice.warehouseId,
         salesmanId: invoice.salesmanId || "",
         dcNumber: invoice.dcNumber || "",
+        dueDate: invoice.dueDate ? String(invoice.dueDate).slice(0, 10) : "",
         remarks: invoice.remarks || "",
         invoiceDiscount: String(loadedInvoiceDiscount),
         invoiceDiscountPercent: formatInputNumber(
@@ -530,6 +550,13 @@ const SalesInvoicePage = () => {
               required
               value={form.date}
               onChange={(e) => handleChange("date", e.target.value)}
+            />
+
+            <FormInput
+              label="Due Date"
+              type="date"
+              value={form.dueDate}
+              onChange={(e) => handleChange("dueDate", e.target.value)}
             />
 
             <div className="space-y-1">
@@ -892,6 +919,19 @@ const SalesInvoicePage = () => {
           isEmpty={!loading && !error && records.length === 0}
           emptyMessage="No sales invoices found yet."
         >
+          {!loading && !error && records.length > 0 ? (
+            <p className="mb-4 rounded-2xl border border-indigo-100 bg-indigo-50/80 px-4 py-3 text-sm font-semibold text-indigo-900">
+              Unpaid balance (this page):{" "}
+              <span className="text-indigo-700">
+                {formatDecimal(unpaidPageTotal)}
+              </span>
+              <span className="ml-2 font-normal text-indigo-600/90">
+                Rows with outstanding balance blink red when the due date is
+                tomorrow or overdue.
+              </span>
+            </p>
+          ) : null}
+
           <div className="overflow-hidden rounded-[24px] border border-slate-200">
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-slate-200 text-sm">
@@ -900,77 +940,77 @@ const SalesInvoicePage = () => {
                     <th className="px-4 py-3">Invoice</th>
                     <th className="px-4 py-3">DC No.</th>
                     <th className="px-4 py-3">Date</th>
+                    <th className="px-4 py-3">Due</th>
                     <th className="px-4 py-3">Customer</th>
                     <th className="px-4 py-3">Warehouse</th>
-                    <th className="px-4 py-3">Salesman</th>
-                    <th className="px-4 py-3">Commission</th>
-                    <th className="px-4 py-3">Gross</th>
-                    <th className="px-4 py-3">Net</th>
-                    <th className="px-4 py-3">COGS</th>
-                    <th className="px-4 py-3">Profit</th>
-                    <th className="px-4 py-3">Balance</th>
-                    <th className="px-4 py-3">Actions</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
-                  {records.map((record) => (
-                    <tr key={record.id}>
-                      <td className="px-4 py-3 font-semibold text-slate-900">
-                        {record.invoice_number}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">
-                        {record.dcNumber || record.dc_number || "—"}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">
-                        {record.date}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">
-                        {record.customer?.business_name}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">
-                        {record.warehouse?.name}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">
-                        {record.salesman
-                          ? `${record.salesman.code} - ${record.salesman.name}`
-                          : "—"}
-                      </td>
-                      <td className="px-4 py-3 font-semibold text-violet-600">
-                        {formatDecimal(record.salesmanCommissionAmount || 0)}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">
-                        {formatDecimal(record.grossAmount)}
-                      </td>
-                      <td className="px-4 py-3 font-semibold text-blue-600">
-                        {formatDecimal(record.netAmount)}
-                      </td>
-                      <td className="px-4 py-3 font-semibold text-slate-700">
-                        {formatDecimal(record.costTotal)}
-                      </td>
-                      <td className="px-4 py-3 font-semibold text-emerald-600">
-                        {formatDecimal(record.profit)}
-                      </td>
-                      <td className="px-4 py-3 font-semibold text-amber-600">
-                        {formatDecimal(record.balanceAmount)}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex gap-2">
-                          <Button
-                            variant="secondary"
-                            onClick={() => handleEdit(record.id)}
-                          >
-                            Edit
-                          </Button>
-                          <Button
-                            variant="danger"
-                            onClick={() => setDeleteId(record.id)}
-                          >
-                            Delete
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {records.map((record) => {
+                    const status = getReceiptStatus(record);
+                    const meta = statusMeta[status];
+                    const alertRow = isDueReceiptAlertRow(record);
+                    return (
+                      <tr
+                        key={record.id}
+                        className={
+                          alertRow ? "invoice-due-alert-row" : undefined
+                        }
+                      >
+                        <td className="px-4 py-3 font-semibold text-slate-900">
+                          {record.invoice_number}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {record.dcNumber || record.dc_number || "—"}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {formatDisplayDate(record.date)}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {record.dueDate
+                            ? formatDisplayDate(record.dueDate)
+                            : "—"}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {record.customer?.business_name}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {record.warehouse?.name}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span
+                              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold ${meta.iconWrap}`}
+                            >
+                              {meta.Icon}
+                              <span className={meta.rowClass}>
+                                {meta.label}
+                              </span>
+                            </span>
+                            <ReceiptDetailsEye record={record} />
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="inline-flex justify-end gap-2">
+                            <Button
+                              variant="secondary"
+                              onClick={() => handleEdit(record.id)}
+                            >
+                              Edit
+                            </Button>
+                            <Button
+                              variant="danger"
+                              onClick={() => setDeleteId(record.id)}
+                            >
+                              Delete
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

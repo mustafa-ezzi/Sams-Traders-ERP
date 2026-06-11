@@ -136,6 +136,7 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
     warehouse_id = serializers.UUIDField(write_only=True)
     salesman = SalesmanMiniSerializer(read_only=True)
     salesman_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
+    due_date = serializers.DateField(allow_null=True, required=False)
     lines = SalesInvoiceLineSerializer(many=True)
     returned_amount = serializers.SerializerMethodField()
     received_amount = serializers.SerializerMethodField()
@@ -148,6 +149,7 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
             "invoice_number",
             "dc_number",
             "date",
+            "due_date",
             "customer",
             "customer_id",
             "warehouse",
@@ -373,6 +375,8 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
         if "salesman" in validated_data:
             instance.salesman = validated_data.pop("salesman")
         instance.date = validated_data.get("date", instance.date)
+        instance.due_date = validated_data.get("due_date", instance.due_date)
+        instance.dc_number = validated_data.get("dc_number", instance.dc_number)
         instance.remarks = validated_data.get("remarks", instance.remarks)
         instance.invoice_discount = validated_data.get("invoice_discount", instance.invoice_discount)
         instance.gross_amount = validated_data.get("gross_amount", instance.gross_amount)

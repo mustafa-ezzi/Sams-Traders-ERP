@@ -46,6 +46,7 @@ const CreateUpdateSalesInvoice = () => {
   const [productOptions, setProductOptions] = useState([]);
   const [form, setForm] = useState({
     date: new Date().toISOString().slice(0, 10),
+    dueDate: "",
     customerId: "",
     warehouseId: "",
     remarks: "",
@@ -135,6 +136,7 @@ const CreateUpdateSalesInvoice = () => {
         if (cancelled) return;
         setForm({
           date: invoice.date,
+          dueDate: invoice.dueDate ? String(invoice.dueDate).slice(0, 10) : "",
           customerId: invoice.customerId,
           warehouseId: invoice.warehouseId,
           remarks: invoice.remarks || "",
@@ -201,6 +203,7 @@ const CreateUpdateSalesInvoice = () => {
   };
   const buildPayload = () => ({
     date: form.date,
+    due_date: form.dueDate || null,
     customer_id: form.customerId,
     warehouse_id: form.warehouseId,
     remarks: form.remarks,
@@ -300,13 +303,17 @@ const CreateUpdateSalesInvoice = () => {
               required
               value={form.date}
               onChange={(e) => handleChange("date", e.target.value)}
-            />{" "}
+            />
+            <FormInput
+              label="Due Date"
+              type="date"
+              value={form.dueDate}
+              onChange={(e) => handleChange("dueDate", e.target.value)}
+            />
             <div className="space-y-1">
-              {" "}
               <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 dark:text-slate-500">
-                {" "}
-                Customer <span className="text-rose-500">*</span>{" "}
-              </label>{" "}
+                Customer <span className="text-rose-500">*</span>
+              </label>
               <select
                 className={selectClassName}
                 value={form.customerId}

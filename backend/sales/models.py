@@ -9,6 +9,7 @@ class SalesInvoice(BaseModel):
     invoice_number = models.CharField(max_length=50)
     dc_number = models.CharField(max_length=50, blank=True, default="")
     date = models.DateField()
+    due_date = models.DateField(null=True, blank=True)
     customer = models.ForeignKey(
         Customer,
         on_delete=models.PROTECT,
