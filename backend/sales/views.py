@@ -35,7 +35,8 @@ from sales.services import (
     get_sales_return_line_metrics,
     quantize_money,
 )
-from common.tenancy import get_request_tenant_ids, get_shared_tenant_filter
+from accounts.models import Dimension
+from common.tenancy import get_shared_tenant_filter, get_shared_tenant_ids
 
 
 class SalesInvoiceViewSet(viewsets.ModelViewSet):
@@ -146,20 +147,25 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="product-options")
     def product_options(self, request):
-        tenant_ids = get_request_tenant_ids(request)
+        tenant_ids = get_shared_tenant_ids(request)
         warehouse_id = request.query_params.get("warehouse_id")
         search = request.query_params.get("search", "").strip()
+
+        dimension_names = {
+            row["code"]: row["name"]
+            for row in Dimension.objects.filter(code__in=tenant_ids).values("code", "name")
+        }
 
         queryset = Product.objects.filter(
             tenant_id__in=tenant_ids,
             deleted_at__isnull=True,
-        ).select_related("unit").order_by("name")
+        ).select_related("unit").order_by("tenant_id", "name")
 
         if search:
             queryset = queryset.filter(name__icontains=search)
 
         products = []
-        for product in queryset[:100]:
+        for product in queryset[:500]:
             quantity = Decimal("0.00")
             if warehouse_id:
                 stock = ProductStock.objects.filter(
@@ -169,10 +175,13 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
                     deleted_at__isnull=True,
                 ).first()
                 quantity = stock.quantity if stock else Decimal("0.00")
+            dimension_name = dimension_names.get(product.tenant_id, product.tenant_id)
             products.append(
                 {
                     "id": str(product.id),
                     "name": product.name,
+                    "dimension_code": product.tenant_id,
+                    "dimension_name": dimension_name,
                     "quantity": str(quantity),
                     "unit": product.unit.name if product.unit else None,
                     "product_type": product.product_type,

@@ -396,10 +396,11 @@ const CreateUpdateSalesInvoice = () => {
                       <option value="">Select Product</option>{" "}
                       {productOptions.map((product) => (
                         <option key={product.id} value={product.id}>
-                          {" "}
-                          {product.name}{" "}
+                          {product.dimension_name
+                            ? `${product.name} (${product.dimension_name})`
+                            : product.name}
                         </option>
-                      ))}{" "}
+                      ))}
                     </select>{" "}
                     <FormInput
                       type="number"

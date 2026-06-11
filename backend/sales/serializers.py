@@ -6,7 +6,7 @@ from django.utils.timezone import now
 from rest_framework import serializers
 
 from accounts.dimensions import get_user_active_dimension_codes
-from common.tenancy import get_request_tenant_ids, get_shared_tenant_ids, shared_master_exists
+from common.tenancy import get_shared_tenant_ids, shared_master_exists
 from accounts.models import Account
 from inventory.models import Customer, Product, ProductStock, Salesman, Warehouse
 from inventory.serializers import ProductDetailedSerializer
@@ -91,7 +91,7 @@ class SalesInvoiceLineSerializer(serializers.ModelSerializer):
         return str(available)
 
     def validate_product_id(self, value):
-        tenant_ids = get_request_tenant_ids(self.context["request"])
+        tenant_ids = get_shared_tenant_ids(self.context["request"])
         if not Product.objects.filter(
             id=value,
             tenant_id__in=tenant_ids,
