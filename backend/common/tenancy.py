@@ -22,6 +22,11 @@ def get_shared_tenant_ids(request):
     return tenant_ids
 
 
+def get_shared_tenant_filter(request):
+    """Filter for records shared across the company (not scoped by view checkboxes)."""
+    return {"tenant_id__in": get_shared_tenant_ids(request)}
+
+
 def shared_master_exists(model, request, pk):
     if not pk:
         return False

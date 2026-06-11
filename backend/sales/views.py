@@ -35,7 +35,7 @@ from sales.services import (
     get_sales_return_line_metrics,
     quantize_money,
 )
-from common.tenancy import get_request_tenant_filter
+from common.tenancy import get_request_tenant_ids, get_shared_tenant_filter
 
 
 class SalesInvoiceViewSet(viewsets.ModelViewSet):
@@ -54,7 +54,7 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return (
             SalesInvoice.objects.filter(
-                **get_request_tenant_filter(self.request),
+                **get_shared_tenant_filter(self.request),
                 deleted_at__isnull=True,
             )
             .select_related("customer", "warehouse", "salesman")
@@ -146,12 +146,12 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="product-options")
     def product_options(self, request):
-        tenant_id = request.user.tenant_id
+        tenant_ids = get_request_tenant_ids(request)
         warehouse_id = request.query_params.get("warehouse_id")
         search = request.query_params.get("search", "").strip()
 
         queryset = Product.objects.filter(
-            tenant_id=tenant_id,
+            tenant_id__in=tenant_ids,
             deleted_at__isnull=True,
         ).select_related("unit").order_by("name")
 
@@ -163,7 +163,7 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
             quantity = Decimal("0.00")
             if warehouse_id:
                 stock = ProductStock.objects.filter(
-                    tenant_id=tenant_id,
+                    tenant_id=product.tenant_id,
                     warehouse_id=warehouse_id,
                     product_id=product.id,
                     deleted_at__isnull=True,
@@ -177,7 +177,9 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
                     "unit": product.unit.name if product.unit else None,
                     "product_type": product.product_type,
                     "net_amount": str(product.net_amount),
-                    "average_cost": str(get_current_product_average_cost(tenant_id, product.id)),
+                    "average_cost": str(
+                        get_current_product_average_cost(product.tenant_id, product.id)
+                    ),
                 }
             )
 
@@ -199,7 +201,7 @@ class SalesReturnViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return (
             SalesReturn.objects.filter(
-                **get_request_tenant_filter(self.request),
+                **get_shared_tenant_filter(self.request),
                 deleted_at__isnull=True,
             )
             .select_related("customer", "sales_invoice", "sales_invoice__warehouse")
@@ -301,7 +303,6 @@ class SalesReturnViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="invoice-options")
     def invoice_options(self, request):
-        tenant_id = request.user.tenant_id
         customer_id = request.query_params.get("customer_id")
 
         if not customer_id:
@@ -309,7 +310,7 @@ class SalesReturnViewSet(viewsets.ModelViewSet):
 
         invoices = (
             SalesInvoice.objects.filter(
-                tenant_id=tenant_id,
+                **get_shared_tenant_filter(request),
                 customer_id=customer_id,
                 deleted_at__isnull=True,
             )
@@ -320,7 +321,6 @@ class SalesReturnViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="invoice-lines")
     def invoice_lines(self, request):
-        tenant_id = request.user.tenant_id
         sales_invoice_id = request.query_params.get("sales_invoice_id")
         sales_return_id = request.query_params.get("sales_return_id")
 
@@ -330,11 +330,11 @@ class SalesReturnViewSet(viewsets.ModelViewSet):
         try:
             invoice = SalesInvoice.objects.select_related("warehouse", "customer").get(
                 id=sales_invoice_id,
-                tenant_id=tenant_id,
+                tenant_id__in=get_shared_tenant_filter(request)["tenant_id__in"],
                 deleted_at__isnull=True,
             )
         except SalesInvoice.DoesNotExist:
-            raise ValidationError({"sales_invoice_id": "Sales invoice not found for this tenant."})
+            raise ValidationError({"sales_invoice_id": "Sales invoice not found."})
 
         excluded_return_line_ids = []
         existing_quantities = {}
@@ -342,11 +342,11 @@ class SalesReturnViewSet(viewsets.ModelViewSet):
             try:
                 current_return = SalesReturn.objects.get(
                     id=sales_return_id,
-                    tenant_id=tenant_id,
+                    tenant_id__in=get_shared_tenant_filter(request)["tenant_id__in"],
                     deleted_at__isnull=True,
                 )
             except SalesReturn.DoesNotExist:
-                raise ValidationError({"sales_return_id": "Sales return not found for this tenant."})
+                raise ValidationError({"sales_return_id": "Sales return not found."})
 
             excluded_return_line_ids = list(
                 current_return.lines.filter(deleted_at__isnull=True).values_list("id", flat=True)
@@ -414,7 +414,7 @@ class SalesBankReceiptViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return (
             SalesBankReceipt.objects.filter(
-                **get_request_tenant_filter(self.request),
+                **get_shared_tenant_filter(self.request),
                 deleted_at__isnull=True,
             )
             .select_related("customer", "sales_invoice", "bank_account")
@@ -474,27 +474,27 @@ class SalesBankReceiptViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="invoice-options")
     def invoice_options(self, request):
-        tenant_id = request.user.tenant_id
         customer_id = request.query_params.get("customer_id")
         receipt_id = request.query_params.get("receipt_id")
 
         if not customer_id:
             return Response({"data": []})
 
+        shared_filter = get_shared_tenant_filter(request)
         current_receipt = None
         if receipt_id:
             try:
                 current_receipt = SalesBankReceipt.objects.select_related("sales_invoice").get(
                     id=receipt_id,
-                    tenant_id=tenant_id,
+                    tenant_id__in=shared_filter["tenant_id__in"],
                     deleted_at__isnull=True,
                 )
             except SalesBankReceipt.DoesNotExist:
-                raise ValidationError({"receipt_id": "Sales bank receipt not found for this tenant."})
+                raise ValidationError({"receipt_id": "Sales bank receipt not found."})
 
         invoices = (
             SalesInvoice.objects.filter(
-                tenant_id=tenant_id,
+                **shared_filter,
                 customer_id=customer_id,
                 deleted_at__isnull=True,
             )
