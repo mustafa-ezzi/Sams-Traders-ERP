@@ -6,7 +6,7 @@ import { createAcrossDimensions } from "./createAcrossDimensions";
  * @param {{ createAcrossTenants?: boolean, mutateCreatePayloadPerTenant?: (payload: object, tenantId: string) => object }} [options]
  */
 export const createMasterService = (resource, options = {}) => {
-  const { createAcrossTenants = true, mutateCreatePayloadPerTenant } = options;
+  const { createAcrossTenants = false, mutateCreatePayloadPerTenant } = options;
 
   return {
     async list(params) {

@@ -15,6 +15,8 @@ import FormInput from "../../components/ui/FormInput";
 import ConfirmModal from "../../components/ui/ConfirmModal";
 import IconButton from "../../components/ui/IconButton";
 import { useToast } from "../../context/ToastContext";
+import { useAuth } from "../../context/AuthContext";
+import DimensionCreateSelector from "../../components/ui/DimensionCreateSelector";
 import {
   flattenAccountTree,
   formatAccountLabel,
@@ -46,6 +48,10 @@ const selectClassName =
   "w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100";
 
 const RawMaterialPage = () => {
+  const { tenantId, createTenantIds } = useAuth();
+  const [createDimensionIds, setCreateDimensionIds] = useState(() =>
+    createTenantIds?.length ? [...createTenantIds] : tenantId ? [tenantId] : [],
+  );
   const [records, setRecords] = useState([]);
   const [editingId, setEditingId] = useState("");
   const [loading, setLoading] = useState(false);
@@ -150,8 +156,12 @@ const RawMaterialPage = () => {
         await rawMaterialService.update(editingId, values);
         toast.success("Raw material updated");
       } else {
-        await rawMaterialService.create(values);
-        toast.success("Raw material created");
+        if (!createDimensionIds.length) {
+          toast.error("Select at least one dimension to create this raw material in.");
+          return;
+        }
+        const result = await rawMaterialService.create(values, createDimensionIds);
+        toast.success(result?.message || "Raw material created");
       }
       setEditingId("");
       form.reset(defaultValues);
@@ -213,6 +223,12 @@ const RawMaterialPage = () => {
 
       <Card>
         <form className="grid gap-4 xl:grid-cols-3" onSubmit={onSubmit}>
+          {!editingId && (
+            <DimensionCreateSelector
+              selectedIds={createDimensionIds}
+              onChange={setCreateDimensionIds}
+            />
+          )}
           <FormInput
             label="Raw Material Name"
             required

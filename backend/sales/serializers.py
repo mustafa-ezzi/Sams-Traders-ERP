@@ -5,6 +5,7 @@ from django.utils.timezone import now
 from rest_framework import serializers
 
 from accounts.dimensions import get_user_active_dimension_codes
+from common.tenancy import shared_master_exists
 from accounts.models import Account
 from inventory.models import Customer, Product, ProductStock, Salesman, Warehouse
 from inventory.serializers import ProductDetailedSerializer
@@ -207,36 +208,21 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
         return fields
 
     def validate_customer_id(self, value):
-        tenant_id = self.context["request"].user.tenant_id
-        if not Customer.objects.filter(
-            id=value,
-            tenant_id=tenant_id,
-            deleted_at__isnull=True,
-        ).exists():
-            raise serializers.ValidationError("Customer not found for this tenant")
+        if not shared_master_exists(Customer, self.context["request"], value):
+            raise serializers.ValidationError("Customer not found")
         return value
 
     def validate_warehouse_id(self, value):
-        tenant_id = self.context["request"].user.tenant_id
-        if not Warehouse.objects.filter(
-            id=value,
-            tenant_id=tenant_id,
-            deleted_at__isnull=True,
-        ).exists():
-            raise serializers.ValidationError("Warehouse not found for this tenant")
+        if not shared_master_exists(Warehouse, self.context["request"], value):
+            raise serializers.ValidationError("Warehouse not found")
         return value
 
     def validate_salesman_id(self, value):
         if not value:
             return None
 
-        tenant_id = self.context["request"].user.tenant_id
-        if not Salesman.objects.filter(
-            id=value,
-            tenant_id=tenant_id,
-            deleted_at__isnull=True,
-        ).exists():
-            raise serializers.ValidationError("Salesman not found for this tenant")
+        if not shared_master_exists(Salesman, self.context["request"], value):
+            raise serializers.ValidationError("Salesman not found")
         return value
 
     def _calculate_salesman_commission(self, salesman, net_amount):
@@ -571,13 +557,8 @@ class SalesReturnSerializer(serializers.ModelSerializer):
         return fields
 
     def validate_customer_id(self, value):
-        tenant_id = self.context["request"].user.tenant_id
-        if not Customer.objects.filter(
-            id=value,
-            tenant_id=tenant_id,
-            deleted_at__isnull=True,
-        ).exists():
-            raise serializers.ValidationError("Customer not found for this tenant")
+        if not shared_master_exists(Customer, self.context["request"], value):
+            raise serializers.ValidationError("Customer not found")
         return value
 
     def validate_sales_invoice_id(self, value):
@@ -749,13 +730,8 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
         return str(balance_after_receipt)
 
     def validate_customer_id(self, value):
-        tenant_id = self.context["request"].user.tenant_id
-        if not Customer.objects.filter(
-            id=value,
-            tenant_id=tenant_id,
-            deleted_at__isnull=True,
-        ).exists():
-            raise serializers.ValidationError("Customer not found for this tenant")
+        if not shared_master_exists(Customer, self.context["request"], value):
+            raise serializers.ValidationError("Customer not found")
         return value
 
     def validate_sales_invoice_id(self, value):

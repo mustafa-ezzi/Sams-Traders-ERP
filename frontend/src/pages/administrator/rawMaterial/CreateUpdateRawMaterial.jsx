@@ -12,6 +12,8 @@ import Card from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
 import FormInput from "../../../components/ui/FormInput";
 import { useToast } from "../../../context/ToastContext";
+import { useAuth } from "../../../context/AuthContext";
+import DimensionCreateSelector from "../../../components/ui/DimensionCreateSelector";
 import {
   flattenAccountTree,
   formatAccountLabel,
@@ -42,6 +44,10 @@ const CreateUpdateRawMaterial = () => {
   const navigate = useNavigate();
   const { id } = useParams();
   const isEdit = Boolean(id);
+  const { tenantId, createTenantIds } = useAuth();
+  const [createDimensionIds, setCreateDimensionIds] = useState(() =>
+    createTenantIds?.length ? [...createTenantIds] : tenantId ? [tenantId] : [],
+  );
   const [loadingOptions, setLoadingOptions] = useState(false);
   const [loadingRecord, setLoadingRecord] = useState(false);
   const [brands, setBrands] = useState([]);
@@ -127,8 +133,12 @@ const CreateUpdateRawMaterial = () => {
         await rawMaterialService.update(id, values);
         toast.success("Raw material updated");
       } else {
-        await rawMaterialService.create(values);
-        toast.success("Raw material created");
+        if (!createDimensionIds.length) {
+          toast.error("Select at least one dimension to create this raw material in.");
+          return;
+        }
+        const result = await rawMaterialService.create(values, createDimensionIds);
+        toast.success(result?.message || "Raw material created");
       }
       navigate("/raw-materials");
     } catch (submitError) {
@@ -165,7 +175,12 @@ const CreateUpdateRawMaterial = () => {
           </div>
         ) : (
           <form className="grid gap-4 xl:grid-cols-3" onSubmit={onSubmit}>
-            {" "}
+            {!isEdit && (
+              <DimensionCreateSelector
+                selectedIds={createDimensionIds}
+                onChange={setCreateDimensionIds}
+              />
+            )}
             <FormInput
               label="Raw Material Name"
               required

@@ -4,6 +4,7 @@ import re
 from django.utils.timezone import now
 from accounts.models import Account, Dimension
 from accounts.dimensions import get_user_active_dimension_codes
+from common.tenancy import shared_master_exists
 from inventory.party_accounts import assign_default_party_account
 from .models import (
     Brand,
@@ -243,7 +244,7 @@ class CategorySerializer(SharedUniqueNameSerializer):
         return attrs
 
 
-class SizeSerializer(TenantUniqueNameSerializer):
+class SizeSerializer(SharedUniqueNameSerializer):
     duplicate_name_message = "Size with this name already exists."
 
     class Meta:
@@ -753,12 +754,12 @@ class PartySerializer(serializers.ModelSerializer):
 
     def validate_business_name(self, value):
         request = self.context["request"]
-        tenant_id = getattr(request, "tenant_id", None) or request.user.tenant_id
+        tenant_ids = get_request_user_dimension_codes(request)
         instance = getattr(self, "instance", None)
         model = self.get_model()
 
         qs = model.objects.filter(
-            tenant_id=tenant_id, business_name=value, deleted_at__isnull=True
+            tenant_id__in=tenant_ids, business_name=value, deleted_at__isnull=True
         )
         if instance:
             qs = qs.exclude(pk=instance.pk)
@@ -806,11 +807,11 @@ class SalesmanSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "code", "created_at", "updated_at"]
 
-    def _generate_salesman_code(self, tenant_id):
+    def _generate_salesman_code(self, tenant_ids):
         prefix = "SM-"
         numbers = []
         for code in Salesman.objects.filter(
-            tenant_id=tenant_id,
+            tenant_id__in=tenant_ids,
             deleted_at__isnull=True,
             code__startswith=prefix,
         ).values_list("code", flat=True):
@@ -822,7 +823,7 @@ class SalesmanSerializer(serializers.ModelSerializer):
         while True:
             candidate = f"{prefix}{next_number:05d}"
             if not Salesman.objects.filter(
-                tenant_id=tenant_id,
+                tenant_id__in=tenant_ids,
                 deleted_at__isnull=True,
                 code=candidate,
             ).exists():
@@ -850,9 +851,11 @@ class SalesmanSerializer(serializers.ModelSerializer):
         return value
 
     def create(self, validated_data):
-        tenant_id = self.context["request"].user.tenant_id
+        request = self.context["request"]
+        tenant_id = getattr(request, "tenant_id", None) or request.user.tenant_id
+        tenant_ids = get_request_user_dimension_codes(request)
         validated_data["tenant_id"] = tenant_id
-        validated_data["code"] = self._generate_salesman_code(tenant_id)
+        validated_data["code"] = self._generate_salesman_code(tenant_ids)
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
@@ -860,26 +863,14 @@ class SalesmanSerializer(serializers.ModelSerializer):
         return super().update(instance, validated_data)
 
 
-class WarehouseSerializer(serializers.ModelSerializer):
+class WarehouseSerializer(SharedUniqueNameSerializer):
+    duplicate_name_message = "Warehouse with this name already exists."
+
     class Meta:
         model = Warehouse
         fields = ["id", "name", "location"]
-
-    def validate_name(self, value):
-        tenant_id = self.context["request"].user.tenant_id
-        instance = getattr(self, "instance", None)
-
-        qs = Warehouse.objects.filter(
-            tenant_id=tenant_id, name=value, deleted_at__isnull=True
-        )
-
-        if instance:
-            qs = qs.exclude(pk=instance.pk)
-
-        if qs.exists():
-            raise serializers.ValidationError("Warehouse with this name already exists")
-
-        return value
+        read_only_fields = ["tenant_id"]
+        extra_kwargs = {"name": {"validators": []}}
 
 
 class OpeningStockDetailedSerializer(serializers.Serializer):
@@ -1040,11 +1031,8 @@ class OpeningStockSerializer(serializers.ModelSerializer):
         return value
 
     def validate_warehouse_id(self, value):
-        tenant_id = self.context["request"].user.tenant_id
-        if not Warehouse.objects.filter(
-            id=value, tenant_id=tenant_id, deleted_at__isnull=True
-        ).exists():
-            raise serializers.ValidationError("Warehouse not found for this tenant")
+        if not shared_master_exists(Warehouse, self.context["request"], value):
+            raise serializers.ValidationError("Warehouse not found")
         return value
 
     def validate_raw_material_id(self, value):
@@ -1185,11 +1173,8 @@ class ProductionSerializer(serializers.ModelSerializer):
         return value
 
     def validate_warehouse_id(self, value):
-        tenant_id = self.context["request"].user.tenant_id
-        if not Warehouse.objects.filter(
-            id=value, tenant_id=tenant_id, deleted_at__isnull=True
-        ).exists():
-            raise serializers.ValidationError("Warehouse not found for this tenant")
+        if not shared_master_exists(Warehouse, self.context["request"], value):
+            raise serializers.ValidationError("Warehouse not found")
         return value
 
     def validate_product_id(self, value):

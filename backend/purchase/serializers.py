@@ -5,6 +5,7 @@ from django.utils.timezone import now
 from rest_framework import serializers
 
 from accounts.dimensions import get_user_active_dimension_codes
+from common.tenancy import shared_master_exists
 from accounts.models import Account
 from inventory.models import Product, ProductStock, RawMaterial, Stock, Supplier, Warehouse
 from inventory.serializers import ProductDetailedSerializer, RawMaterialDetailedSerializer
@@ -231,23 +232,13 @@ class PurchaseInvoiceSerializer(serializers.ModelSerializer):
         return str(self._get_financials(obj)["balance_amount"])
 
     def validate_supplier_id(self, value):
-        tenant_id = self.context["request"].user.tenant_id
-        if not Supplier.objects.filter(
-            id=value,
-            tenant_id=tenant_id,
-            deleted_at__isnull=True,
-        ).exists():
-            raise serializers.ValidationError("Supplier not found for this tenant")
+        if not shared_master_exists(Supplier, self.context["request"], value):
+            raise serializers.ValidationError("Supplier not found")
         return value
 
     def validate_warehouse_id(self, value):
-        tenant_id = self.context["request"].user.tenant_id
-        if not Warehouse.objects.filter(
-            id=value,
-            tenant_id=tenant_id,
-            deleted_at__isnull=True,
-        ).exists():
-            raise serializers.ValidationError("Warehouse not found for this tenant")
+        if not shared_master_exists(Warehouse, self.context["request"], value):
+            raise serializers.ValidationError("Warehouse not found")
         return value
 
     def validate_invoice_discount(self, value):
@@ -527,13 +518,8 @@ class PurchaseReturnSerializer(serializers.ModelSerializer):
         return fields
 
     def validate_supplier_id(self, value):
-        tenant_id = self.context["request"].user.tenant_id
-        if not Supplier.objects.filter(
-            id=value,
-            tenant_id=tenant_id,
-            deleted_at__isnull=True,
-        ).exists():
-            raise serializers.ValidationError("Supplier not found for this tenant")
+        if not shared_master_exists(Supplier, self.context["request"], value):
+            raise serializers.ValidationError("Supplier not found")
         return value
 
     def validate_purchase_invoice_id(self, value):
@@ -708,13 +694,8 @@ class PurchaseBankPaymentSerializer(serializers.ModelSerializer):
         return str(balance_after_payment)
 
     def validate_supplier_id(self, value):
-        tenant_id = self.context["request"].user.tenant_id
-        if not Supplier.objects.filter(
-            id=value,
-            tenant_id=tenant_id,
-            deleted_at__isnull=True,
-        ).exists():
-            raise serializers.ValidationError("Supplier not found for this tenant")
+        if not shared_master_exists(Supplier, self.context["request"], value):
+            raise serializers.ValidationError("Supplier not found")
         return value
 
     def validate_purchase_invoice_id(self, value):

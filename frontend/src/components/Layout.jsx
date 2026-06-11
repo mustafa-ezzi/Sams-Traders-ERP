@@ -496,7 +496,7 @@ const CheckPill = ({
           ? "border-blue-200 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300"
           : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400 dark:hover:border-slate-500 dark:hover:bg-slate-700 dark:hover:text-slate-200"
     }`}
-    title={`Show and create in ${label}`}
+    title={`Show data for ${label}`}
   >
     <span
       className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border transition-all duration-150 ${
@@ -881,12 +881,12 @@ const Layout = () => {
             </div>
           </div>
 
-          {/* ── Create-in row (secondary) ── */}
+          {/* ── View filter row (secondary) ── */}
           {!isOnboardingOnly && creationDimensions.length > 0 && (
             <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-1.5 dark:border-slate-700 dark:bg-slate-900/50 lg:px-6">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400 dark:text-slate-500">
-                  Dimensions
+                  View data for
                 </span>
 
                 {creationDimensions.length > 1 && (

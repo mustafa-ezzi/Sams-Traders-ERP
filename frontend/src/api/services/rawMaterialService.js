@@ -10,13 +10,20 @@ const rawMaterialService = {
     const response = await axiosInstance.get(`/inventory/raw-materials/${id}/`);
     return response.data;
   },
-  async create(payload) {
-    const { response } = await createAcrossDimensions((tenantId) =>
-      axiosInstance.post("/inventory/raw-materials/", payload, {
-        headers: tenantId ? { "x-tenant-id": tenantId } : {},
-      })
+  async create(payload, tenantIds) {
+    const { response, isMulti, tenantIds: targets } = await createAcrossDimensions(
+      (tenantId) =>
+        axiosInstance.post("/inventory/raw-materials/", payload, {
+          headers: tenantId ? { "x-tenant-id": tenantId } : {},
+        }),
+      tenantIds,
     );
-    return response.data;
+    return {
+      ...response.data,
+      message: isMulti
+        ? `Raw material created in ${targets.join(", ")}`
+        : response.data?.message || "Raw material created successfully",
+    };
   },
   async update(id, payload) {
     const response = await axiosInstance.put(`/inventory/raw-materials/${id}/`, payload);

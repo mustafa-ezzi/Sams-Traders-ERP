@@ -13,6 +13,8 @@ import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import FormInput from "../../components/ui/FormInput";
 import { useToast } from "../../context/ToastContext";
+import { useAuth } from "../../context/AuthContext";
+import DimensionCreateSelector from "../../components/ui/DimensionCreateSelector";
 import {
   flattenAccountTree,
   formatAccountLabel,
@@ -133,6 +135,10 @@ const ProductFormPage = () => {
   const isEditing = Boolean(id);
   const navigate = useNavigate();
   const toast = useToast();
+  const { tenantId, createTenantIds } = useAuth();
+  const [createDimensionIds, setCreateDimensionIds] = useState(() =>
+    createTenantIds?.length ? [...createTenantIds] : tenantId ? [tenantId] : [],
+  );
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [rawMaterialOptions, setRawMaterialOptions] = useState([]);
@@ -322,8 +328,12 @@ const ProductFormPage = () => {
         await productService.update(id, payload);
         toast.success("Product updated");
       } else {
-        await productService.create(payload);
-        toast.success("Product created");
+        if (!createDimensionIds.length) {
+          toast.error("Select at least one dimension to create this product in.");
+          return;
+        }
+        const result = await productService.create(payload, createDimensionIds);
+        toast.success(result?.message || "Product created");
       }
       navigate("/products");
     } catch (submitError) {
@@ -359,6 +369,12 @@ const ProductFormPage = () => {
           </div>
         ) : (
           <form className="grid gap-4 xl:grid-cols-3" onSubmit={onSubmit}>
+            {!isEditing && (
+              <DimensionCreateSelector
+                selectedIds={createDimensionIds}
+                onChange={setCreateDimensionIds}
+              />
+            )}
             <FormInput
               label="Product Name"
               required

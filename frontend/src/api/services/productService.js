@@ -10,13 +10,20 @@ const productService = {
     const response = await axiosInstance.get(`/inventory/products/${id}/`);
     return response.data;
   },
-  async create(payload) {
-    const { response } = await createAcrossDimensions((tenantId) =>
-      axiosInstance.post("/inventory/products/", payload, {
-        headers: tenantId ? { "x-tenant-id": tenantId } : {},
-      })
+  async create(payload, tenantIds) {
+    const { response, isMulti, tenantIds: targets } = await createAcrossDimensions(
+      (tenantId) =>
+        axiosInstance.post("/inventory/products/", payload, {
+          headers: tenantId ? { "x-tenant-id": tenantId } : {},
+        }),
+      tenantIds,
     );
-    return response.data;
+    return {
+      ...response.data,
+      message: isMulti
+        ? `Product created in ${targets.join(", ")}`
+        : response.data?.message || "Product created successfully",
+    };
   },
   async update(id, payload) {
     const response = await axiosInstance.put(`/inventory/products/${id}/`, payload);

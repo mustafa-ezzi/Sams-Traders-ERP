@@ -171,7 +171,7 @@ class CategoryViewSet(SharedMasterViewSet):
         )
 
 
-class SizeViewSet(BaseTenantViewSet):
+class SizeViewSet(SharedMasterViewSet):
     queryset = Size.objects.all()
     serializer_class = SizeSerializer
 
@@ -973,6 +973,20 @@ class BasePartyViewSet(viewsets.ModelViewSet):
         )
         return qs
 
+
+class SharedPartyViewSet(BasePartyViewSet):
+    """Customers and suppliers shared across the user's allowed dimensions."""
+
+    def get_queryset(self):
+        tenant_ids = get_user_active_dimension_codes(self.request.user)
+        tenant_id = getattr(self.request, "tenant_id", None) or self.request.user.tenant_id
+        if tenant_id and tenant_id not in tenant_ids:
+            tenant_ids.append(tenant_id)
+        return self.party_model.objects.filter(
+            tenant_id__in=tenant_ids,
+            deleted_at__isnull=True,
+        )
+
     def get_serializer_context(self):
         context = super().get_serializer_context()
         context["party_model"] = self.party_model
@@ -1013,15 +1027,15 @@ class BasePartyViewSet(viewsets.ModelViewSet):
         )
 
 
-class CustomerViewSet(BasePartyViewSet):
+class CustomerViewSet(SharedPartyViewSet):
     party_model = Customer
 
 
-class SupplierViewSet(BasePartyViewSet):
+class SupplierViewSet(SharedPartyViewSet):
     party_model = Supplier
 
 
-class SalesmanViewSet(BaseTenantViewSet):
+class SalesmanViewSet(SharedMasterViewSet):
     queryset = Salesman.objects.all()
     serializer_class = SalesmanSerializer
     search_fields = ["code", "name", "email", "phone_number"]
@@ -1037,8 +1051,14 @@ class WarehouseViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         search = self.request.query_params.get("search", "")
 
+        tenant_ids = get_user_active_dimension_codes(self.request.user)
+        tenant_id = getattr(self.request, "tenant_id", None) or self.request.user.tenant_id
+        if tenant_id and tenant_id not in tenant_ids:
+            tenant_ids.append(tenant_id)
+
         qs = Warehouse.objects.filter(
-            **get_request_tenant_filter(self.request), deleted_at__isnull=True
+            tenant_id__in=tenant_ids,
+            deleted_at__isnull=True,
         )
 
         # 🔥 Prisma-style OR search
