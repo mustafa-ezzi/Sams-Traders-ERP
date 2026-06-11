@@ -43,7 +43,13 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter]
-    search_fields = ["invoice_number", "customer__business_name", "remarks", "warehouse__name"]
+    search_fields = [
+        "invoice_number",
+        "dc_number",
+        "customer__business_name",
+        "remarks",
+        "warehouse__name",
+    ]
 
     def get_queryset(self):
         return (

@@ -7,6 +7,7 @@ from inventory.models import Customer, Product, Salesman, Warehouse
 
 class SalesInvoice(BaseModel):
     invoice_number = models.CharField(max_length=50)
+    dc_number = models.CharField(max_length=50, blank=True, default="")
     date = models.DateField()
     customer = models.ForeignKey(
         Customer,

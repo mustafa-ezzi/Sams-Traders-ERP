@@ -1,3 +1,4 @@
+import re
 from decimal import Decimal
 
 from django.db import transaction
@@ -5,7 +6,7 @@ from django.utils.timezone import now
 from rest_framework import serializers
 
 from accounts.dimensions import get_user_active_dimension_codes
-from common.tenancy import shared_master_exists
+from common.tenancy import get_shared_tenant_ids, shared_master_exists
 from accounts.models import Account
 from inventory.models import Customer, Product, ProductStock, Salesman, Warehouse
 from inventory.serializers import ProductDetailedSerializer
@@ -145,6 +146,7 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "invoice_number",
+            "dc_number",
             "date",
             "customer",
             "customer_id",
@@ -249,24 +251,18 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         warehouse_id = attrs.get("warehouse_id") or getattr(self.instance, "warehouse_id", None)
         tenant_id = self.context["request"].user.tenant_id
-        warehouse = Warehouse.objects.get(
+        warehouse = Warehouse.objects.filter(
             id=warehouse_id,
-            tenant_id=tenant_id,
+            tenant_id__in=get_shared_tenant_ids(self.context["request"]),
             deleted_at__isnull=True,
-        )
+        ).first()
+        if not warehouse:
+            raise serializers.ValidationError({"warehouse_id": "Warehouse not found"})
         self.context["warehouse"] = warehouse
 
         line_items = attrs.get("lines") or []
         seen_products = set()
-        product_quantities = {}
         gross_amount = Decimal("0.00")
-        excluded_ids = self.context.get("excluded_sale_line_ids")
-
-        if excluded_ids is None and isinstance(self.instance, SalesInvoice):
-            excluded_ids = list(
-                self.instance.lines.filter(deleted_at__isnull=True).values_list("id", flat=True)
-            )
-        excluded_ids = excluded_ids or []
 
         for line in line_items:
             product_id = str(line["product_id"])
@@ -275,25 +271,7 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
                     {"lines": "Each product should appear only once per invoice."}
                 )
             seen_products.add(product_id)
-            product_quantities[product_id] = quantize_money(line["quantity"])
             gross_amount += line["total_amount"]
-
-        for product_id, quantity in product_quantities.items():
-            available_quantity = get_available_sale_quantity(
-                tenant_id,
-                warehouse.id,
-                product_id,
-                excluded_sale_line_ids=excluded_ids,
-            )
-            if quantity > available_quantity:
-                raise serializers.ValidationError(
-                    {
-                        "lines": (
-                            f"Sale quantity for product {product_id} cannot exceed "
-                            f"available stock ({available_quantity})."
-                        )
-                    }
-                )
 
         gross_amount = quantize_money(gross_amount)
         invoice_discount = quantize_money(attrs.get("invoice_discount", Decimal("0.00")))
@@ -311,14 +289,16 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
         salesman_id = attrs.pop("salesman_id", None)
         if salesman_id_provided:
             salesman = (
-                Salesman.objects.get(
+                Salesman.objects.filter(
                     id=salesman_id,
-                    tenant_id=tenant_id,
+                    tenant_id__in=get_shared_tenant_ids(self.context["request"]),
                     deleted_at__isnull=True,
-                )
+                ).first()
                 if salesman_id
                 else None
             )
+            if salesman_id and not salesman:
+                raise serializers.ValidationError({"salesman_id": "Salesman not found"})
         else:
             salesman = getattr(self.instance, "salesman", None) if self.instance else None
 
@@ -329,8 +309,27 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
         return attrs
 
     def _generate_invoice_number(self, tenant_id):
-        count = SalesInvoice.objects.filter(tenant_id=tenant_id).count() + 1
-        return f"SINV-{count:05d}"
+        prefix = "SI - "
+        numbers = []
+        for invoice_number in SalesInvoice.objects.filter(
+            tenant_id=tenant_id,
+            deleted_at__isnull=True,
+            invoice_number__startswith=prefix,
+        ).values_list("invoice_number", flat=True):
+            match = re.fullmatch(r"SI - (\d+)", invoice_number or "")
+            if match:
+                numbers.append(int(match.group(1)))
+
+        next_number = (max(numbers) + 1) if numbers else 1
+        while True:
+            candidate = f"{prefix}{next_number:04d}"
+            if not SalesInvoice.objects.filter(
+                tenant_id=tenant_id,
+                deleted_at__isnull=True,
+                invoice_number=candidate,
+            ).exists():
+                return candidate
+            next_number += 1
 
     def _create_lines(self, invoice, lines_data, tenant_id):
         for line_data in lines_data:

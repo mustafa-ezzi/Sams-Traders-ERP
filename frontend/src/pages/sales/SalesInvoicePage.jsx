@@ -132,11 +132,13 @@ const SalesInvoicePage = () => {
     customerId: "",
     warehouseId: "",
     salesmanId: "",
+    dcNumber: "",
     remarks: "",
     invoiceDiscount: "0",
     invoiceDiscountPercent: "0",
     lines: [createEmptyLine()],
   });
+  const [editingInvoiceNumber, setEditingInvoiceNumber] = useState("");
   const [editingId, setEditingId] = useState("");
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -278,12 +280,14 @@ const SalesInvoicePage = () => {
       customerId: "",
       warehouseId: "",
       salesmanId: "",
+      dcNumber: "",
       remarks: "",
       invoiceDiscount: "0",
       invoiceDiscountPercent: "0",
       lines: [createEmptyLine()],
     });
     setEditingId("");
+    setEditingInvoiceNumber("");
   };
 
   const handleChange = (field, value) => {
@@ -365,6 +369,7 @@ const SalesInvoicePage = () => {
     customer_id: form.customerId,
     warehouse_id: form.warehouseId,
     salesman_id: form.salesmanId || null,
+    dc_number: form.dcNumber.trim(),
     remarks: form.remarks,
     invoice_discount: toNumber(form.invoiceDiscount),
     lines: form.lines
@@ -433,6 +438,7 @@ const SalesInvoicePage = () => {
     try {
       const invoice = await salesInvoiceService.getById(recordId);
       setEditingId(invoice.id);
+      setEditingInvoiceNumber(invoice.invoice_number || "");
       const loadedGross = toNumber(invoice.grossAmount);
       const loadedInvoiceDiscount = toNumber(invoice.invoiceDiscount);
       setForm({
@@ -440,6 +446,7 @@ const SalesInvoicePage = () => {
         customerId: invoice.customerId,
         warehouseId: invoice.warehouseId,
         salesmanId: invoice.salesmanId || "",
+        dcNumber: invoice.dcNumber || "",
         remarks: invoice.remarks || "",
         invoiceDiscount: String(loadedInvoiceDiscount),
         invoiceDiscountPercent: formatInputNumber(
@@ -491,7 +498,32 @@ const SalesInvoicePage = () => {
         </div>
 
         <form className="space-y-5" onSubmit={handleSubmit}>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {editingId ? (
+              <FormInput
+                label="Invoice Code"
+                value={editingInvoiceNumber}
+                readOnly
+                disabled
+              />
+            ) : (
+              <div className="space-y-1">
+                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Invoice Code
+                </label>
+                <div className="flex items-center rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                  Auto-generated (SI - 0001)
+                </div>
+              </div>
+            )}
+
+            <FormInput
+              label="DC Number"
+              placeholder="Delivery challan number (optional)"
+              value={form.dcNumber}
+              onChange={(e) => handleChange("dcNumber", e.target.value)}
+            />
+
             <FormInput
               label="Invoice Date *"
               type="date"
@@ -634,7 +666,13 @@ const SalesInvoicePage = () => {
                       }
                     />
 
-                    <div className="flex items-center rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-500">
+                    <div
+                      className={`flex items-center rounded-2xl border px-3 py-3 text-sm ${
+                        toNumber(selectedProduct?.quantity) < 0
+                          ? "border-rose-200 bg-rose-50 font-semibold text-rose-600"
+                          : "border-slate-200 bg-slate-50 text-slate-500"
+                      }`}
+                    >
                       {formatDecimal(selectedProduct?.quantity || 0)}
                     </div>
 
@@ -858,6 +896,7 @@ const SalesInvoicePage = () => {
                 <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
                   <tr>
                     <th className="px-4 py-3">Invoice</th>
+                    <th className="px-4 py-3">DC No.</th>
                     <th className="px-4 py-3">Date</th>
                     <th className="px-4 py-3">Customer</th>
                     <th className="px-4 py-3">Warehouse</th>
@@ -876,6 +915,9 @@ const SalesInvoicePage = () => {
                     <tr key={record.id}>
                       <td className="px-4 py-3 font-semibold text-slate-900">
                         {record.invoice_number}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {record.dcNumber || record.dc_number || "—"}
                       </td>
                       <td className="px-4 py-3 text-slate-600">
                         {record.date}

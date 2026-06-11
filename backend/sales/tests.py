@@ -332,3 +332,74 @@ class SalesInvoiceSerializerTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["data"][0]["unit"], "Piece")
+
+    def test_auto_generates_si_invoice_number(self):
+        serializer = SalesInvoiceSerializer(
+            data={
+                "date": "2026-04-22",
+                "customer_id": str(self.customer.id),
+                "warehouse_id": str(self.warehouse.id),
+                "dc_number": "DC-100",
+                "remarks": "Numbered invoice",
+                "invoice_discount": "0.00",
+                "lines": [
+                    {
+                        "product_id": str(self.product.id),
+                        "quantity": "1.00",
+                        "rate": "100.00",
+                        "discount": "0.00",
+                    }
+                ],
+            },
+            context={"request": self._get_request()},
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        invoice = serializer.save()
+        self.assertEqual(invoice.invoice_number, "SI - 0001")
+        self.assertEqual(invoice.dc_number, "DC-100")
+
+    def test_allows_sale_when_stock_is_zero_and_inventory_goes_negative(self):
+        from inventory.services import sync_product_stock_quantity
+
+        ProductStock.objects.filter(
+            tenant_id=self.tenant_id,
+            warehouse=self.warehouse,
+            product=self.product,
+        ).update(quantity=Decimal("0.00"))
+
+        serializer = SalesInvoiceSerializer(
+            data={
+                "date": "2026-04-22",
+                "customer_id": str(self.customer.id),
+                "warehouse_id": str(self.warehouse.id),
+                "remarks": "Backorder sale",
+                "invoice_discount": "0.00",
+                "lines": [
+                    {
+                        "product_id": str(self.product.id),
+                        "quantity": "5.00",
+                        "rate": "100.00",
+                        "discount": "0.00",
+                    }
+                ],
+            },
+            context={"request": self._get_request()},
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        invoice = serializer.save()
+        sync_product_stock_quantity(
+            self.tenant_id,
+            self.warehouse.id,
+            self.product.id,
+        )
+
+        stock = ProductStock.objects.get(
+            tenant_id=self.tenant_id,
+            warehouse=self.warehouse,
+            product=self.product,
+            deleted_at__isnull=True,
+        )
+        self.assertEqual(stock.quantity, Decimal("-5.00"))
+        self.assertEqual(invoice.lines.count(), 1)

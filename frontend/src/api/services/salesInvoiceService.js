@@ -14,6 +14,7 @@ const mapInvoice = (invoice) => ({
     invoice.salesman_commission_rate ?? invoice.salesmanCommissionRate ?? 0,
   salesmanCommissionAmount:
     invoice.salesman_commission_amount ?? invoice.salesmanCommissionAmount ?? 0,
+  dcNumber: invoice.dc_number ?? invoice.dcNumber ?? "",
   invoiceDiscount: invoice.invoice_discount ?? invoice.invoiceDiscount ?? 0,
   grossAmount: invoice.gross_amount ?? invoice.grossAmount ?? 0,
   netAmount: invoice.net_amount ?? invoice.netAmount ?? 0,
