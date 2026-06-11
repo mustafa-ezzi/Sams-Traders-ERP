@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
+import IconButton from "../../components/ui/IconButton";
 import FormInput from "../../components/ui/FormInput";
 import ConfirmModal from "../../components/ui/ConfirmModal";
 import StateView from "../../components/StateView";
@@ -482,6 +483,14 @@ const SalesInvoicePage = () => {
     } catch (editError) {
       toast.error(extractErrorMessage(editError) || "Failed to load invoice");
     }
+  };
+
+  const handleOpenPrint = (recordId) => {
+    window.open(
+      `/sales-invoices/${recordId}/print`,
+      "_blank",
+      "noopener,noreferrer",
+    );
   };
 
   const confirmDelete = async () => {
@@ -993,19 +1002,22 @@ const SalesInvoicePage = () => {
                           </div>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <div className="inline-flex justify-end gap-2">
-                            <Button
-                              variant="secondary"
+                          <div className="inline-flex justify-end gap-1">
+                            <IconButton
+                              icon="print"
+                              label="Print invoice"
+                              onClick={() => handleOpenPrint(record.id)}
+                            />
+                            <IconButton
+                              icon="edit"
+                              label="Edit invoice"
                               onClick={() => handleEdit(record.id)}
-                            >
-                              Edit
-                            </Button>
-                            <Button
-                              variant="danger"
+                            />
+                            <IconButton
+                              icon="delete"
+                              label="Delete invoice"
                               onClick={() => setDeleteId(record.id)}
-                            >
-                              Delete
-                            </Button>
+                            />
                           </div>
                         </td>
                       </tr>

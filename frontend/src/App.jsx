@@ -19,6 +19,7 @@ import PurchaseInvoicePage from "./pages/purchase/PurchaseInvoicePage";
 import PurchaseReturnPage from "./pages/purchase/PurchaseReturnPage";
 import PurchaseBankPaymentPage from "./pages/purchase/PurchaseBankPaymentPage";
 import SalesInvoicePage from "./pages/sales/SalesInvoicePage";
+import SalesInvoicePrintPage from "./pages/sales/SalesInvoicePrintPage";
 import SalesReturnPage from "./pages/sales/SalesReturnPage";
 import SalesBankReceiptPage from "./pages/sales/SalesBankReceiptPage";
 import CustomersPage from "./pages/parties/CustomersPage";
@@ -91,6 +92,14 @@ const App = () => (
           <AdminProtected>
             <AdminInquiriesPage />
           </AdminProtected>
+        }
+      />
+      <Route
+        path="/sales-invoices/:id/print"
+        element={
+          <Protected>
+            <SalesInvoicePrintPage />
+          </Protected>
         }
       />
       <Route

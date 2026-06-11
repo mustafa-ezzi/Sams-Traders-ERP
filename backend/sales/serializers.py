@@ -22,6 +22,10 @@ from sales.services import (
 class CustomerMiniSerializer(serializers.Serializer):
     id = serializers.UUIDField()
     business_name = serializers.CharField()
+    name = serializers.CharField(required=False, allow_blank=True)
+    email = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    phone_number = serializers.CharField(required=False, allow_blank=True)
+    address = serializers.CharField(required=False, allow_blank=True)
 
 
 class WarehouseMiniSerializer(serializers.Serializer):
