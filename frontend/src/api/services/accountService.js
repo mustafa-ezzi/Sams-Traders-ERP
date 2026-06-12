@@ -81,6 +81,16 @@ const accountService = {
     });
     return response.data.data || {};
   },
+  async getProfitLossReport(params, selectedTenant = "") {
+    const response = await axiosInstance.get(
+      "/accounts/accounts/profit-loss-report/",
+      {
+        params,
+        headers: tenantHeader(selectedTenant),
+      },
+    );
+    return response.data.data || {};
+  },
   async getCoaCompletenessReport(params, selectedTenant = "") {
     const response = await axiosInstance.get("/accounts/accounts/coa-completeness-report/", {
       params,

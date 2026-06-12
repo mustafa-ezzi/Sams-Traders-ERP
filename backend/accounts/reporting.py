@@ -147,6 +147,101 @@ def _build_balance_section(accounts, balance_map, group):
     }
 
 
+def build_profit_and_loss_report(tenant_ids, from_date, to_date):
+    """Profit & Loss (income statement) for a date range.
+
+    Net Profit = Revenue - COGS - Expenses - Tax - Purchases, which keeps the
+    figure consistent with the Balance Sheet's "unclosed profit/loss" line.
+    """
+    pl_groups = [
+        Account.AccountGroup.REVENUE,
+        Account.AccountGroup.COGS,
+        Account.AccountGroup.EXPENSE,
+        Account.AccountGroup.TAX,
+        Account.AccountGroup.PURCHASE,
+    ]
+
+    accounts = list(
+        Account.objects.filter(
+            tenant_id__in=tenant_ids,
+            deleted_at__isnull=True,
+            is_active=True,
+            account_group__in=pl_groups,
+        )
+        .select_related("parent")
+        .order_by("code")
+    )
+
+    account_ids = [account.id for account in accounts]
+    line_totals = {
+        row["account_id"]: {
+            "debit": _money(row["debit"]),
+            "credit": _money(row["credit"]),
+        }
+        for row in JournalLine.objects.filter(
+            tenant_id__in=tenant_ids,
+            deleted_at__isnull=True,
+            journal_entry__deleted_at__isnull=True,
+            journal_entry__date__gte=from_date,
+            journal_entry__date__lte=to_date,
+            account_id__in=account_ids,
+        )
+        .values("account_id")
+        .annotate(
+            debit=Coalesce(Sum("debit"), Decimal("0.00")),
+            credit=Coalesce(Sum("credit"), Decimal("0.00")),
+        )
+    }
+
+    balance_map = {}
+    for account in accounts:
+        totals = line_totals.get(
+            account.id,
+            {"debit": Decimal("0.00"), "credit": Decimal("0.00")},
+        )
+        balance_map[account.id] = _balance_for_account(
+            account,
+            totals["debit"],
+            totals["credit"],
+        )
+
+    revenue = _build_balance_section(accounts, balance_map, Account.AccountGroup.REVENUE)
+    cogs = _build_balance_section(accounts, balance_map, Account.AccountGroup.COGS)
+    expense = _build_balance_section(accounts, balance_map, Account.AccountGroup.EXPENSE)
+    tax = _build_balance_section(accounts, balance_map, Account.AccountGroup.TAX)
+    purchase = _build_balance_section(accounts, balance_map, Account.AccountGroup.PURCHASE)
+
+    total_revenue = _money(revenue["total"])
+    total_cogs = _money(cogs["total"])
+    total_expense = _money(expense["total"])
+    total_tax = _money(tax["total"])
+    total_purchase = _money(purchase["total"])
+    gross_profit = _money(total_revenue - total_cogs)
+    total_operating = _money(total_expense + total_tax + total_purchase)
+    net_profit = _money(gross_profit - total_operating)
+
+    return {
+        "from_date": from_date.isoformat(),
+        "to_date": to_date.isoformat(),
+        "revenue": revenue,
+        "cogs": cogs,
+        "expense": expense,
+        "tax": tax,
+        "purchase": purchase,
+        "summary": {
+            "total_revenue": str(total_revenue),
+            "total_cogs": str(total_cogs),
+            "gross_profit": str(gross_profit),
+            "total_expense": str(total_expense),
+            "total_tax": str(total_tax),
+            "total_purchase": str(total_purchase),
+            "total_operating": str(total_operating),
+            "net_profit": str(net_profit),
+            "is_profit": net_profit >= Decimal("0.00"),
+        },
+    }
+
+
 def build_balance_sheet_report(tenant_ids, as_of_date):
     accounts = list(
         Account.objects.filter(
@@ -219,7 +314,12 @@ def build_balance_sheet_report(tenant_ids, as_of_date):
     total_assets = _money(assets["total"])
     total_liabilities = _money(liabilities["total"])
     total_equity = _money(equity["total"])
-    total_liabilities_and_equity = _money(total_liabilities + total_equity)
+    # Current-period (unclosed) profit/loss belongs to the owners until it is
+    # closed into Retained Earnings, so it must sit on the equity side for the
+    # accounting equation (Assets = Liabilities + Equity + Net Income) to hold.
+    total_liabilities_and_equity = _money(
+        total_liabilities + total_equity + unclosed_profit_loss
+    )
     difference = _money(total_assets - total_liabilities_and_equity)
 
     return {

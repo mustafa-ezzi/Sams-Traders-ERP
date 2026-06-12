@@ -261,6 +261,12 @@ const navigation = [
         perm: "reports_balance_sheet",
       },
       {
+        to: "/reports/profit-loss",
+        label: "Profit & Loss",
+        icon: icons.reports,
+        perm: "reports_profit_loss",
+      },
+      {
         to: "/reports/ledger",
         label: "Ledger Reports",
         icon: icons.reports,
@@ -375,6 +381,7 @@ const pageTitles = {
   "/users/configure": { title: "Company Configure", eyebrow: "Users" },
   "/users/configure/create": { title: "Create Company", eyebrow: "Users" },
   "/reports/balance-sheet": { title: "Balance Sheet", eyebrow: "Reports" },
+  "/reports/profit-loss": { title: "Profit & Loss", eyebrow: "Reports" },
   "/reports/ledger": { title: "Ledger Reports", eyebrow: "Reports" },
   "/reports/party-ledger": { title: "Party Ledger", eyebrow: "Reports" },
   "/warehouses": { title: "Warehouses", eyebrow: "Inventory" },
