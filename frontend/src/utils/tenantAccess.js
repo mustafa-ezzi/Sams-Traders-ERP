@@ -75,7 +75,9 @@ export function pathToPermissionKey(pathname) {
 
   if (p.startsWith("/settings/staff")) return "tenant_staff_manage";
 
-  if (p.startsWith("/users/dimensions")) return "dimensions";
+  if (p.startsWith("/users/configure") || p.startsWith("/users/dimensions")) {
+    return "dimensions";
+  }
   if (p.startsWith("/support")) return "support";
 
   return null;

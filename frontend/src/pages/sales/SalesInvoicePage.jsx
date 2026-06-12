@@ -11,6 +11,8 @@ import salesmanService from "../../api/services/salesmanService";
 import salesInvoiceService from "../../api/services/salesInvoiceService";
 import { formatDecimal } from "../../utils/format";
 import { useToast } from "../../context/ToastContext";
+import { useAuth } from "../../context/AuthContext";
+import DimensionPrintButtons from "../../components/ui/DimensionPrintButtons";
 import {
   formatDisplayDate,
   getReceiptStatus,
@@ -130,6 +132,11 @@ const extractErrorMessage = (error) => {
 
 const SalesInvoicePage = () => {
   const toast = useToast();
+  const { allowedDimensions } = useAuth();
+  const printDimensions = useMemo(
+    () => (allowedDimensions || []).filter((dimension) => dimension.is_active),
+    [allowedDimensions],
+  );
   const [records, setRecords] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
@@ -485,9 +492,12 @@ const SalesInvoicePage = () => {
     }
   };
 
-  const handleOpenPrint = (recordId) => {
+  const handleOpenPrint = (recordId, dimensionCode) => {
+    const query = dimensionCode
+      ? `?dimension=${encodeURIComponent(dimensionCode)}`
+      : "";
     window.open(
-      `/sales-invoices/${recordId}/print`,
+      `/sales-invoices/${recordId}/print${query}`,
       "_blank",
       "noopener,noreferrer",
     );
@@ -1003,10 +1013,10 @@ const SalesInvoicePage = () => {
                         </td>
                         <td className="px-4 py-3 text-right">
                           <div className="inline-flex justify-end gap-1">
-                            <IconButton
-                              icon="print"
-                              label="Print invoice"
-                              onClick={() => handleOpenPrint(record.id)}
+                            <DimensionPrintButtons
+                              dimensions={printDimensions}
+                              recordId={record.id}
+                              onPrint={handleOpenPrint}
                             />
                             <IconButton
                               icon="edit"

@@ -8,6 +8,7 @@ from inventory.models import Customer, Supplier
 
 CUSTOMER_RECEIVABLE_CODE = "1140"
 SUPPLIER_PAYABLE_CODE = "2130"
+OPENING_EQUITY_CODE = "3100"
 
 
 def _tenant_id_from_request(request):
@@ -91,6 +92,48 @@ def _resolve_party_control_account(
             "account": (
                 f"No postable {label} account found. "
                 f"Add account {preferred_code} ({label}) in Chart of Accounts first."
+            )
+        }
+    )
+
+
+def resolve_opening_equity_account(tenant_ids):
+    if isinstance(tenant_ids, str):
+        tenant_ids = [tenant_ids]
+    tenant_ids = list(tenant_ids or [])
+
+    for tenant_id in tenant_ids:
+        account = Account.objects.filter(
+            tenant_id=tenant_id,
+            deleted_at__isnull=True,
+            is_active=True,
+            is_postable=True,
+            account_group=Account.AccountGroup.EQUITY,
+            code=OPENING_EQUITY_CODE,
+        ).first()
+        if account:
+            return account
+
+        account = (
+            Account.objects.filter(
+                tenant_id=tenant_id,
+                deleted_at__isnull=True,
+                is_active=True,
+                is_postable=True,
+                account_group=Account.AccountGroup.EQUITY,
+            )
+            .filter(name__icontains="equity")
+            .order_by("code")
+            .first()
+        )
+        if account:
+            return account
+
+    raise ValidationError(
+        {
+            "account": (
+                "No postable Owners Equity account found. "
+                f"Add account {OPENING_EQUITY_CODE} in Chart of Accounts first."
             )
         }
     )

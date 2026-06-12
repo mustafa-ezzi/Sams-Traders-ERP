@@ -133,8 +133,10 @@ const AccountsPage = () => {
                   Chart of Accounts
                 </h2>
                 <p className="mt-2 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
-                  Manage the dimension chart with hierarchy, posting rules, and
-                  group-based account behavior.
+                  One shared chart for all dimensions. Accounts you add here are
+                  created once and appear in AM, Sams, and every dimension. Only
+                  opening bank accounts under 1110 stay dimension-specific for
+                  payments.
                 </p>
               </div>
               <div className="grid w-full gap-2 sm:grid-cols-2 lg:w-auto">

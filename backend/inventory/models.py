@@ -439,3 +439,43 @@ class Production(BaseModel):
             )
         ]
         ordering = ["-date", "-created_at"]
+
+
+class PartyOpeningBalance(BaseModel):
+    class PartyType(models.TextChoices):
+        CUSTOMER = "CUSTOMER", "Customer"
+        SUPPLIER = "SUPPLIER", "Supplier"
+
+    party_type = models.CharField(max_length=20, choices=PartyType.choices)
+    customer = models.ForeignKey(
+        Customer,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="opening_balances",
+    )
+    supplier = models.ForeignKey(
+        Supplier,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="opening_balances",
+    )
+    date = models.DateField()
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    remarks = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["-date", "-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant_id", "customer"],
+                condition=models.Q(deleted_at__isnull=True, customer__isnull=False),
+                name="unique_active_customer_opening_balance",
+            ),
+            models.UniqueConstraint(
+                fields=["tenant_id", "supplier"],
+                condition=models.Q(deleted_at__isnull=True, supplier__isnull=False),
+                name="unique_active_supplier_opening_balance",
+            ),
+        ]

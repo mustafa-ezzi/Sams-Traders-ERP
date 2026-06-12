@@ -44,7 +44,12 @@ const CheckPill = ({ label, checked, onChange, isAll = false }) => (
   </label>
 );
 
-const DimensionCreateSelector = ({ selectedIds, onChange, className = "" }) => {
+const DimensionCreateSelector = ({
+  selectedIds,
+  onChange,
+  className = "",
+  hint = "A separate copy is created in each selected dimension with its own SKU and stock.",
+}) => {
   const { tenantId, allowedDimensions } = useAuth();
   const [dimensions, setDimensions] = useState([]);
 
@@ -98,9 +103,7 @@ const DimensionCreateSelector = ({ selectedIds, onChange, className = "" }) => {
           />
         ))}
       </div>
-      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-        A separate copy is created in each selected dimension with its own SKU and stock.
-      </p>
+      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{hint}</p>
     </div>
   );
 };

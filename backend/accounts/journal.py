@@ -5,6 +5,8 @@ from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
 from accounts.models import Account, Expense, JournalEntry, JournalLine
+from inventory.models import PartyOpeningBalance
+from inventory.party_accounts import resolve_opening_equity_account
 from purchase.models import PurchaseBankPayment, PurchaseInvoice, PurchaseReturn
 from sales.models import SalesBankReceipt, SalesInvoice, SalesReturn
 
@@ -567,6 +569,87 @@ def sync_sales_bank_receipt_journal(receipt):
     )
 
 
+def _build_party_opening_balance_lines(opening_balance):
+    equity_account = resolve_opening_equity_account(opening_balance.tenant_id)
+    amount = quantize_money(opening_balance.amount)
+
+    if opening_balance.party_type == PartyOpeningBalance.PartyType.CUSTOMER:
+        customer = opening_balance.customer
+        party_account = _resolve_party_account(customer, "Customer")
+        return [
+            {
+                "account": party_account,
+                "debit": amount,
+                "credit": Decimal("0.00"),
+                "line_description": "Customer Opening Balance",
+                "people_type": "Customer",
+                "people_name": customer.business_name,
+            },
+            {
+                "account": equity_account,
+                "debit": Decimal("0.00"),
+                "credit": amount,
+                "line_description": "Opening Balance Equity",
+            },
+        ]
+
+    supplier = opening_balance.supplier
+    party_account = _resolve_party_account(supplier, "Supplier")
+    return [
+        {
+            "account": equity_account,
+            "debit": amount,
+            "credit": Decimal("0.00"),
+            "line_description": "Opening Balance Equity",
+        },
+        {
+            "account": party_account,
+            "debit": Decimal("0.00"),
+            "credit": amount,
+            "line_description": "Supplier Opening Balance",
+            "people_type": "Supplier",
+            "people_name": supplier.business_name,
+        },
+    ]
+
+
+def _party_opening_reference(opening_balance):
+    prefix = (
+        "CUST"
+        if opening_balance.party_type == PartyOpeningBalance.PartyType.CUSTOMER
+        else "SUP"
+    )
+    return f"OB-{prefix}-{str(opening_balance.id).split('-')[0].upper()}"
+
+
+@transaction.atomic
+def sync_party_opening_balance_journal(opening_balance):
+    opening_balance = PartyOpeningBalance.objects.select_related(
+        "customer",
+        "supplier",
+    ).get(pk=opening_balance.pk)
+
+    if opening_balance.party_type == PartyOpeningBalance.PartyType.CUSTOMER:
+        people_type = "Customer"
+        people_name = opening_balance.customer.business_name
+    else:
+        people_type = "Supplier"
+        people_name = opening_balance.supplier.business_name
+
+    return _upsert_journal_entry(
+        tenant_id=opening_balance.tenant_id,
+        source_type=JournalEntry.SourceType.PARTY_OPENING_BALANCE,
+        source_id=opening_balance.id,
+        date=opening_balance.date,
+        reference=_party_opening_reference(opening_balance),
+        document_type="Opening Balance",
+        description=opening_balance.remarks,
+        people_type=people_type,
+        people_name=people_name,
+        lines=_build_party_opening_balance_lines(opening_balance),
+    )
+
+
 @transaction.atomic
 def sync_expense_journal(expense):
     return _upsert_journal_entry(
@@ -599,3 +682,7 @@ def sync_all_journals():
         sync_sales_bank_receipt_journal(receipt)
     for expense in Expense.objects.filter(deleted_at__isnull=True).select_related("bank_account", "expense_account"):
         sync_expense_journal(expense)
+    for opening_balance in PartyOpeningBalance.objects.filter(
+        deleted_at__isnull=True,
+    ).select_related("customer", "supplier"):
+        sync_party_opening_balance_journal(opening_balance)

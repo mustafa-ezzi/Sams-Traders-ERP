@@ -1,17 +1,20 @@
 from rest_framework import serializers
 from decimal import Decimal
 import re
+from django.db import transaction
 from django.utils.timezone import now
 from accounts.models import Account, Dimension
 from accounts.dimensions import get_user_active_dimension_codes
-from common.tenancy import shared_master_exists
+from common.tenancy import get_shared_tenant_ids, shared_master_exists
 from inventory.party_accounts import assign_default_party_account
+from accounts.journal import sync_party_opening_balance_journal
 from .models import (
     Brand,
     Category,
     Customer,
     Supplier,
     OpeningStock,
+    PartyOpeningBalance,
     Production,
     Product,
     ProductCostState,
@@ -1252,4 +1255,147 @@ class ProductionSerializer(serializers.ModelSerializer):
 
         instance.date = validated_data.get("date", instance.date)
         instance.save()
+        return instance
+
+
+class PartyMiniSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    name = serializers.CharField()
+    business_name = serializers.CharField()
+
+
+class PartyOpeningBalanceSerializer(serializers.ModelSerializer):
+    customer = PartyMiniSerializer(read_only=True)
+    supplier = PartyMiniSerializer(read_only=True)
+    customer_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
+    supplier_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
+
+    class Meta:
+        model = PartyOpeningBalance
+        fields = [
+            "id",
+            "party_type",
+            "customer",
+            "customer_id",
+            "supplier",
+            "supplier_id",
+            "date",
+            "amount",
+            "remarks",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+    def _quantize_amount(self, value):
+        return Decimal(str(value or 0)).quantize(Decimal("0.01"))
+
+    def validate_amount(self, value):
+        amount = self._quantize_amount(value)
+        if amount <= 0:
+            raise serializers.ValidationError("Opening amount must be greater than zero.")
+        return amount
+
+    def validate(self, attrs):
+        request = self.context["request"]
+        tenant_ids = get_shared_tenant_ids(request)
+        party_type = attrs.get("party_type") or getattr(self.instance, "party_type", None)
+        customer_id = attrs.get("customer_id", getattr(self.instance, "customer_id", None))
+        supplier_id = attrs.get("supplier_id", getattr(self.instance, "supplier_id", None))
+
+        if party_type == PartyOpeningBalance.PartyType.CUSTOMER:
+            if not customer_id:
+                raise serializers.ValidationError({"customer_id": "Customer is required."})
+            if supplier_id:
+                raise serializers.ValidationError({"supplier_id": "Supplier must be empty for customer openings."})
+            try:
+                customer = Customer.objects.get(
+                    id=customer_id,
+                    tenant_id__in=tenant_ids,
+                    deleted_at__isnull=True,
+                )
+            except Customer.DoesNotExist:
+                raise serializers.ValidationError({"customer_id": "Customer not found."})
+            attrs["customer"] = customer
+            attrs["supplier"] = None
+            attrs["_tenant_id"] = customer.tenant_id
+            duplicate_qs = PartyOpeningBalance.objects.filter(
+                tenant_id__in=tenant_ids,
+                party_type=PartyOpeningBalance.PartyType.CUSTOMER,
+                customer__business_name=customer.business_name,
+                deleted_at__isnull=True,
+            )
+            if self.instance:
+                duplicate_qs = duplicate_qs.exclude(pk=self.instance.pk)
+            if duplicate_qs.exists():
+                raise serializers.ValidationError(
+                    {
+                        "customer_id": (
+                            "This customer already has an opening balance "
+                            "across your company dimensions."
+                        )
+                    }
+                )
+        elif party_type == PartyOpeningBalance.PartyType.SUPPLIER:
+            if not supplier_id:
+                raise serializers.ValidationError({"supplier_id": "Supplier is required."})
+            if customer_id:
+                raise serializers.ValidationError({"customer_id": "Customer must be empty for supplier openings."})
+            try:
+                supplier = Supplier.objects.get(
+                    id=supplier_id,
+                    tenant_id__in=tenant_ids,
+                    deleted_at__isnull=True,
+                )
+            except Supplier.DoesNotExist:
+                raise serializers.ValidationError({"supplier_id": "Supplier not found."})
+            attrs["supplier"] = supplier
+            attrs["customer"] = None
+            attrs["_tenant_id"] = supplier.tenant_id
+            duplicate_qs = PartyOpeningBalance.objects.filter(
+                tenant_id__in=tenant_ids,
+                party_type=PartyOpeningBalance.PartyType.SUPPLIER,
+                supplier__business_name=supplier.business_name,
+                deleted_at__isnull=True,
+            )
+            if self.instance:
+                duplicate_qs = duplicate_qs.exclude(pk=self.instance.pk)
+            if duplicate_qs.exists():
+                raise serializers.ValidationError(
+                    {
+                        "supplier_id": (
+                            "This supplier already has an opening balance "
+                            "across your company dimensions."
+                        )
+                    }
+                )
+        else:
+            raise serializers.ValidationError({"party_type": "Party type must be CUSTOMER or SUPPLIER."})
+
+        return attrs
+
+    @transaction.atomic
+    def create(self, validated_data):
+        tenant_id = validated_data.pop("_tenant_id", None)
+        validated_data.pop("customer_id", None)
+        validated_data.pop("supplier_id", None)
+        opening_balance = PartyOpeningBalance.objects.create(
+            tenant_id=tenant_id,
+            **validated_data,
+        )
+        sync_party_opening_balance_journal(opening_balance)
+        return opening_balance
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        validated_data.pop("customer_id", None)
+        validated_data.pop("supplier_id", None)
+        validated_data.pop("_tenant_id", None)
+        validated_data.pop("party_type", None)
+        allowed_fields = {"date", "amount", "remarks"}
+        for field, value in validated_data.items():
+            if field in allowed_fields:
+                setattr(instance, field, value)
+        instance.save()
+        sync_party_opening_balance_journal(instance)
         return instance

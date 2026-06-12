@@ -1,11 +1,13 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import accountService from "../../api/services/accountService";
+import dimensionService from "../../api/services/dimensionService";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import FormInput from "../../components/ui/FormInput";
 import ConfirmModal from "../../components/ui/ConfirmModal";
 import StateView from "../../components/StateView";
 import { useToast } from "../../context/ToastContext";
+import { useAuth } from "../../context/AuthContext";
 
 const selectClassName =
   "w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100";
@@ -16,7 +18,7 @@ const defaultBankForm = {
 };
 
 const defaultAccountForm = {
-  bankId: "",
+  bankCode: "",
   name: "",
   isActive: true,
 };
@@ -54,6 +56,9 @@ const extractErrorMessage = (error) => {
 
 const OpeningAccountsTab = () => {
   const toast = useToast();
+  const { tenantId } = useAuth();
+  const [dimensions, setDimensions] = useState([]);
+  const [accountDimension, setAccountDimension] = useState(tenantId || "");
   const [loading, setLoading] = useState(false);
   const [savingBank, setSavingBank] = useState(false);
   const [savingAccount, setSavingAccount] = useState(false);
@@ -62,9 +67,16 @@ const OpeningAccountsTab = () => {
   const [banks, setBanks] = useState([]);
   const [bankForm, setBankForm] = useState(defaultBankForm);
   const [accountForm, setAccountForm] = useState(defaultAccountForm);
-  const [editingBankId, setEditingBankId] = useState("");
+  const [editingBankCode, setEditingBankCode] = useState("");
   const [editingAccountId, setEditingAccountId] = useState("");
   const [deleteTarget, setDeleteTarget] = useState(null);
+
+  const accountDimensionName = useMemo(
+    () =>
+      dimensions.find((item) => item.code === accountDimension)?.name ||
+      accountDimension,
+    [accountDimension, dimensions],
+  );
 
   const openingAccounts = useMemo(
     () =>
@@ -74,11 +86,27 @@ const OpeningAccountsTab = () => {
     [banks],
   );
 
-  const loadOpeningAccounts = async () => {
+  const resetBankForm = useCallback(() => {
+    setEditingBankCode("");
+    setBankForm(defaultBankForm);
+  }, []);
+
+  const resetAccountForm = useCallback(() => {
+    setEditingAccountId("");
+    setAccountForm(defaultAccountForm);
+  }, []);
+
+  const loadOpeningAccounts = useCallback(async () => {
+    if (!accountDimension) {
+      setBanks([]);
+      setRootAccount(null);
+      return;
+    }
+
     setLoading(true);
     setError("");
     try {
-      const response = await accountService.listOpeningAccounts();
+      const response = await accountService.listOpeningAccounts(accountDimension);
       setRootAccount(response.root || null);
       setBanks(response.banks || []);
     } catch (loadError) {
@@ -88,21 +116,34 @@ const OpeningAccountsTab = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [accountDimension]);
+
+  useEffect(() => {
+    dimensionService
+      .list()
+      .then((items) => {
+        const nextDimensions = items || [];
+        setDimensions(nextDimensions);
+        setAccountDimension((current) => {
+          if (current && nextDimensions.some((item) => item.code === current)) {
+            return current;
+          }
+          if (tenantId && nextDimensions.some((item) => item.code === tenantId)) {
+            return tenantId;
+          }
+          return nextDimensions[0]?.code || "";
+        });
+      })
+      .catch(() => setDimensions([]));
+  }, [tenantId]);
 
   useEffect(() => {
     loadOpeningAccounts();
-  }, []);
+  }, [loadOpeningAccounts]);
 
-  const resetBankForm = () => {
-    setEditingBankId("");
-    setBankForm(defaultBankForm);
-  };
-
-  const resetAccountForm = () => {
-    setEditingAccountId("");
-    setAccountForm(defaultAccountForm);
-  };
+  useEffect(() => {
+    resetAccountForm();
+  }, [accountDimension, resetAccountForm]);
 
   const handleBankSubmit = async (event) => {
     event.preventDefault();
@@ -114,18 +155,10 @@ const OpeningAccountsTab = () => {
 
     setSavingBank(true);
     try {
-      if (editingBankId) {
-        const bank = banks.find((item) => item.id === editingBankId);
-        await accountService.update(editingBankId, {
-          code: bank.code,
+      if (editingBankCode) {
+        await accountService.updateOpeningBank(editingBankCode, {
           name: bankForm.name.trim(),
-          parent: bank.parent,
-          account_group: bank.account_group,
-          account_type: bank.account_type,
-          account_nature: bank.account_nature,
-          is_postable: bank.is_postable,
           is_active: bankForm.isActive,
-          sort_order: bank.sort_order,
         });
         toast.success("Opening bank updated");
       } else {
@@ -148,7 +181,11 @@ const OpeningAccountsTab = () => {
   const handleAccountSubmit = async (event) => {
     event.preventDefault();
 
-    if (!accountForm.bankId) {
+    if (!accountDimension) {
+      toast.error("Please select a dimension for the account");
+      return;
+    }
+    if (!accountForm.bankCode) {
       toast.error("Please select a bank");
       return;
     }
@@ -176,11 +213,14 @@ const OpeningAccountsTab = () => {
         });
         toast.success("Opening account updated");
       } else {
-        await accountService.createOpeningAccountItem({
-          bank_id: accountForm.bankId,
-          name: accountForm.name.trim(),
-          is_active: accountForm.isActive,
-        });
+        await accountService.createOpeningAccountItem(
+          {
+            bank_code: accountForm.bankCode,
+            name: accountForm.name.trim(),
+            is_active: accountForm.isActive,
+          },
+          accountDimension,
+        );
         toast.success("Opening account created");
       }
 
@@ -199,8 +239,13 @@ const OpeningAccountsTab = () => {
     }
 
     try {
-      await accountService.remove(deleteTarget.id);
-      toast.success(`${deleteTarget.label} deleted`);
+      if (deleteTarget.type === "bank") {
+        await accountService.deleteOpeningBank(deleteTarget.code);
+        toast.success("Opening bank deleted");
+      } else {
+        await accountService.remove(deleteTarget.id);
+        toast.success(`${deleteTarget.label} deleted`);
+      }
       await loadOpeningAccounts();
     } catch (deleteError) {
       toast.error(extractErrorMessage(deleteError));
@@ -214,7 +259,11 @@ const OpeningAccountsTab = () => {
       <ConfirmModal
         open={Boolean(deleteTarget)}
         title="Delete Opening Account"
-        description="This will soft delete the selected opening bank or account if it has no active references. Continue?"
+        description={
+          deleteTarget?.type === "bank"
+            ? "This will remove the bank from all dimensions if it has no opening accounts. Continue?"
+            : "This will soft delete the selected opening account if it has no active references. Continue?"
+        }
         onCancel={() => setDeleteTarget(null)}
         onConfirm={handleDelete}
       />
@@ -226,12 +275,9 @@ const OpeningAccountsTab = () => {
               Opening Accounts
             </h2>
             <p className="mt-2 max-w-3xl text-sm text-slate-500">
-              Banks are created under{" "}
-              <span className="font-semibold text-slate-700">1110</span>. A bank
-              gets a 4-digit code like{" "}
-              <span className="font-semibold text-slate-700">1111</span>, and
-              each postable account inside that bank gets a 5-digit code like
-              <span className="font-semibold text-slate-700"> 11111</span>.
+              Each bank (e.g. Bank Alfalah = 1111) is created once and shared.
+              Opening accounts get dimension-specific codes: first dimension
+              11111, second 11112; Soneri (1112) uses 11121 and 11122, and so on.
             </p>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
@@ -249,13 +295,13 @@ const OpeningAccountsTab = () => {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h3 className="text-lg font-bold text-slate-900">
-                  {editingBankId ? "Edit Opening Bank" : "Create Opening Bank"}
+                  {editingBankCode ? "Edit Opening Bank" : "Create Opening Bank"}
                 </h3>
                 <p className="text-sm text-slate-500">
-                  Creates the next 4-digit bank code under 1110.
+                  Creates one shared bank under 1110 in every dimension.
                 </p>
               </div>
-              {editingBankId ? (
+              {editingBankCode ? (
                 <Button
                   type="button"
                   variant="secondary"
@@ -296,7 +342,7 @@ const OpeningAccountsTab = () => {
             <Button type="submit" disabled={savingBank}>
               {savingBank
                 ? "Saving..."
-                : editingBankId
+                : editingBankCode
                   ? "Update Bank"
                   : "Create Bank"}
             </Button>
@@ -313,7 +359,8 @@ const OpeningAccountsTab = () => {
                     : "Create Opening Account"}
                 </h3>
                 <p className="text-sm text-slate-500">
-                  Creates the next 5-digit account inside the selected bank.
+                  Adds a postable account under the selected bank for one
+                  dimension only.
                 </p>
               </div>
               {editingAccountId ? (
@@ -328,22 +375,40 @@ const OpeningAccountsTab = () => {
             </div>
 
             <div className="space-y-2">
+              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Dimension <span className="text-rose-500">*</span>
+              </label>
+              <select
+                className={selectClassName}
+                value={accountDimension}
+                onChange={(event) => setAccountDimension(event.target.value)}
+                disabled={Boolean(editingAccountId)}
+              >
+                {dimensions.map((dimension) => (
+                  <option key={dimension.code} value={dimension.code}>
+                    {dimension.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-2">
               <label className="block text-sm font-semibold text-slate-700">
                 Bank
               </label>
               <select
                 className={selectClassName}
-                value={accountForm.bankId}
+                value={accountForm.bankCode}
                 onChange={(event) =>
                   setAccountForm((current) => ({
                     ...current,
-                    bankId: event.target.value,
+                    bankCode: event.target.value,
                   }))
                 }
               >
                 <option value="">Select bank</option>
                 {banks.map((bank) => (
-                  <option key={bank.id} value={bank.id}>
+                  <option key={bank.code} value={bank.code}>
                     {bank.code} - {bank.name}
                   </option>
                 ))}
@@ -377,7 +442,7 @@ const OpeningAccountsTab = () => {
               Active opening account
             </label>
 
-            <Button type="submit" disabled={savingAccount}>
+            <Button type="submit" disabled={savingAccount || !accountDimension}>
               {savingAccount
                 ? "Saving..."
                 : editingAccountId
@@ -392,9 +457,30 @@ const OpeningAccountsTab = () => {
         loading={loading}
         error={error}
         isEmpty={!loading && !error && banks.length === 0}
-        emptyMessage="No opening banks found"
+        emptyMessage="No opening banks found yet"
       >
         <Card className="overflow-hidden p-0">
+          <div className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50/80 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-sm font-semibold text-slate-700">
+              Shared banks with {accountDimensionName} accounts
+            </div>
+            <div className="min-w-[220px] space-y-1">
+              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                View accounts for
+              </label>
+              <select
+                className={selectClassName}
+                value={accountDimension}
+                onChange={(event) => setAccountDimension(event.target.value)}
+              >
+                {dimensions.map((dimension) => (
+                  <option key={dimension.code} value={dimension.code}>
+                    {dimension.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1000px] text-sm">
               <thead className="bg-[linear-gradient(180deg,#edf4ff,#e1ebff)] text-left">
@@ -413,18 +499,15 @@ const OpeningAccountsTab = () => {
               </thead>
               <tbody>
                 {banks.map((bank) => (
-                  <Fragment key={bank.id}>
-                    <tr
-                      key={bank.id}
-                      className="border-t border-slate-100 bg-slate-50/70"
-                    >
+                  <Fragment key={bank.code}>
+                    <tr className="border-t border-slate-100 bg-slate-50/70">
                       <td className="px-5 py-4 font-semibold text-slate-900">
                         {bank.code}
                       </td>
                       <td className="px-5 py-4 font-semibold text-slate-800">
                         {bank.name}
                       </td>
-                      <td className="px-5 py-4 text-slate-600">Bank Header</td>
+                      <td className="px-5 py-4 text-slate-600">Bank (shared)</td>
                       <td className="px-5 py-4 text-slate-600">
                         {bank.is_postable ? "Yes" : "No"}
                       </td>
@@ -436,7 +519,7 @@ const OpeningAccountsTab = () => {
                           type="button"
                           className="mr-3 font-semibold text-blue-600 transition hover:text-blue-800"
                           onClick={() => {
-                            setEditingBankId(bank.id);
+                            setEditingBankCode(bank.code);
                             setBankForm({
                               name: bank.name,
                               isActive: bank.is_active,
@@ -450,7 +533,8 @@ const OpeningAccountsTab = () => {
                           className="font-semibold text-rose-600 transition hover:text-rose-800"
                           onClick={() =>
                             setDeleteTarget({
-                              id: bank.id,
+                              type: "bank",
+                              code: bank.code,
                               label: "Opening bank",
                             })
                           }
@@ -471,7 +555,7 @@ const OpeningAccountsTab = () => {
                           <span className="pl-6">{account.name}</span>
                         </td>
                         <td className="px-5 py-4 text-slate-600">
-                          {bank.name}
+                          {accountDimensionName} account
                         </td>
                         <td className="px-5 py-4 text-slate-600">
                           {account.is_postable ? "Yes" : "No"}
@@ -486,7 +570,7 @@ const OpeningAccountsTab = () => {
                             onClick={() => {
                               setEditingAccountId(account.id);
                               setAccountForm({
-                                bankId: bank.id,
+                                bankCode: bank.code,
                                 name: account.name,
                                 isActive: account.is_active,
                               });
@@ -499,6 +583,7 @@ const OpeningAccountsTab = () => {
                             className="font-semibold text-rose-600 transition hover:text-rose-800"
                             onClick={() =>
                               setDeleteTarget({
+                                type: "account",
                                 id: account.id,
                                 label: "Opening account",
                               })

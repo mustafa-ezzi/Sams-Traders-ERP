@@ -1,3 +1,4 @@
+from collections import defaultdict
 from datetime import date
 from datetime import timedelta
 from decimal import Decimal
@@ -36,7 +37,7 @@ from purchase.services import get_purchase_invoice_financials
 from sales.models import SalesBankReceipt, SalesInvoice, SalesInvoiceLine, SalesReturn, SalesReturnLine
 from sales.services import get_sales_invoice_financials
 
-from common.tenancy import get_request_tenant_filter, get_request_tenant_ids
+from common.tenancy import get_request_tenant_filter, get_request_tenant_ids, get_shared_tenant_ids
 from .serializers import AccountSerializer, DimensionSerializer, ExpenseSerializer, LoginSerializer
 from .serializers import (
     AdminInquirySerializer,
@@ -240,16 +241,22 @@ class AccountViewSet(ModelViewSet):
 
         return queryset
 
+    @staticmethod
+    def _is_opening_bank_header(account):
+        return (
+            account.level == 4
+            and account.parent is not None
+            and account.parent.code == "1110"
+        )
+
     def _dedupe_shared_display_accounts(self, accounts):
         deduped = []
-        seen = set()
+        seen_codes = set()
 
         for account in accounts:
-            if account.level <= self.SHARED_DISPLAY_LEVEL:
-                key = (account.level, account.code)
-                if key in seen:
-                    continue
-                seen.add(key)
+            if account.code in seen_codes:
+                continue
+            seen_codes.add(account.code)
             deduped.append(account)
 
         return deduped
@@ -263,16 +270,33 @@ class AccountViewSet(ModelViewSet):
         return Response(serializer.data)
 
     def perform_create(self, serializer):
-        serializer.save(tenant_id=self.request.tenant_id)
+        serializer.save()
 
     def perform_update(self, serializer):
         serializer.save()
+
+    def _is_dimension_specific_opening_account(self, account):
+        return (
+            account.is_postable
+            and account.parent is not None
+            and self._is_opening_bank_header(account.parent)
+        )
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
 
         try:
-            instance.delete()
+            if self._is_dimension_specific_opening_account(instance):
+                instance.delete()
+            else:
+                tenant_ids = self._get_shared_tenant_ids()
+                copies = Account.objects.filter(
+                    tenant_id__in=tenant_ids,
+                    code=instance.code,
+                    deleted_at__isnull=True,
+                )
+                for copy in copies:
+                    copy.delete()
         except DjangoValidationError as exc:
             return Response(
                 {"detail": exc.messages[0]},
@@ -335,8 +359,6 @@ class AccountViewSet(ModelViewSet):
         return bank_root
 
     def _get_next_opening_bank_code(self, bank_root):
-        # Bank codes under 1110 are shared across every dimension the user
-        # owns so that we never duplicate a code (e.g. SAMS=1111 and AM=1111).
         tenant_ids = self._get_shared_tenant_ids() or [bank_root.tenant_id]
         existing_codes = (
             Account.objects.filter(
@@ -359,130 +381,369 @@ class AccountViewSet(ModelViewSet):
             )
         return f"{bank_root.code[:-1]}{next_suffix}"
 
-    def _get_next_opening_account_code(self, bank_account):
-        tenant_ids = self._get_shared_tenant_ids() or [bank_account.tenant_id]
-        existing_codes = (
-            Account.objects.filter(
-                tenant_id__in=tenant_ids,
-                parent__code=bank_account.code,
-                parent__level=bank_account.level,
-                deleted_at__isnull=True,
-            )
-            .values_list("code", flat=True)
-        )
-        suffixes = [
-            int(code[-1])
-            for code in existing_codes
-            if len(code) == 5 and code.startswith(bank_account.code) and code[-1].isdigit()
-        ]
-        next_suffix = (max(suffixes) if suffixes else 0) + 1
-        if next_suffix > 9:
+    def _get_dimension_account_suffix(self, tenant_id):
+        tenant_ids = sorted(self._get_shared_tenant_ids() or [tenant_id])
+        try:
+            return tenant_ids.index(tenant_id) + 1
+        except ValueError:
+            return 1
+
+    def _get_opening_account_code_for_dimension(self, bank_account, tenant_id):
+        suffix = self._get_dimension_account_suffix(tenant_id)
+        if suffix > 9:
             raise ValidationError(
                 {
                     "detail": (
-                        f"Only 9 opening accounts can be created under bank {bank_account.code} "
-                        "with the current code format."
+                        f"Only 9 dimensions are supported for opening accounts under "
+                        f"bank {bank_account.code}."
                     )
                 }
             )
-        return f"{bank_account.code}{next_suffix}"
 
-    def _serialize_opening_banks(self, tenant_id):
-        bank_root = self._get_opening_bank_root(tenant_id)
-        # Opening banks are sourced from every dimension the user owns so the
-        # COA appears as one unified tree, irrespective of where each bank was
-        # originally created.
-        tenant_ids = self._get_shared_tenant_ids() or [tenant_id]
-        queryset = (
+        code = f"{bank_account.code}{suffix}"
+        existing = Account.objects.filter(
+            tenant_id=tenant_id,
+            code=code,
+            deleted_at__isnull=True,
+        ).first()
+        if existing:
+            if existing.parent_id == bank_account.id:
+                return code
+            raise ValidationError(
+                {"code": f"Code {code} already exists in this dimension."}
+            )
+        return code
+
+    def _serialize_opening_banks(self, account_tenant_id):
+        tenant_ids = self._get_shared_tenant_ids() or [account_tenant_id]
+        bank_root = self._get_opening_bank_root(account_tenant_id)
+        context = self.get_serializer_context()
+
+        all_banks = (
             Account.objects.filter(
                 tenant_id__in=tenant_ids,
                 parent__code=bank_root.code,
                 parent__level=bank_root.level,
                 deleted_at__isnull=True,
             )
-            .prefetch_related("children")
             .order_by("code", "tenant_id", "created_at")
         )
-        deduped = []
-        seen_codes = set()
-        for bank in queryset:
-            if bank.code in seen_codes:
-                continue
-            seen_codes.add(bank.code)
-            deduped.append(bank)
+
+        banks_by_code = {}
+        dimension_banks = {}
+        for bank in all_banks:
+            banks_by_code.setdefault(bank.code, bank)
+            if bank.tenant_id == account_tenant_id:
+                dimension_banks[bank.code] = bank
+
+        parent_ids = [bank.id for bank in dimension_banks.values()]
+        children_by_parent_id = defaultdict(list)
+        if parent_ids:
+            for child in Account.objects.filter(
+                tenant_id=account_tenant_id,
+                parent_id__in=parent_ids,
+                deleted_at__isnull=True,
+            ).order_by("code", "created_at"):
+                children_by_parent_id[str(child.parent_id)].append(child)
+
+        banks_payload = []
+        for code in sorted(banks_by_code.keys()):
+            display_bank = dimension_banks.get(code) or banks_by_code[code]
+            bank_data = AccountSerializer(display_bank, context=context).data
+            bank_data["children"] = AccountSerializer(
+                children_by_parent_id.get(str(display_bank.id), []),
+                many=True,
+                context=context,
+            ).data
+            banks_payload.append(bank_data)
+
         return {
             "root": {
                 "id": str(bank_root.id),
                 "code": bank_root.code,
                 "name": bank_root.name,
             },
-            "banks": AccountSerializer(
-                deduped, many=True, context=self.get_serializer_context()
-            ).data,
+            "banks": banks_payload,
+            "account_dimension": account_tenant_id,
         }
 
     @action(detail=False, methods=["get"], url_path="opening-accounts")
     def opening_accounts(self, request):
         return Response({"data": self._serialize_opening_banks(request.tenant_id)})
 
+    def _resolve_opening_bank_code(self, bank_root, tenant_id, requested_code=""):
+        requested_code = (requested_code or "").strip()
+        if requested_code:
+            if len(requested_code) != 4 or not requested_code.startswith("111"):
+                raise ValidationError({"code": "Bank code must be a 4-digit code under 1110."})
+            if Account.objects.filter(
+                tenant_id=tenant_id,
+                code=requested_code,
+                deleted_at__isnull=True,
+            ).exists():
+                raise ValidationError(
+                    {"code": f"Code {requested_code} already exists in this dimension."}
+                )
+            return requested_code
+        return self._get_next_opening_bank_code(bank_root)
+
+    def _resolve_opening_account_code(self, bank_account, requested_code=""):
+        requested_code = (requested_code or "").strip()
+        if requested_code:
+            if len(requested_code) != 5 or not requested_code.startswith(bank_account.code):
+                raise ValidationError(
+                    {"code": "Account code must be a 5-digit code under the selected bank."}
+                )
+            if Account.objects.filter(
+                tenant_id=bank_account.tenant_id,
+                code=requested_code,
+                deleted_at__isnull=True,
+            ).exists():
+                raise ValidationError(
+                    {"code": f"Code {requested_code} already exists in this dimension."}
+                )
+            return requested_code
+        return self._get_opening_account_code_for_dimension(
+            bank_account,
+            bank_account.tenant_id,
+        )
+
+    def _opening_bank_headers(self, bank_code):
+        tenant_ids = self._get_shared_tenant_ids()
+        return Account.objects.filter(
+            tenant_id__in=tenant_ids,
+            code=bank_code,
+            parent__code=self.OPENING_BANK_ROOT_CODE,
+            deleted_at__isnull=True,
+        )
+
     @action(detail=False, methods=["post"], url_path="opening-banks")
     def create_opening_bank(self, request):
-        tenant_id = request.tenant_id
+        tenant_ids = self._get_shared_tenant_ids() or [request.tenant_id]
         bank_name = (request.data.get("name") or "").strip()
 
         if not bank_name:
             raise ValidationError({"name": "Bank name is required."})
 
-        bank_root = self._get_opening_bank_root(tenant_id)
-        code = self._get_next_opening_bank_code(bank_root)
-
-        account = Account.objects.create(
-            tenant_id=tenant_id,
-            code=code,
-            name=bank_name,
-            parent=bank_root,
-            account_group=Account.AccountGroup.ASSET,
-            account_type=Account.AccountType.BANK,
-            account_nature=Account.AccountNature.DEBIT,
-            is_postable=False,
-            is_active=bool(request.data.get("is_active", True)),
-            sort_order=int(request.data.get("sort_order", 0) or 0),
+        reference_tenant = tenant_ids[0]
+        bank_root = self._get_opening_bank_root(reference_tenant)
+        code = self._resolve_opening_bank_code(
+            bank_root,
+            reference_tenant,
+            request.data.get("code"),
         )
+
+        is_active = bool(request.data.get("is_active", True))
+        sort_order = int(request.data.get("sort_order", 0) or 0)
+        primary_account = None
+
+        for dim_tenant in tenant_ids:
+            dim_root = self._get_opening_bank_root(dim_tenant)
+            existing_bank = Account.objects.filter(
+                tenant_id=dim_tenant,
+                code=code,
+                parent__code=self.OPENING_BANK_ROOT_CODE,
+                deleted_at__isnull=True,
+            ).first()
+            if existing_bank:
+                continue
+
+            orphan_bank = Account.objects.filter(
+                tenant_id=dim_tenant,
+                code=code,
+                parent__isnull=True,
+                deleted_at__isnull=True,
+            ).first()
+            if orphan_bank:
+                orphan_bank.parent = dim_root
+                orphan_bank.name = bank_name
+                orphan_bank.account_group = Account.AccountGroup.ASSET
+                orphan_bank.account_type = Account.AccountType.BANK
+                orphan_bank.account_nature = Account.AccountNature.DEBIT
+                orphan_bank.is_postable = False
+                orphan_bank.is_active = is_active
+                orphan_bank.sort_order = sort_order
+                orphan_bank.save()
+                if primary_account is None:
+                    primary_account = orphan_bank
+                continue
+
+            account = Account.objects.create(
+                tenant_id=dim_tenant,
+                code=code,
+                name=bank_name,
+                parent=dim_root,
+                account_group=Account.AccountGroup.ASSET,
+                account_type=Account.AccountType.BANK,
+                account_nature=Account.AccountNature.DEBIT,
+                is_postable=False,
+                is_active=is_active,
+                sort_order=sort_order,
+            )
+            if primary_account is None:
+                primary_account = account
+
+        if primary_account is None:
+            raise ValidationError(
+                {"code": f"Bank {code} already exists in all dimensions."}
+            )
 
         return Response(
             {
-                "data": AccountSerializer(account, context=self.get_serializer_context()).data,
-                "message": "Opening bank created successfully.",
+                "data": AccountSerializer(
+                    primary_account, context=self.get_serializer_context()
+                ).data,
+                "message": "Opening bank created across all dimensions.",
             },
             status=status.HTTP_201_CREATED,
         )
 
+    @action(
+        detail=False,
+        methods=["put"],
+        url_path=r"opening-banks/(?P<bank_code>[^/.]+)",
+    )
+    def update_opening_bank(self, request, bank_code=None):
+        bank_name = (request.data.get("name") or "").strip()
+        if not bank_name:
+            raise ValidationError({"name": "Bank name is required."})
+
+        banks = self._opening_bank_headers(bank_code)
+        if not banks.exists():
+            raise ValidationError({"code": "Opening bank was not found."})
+
+        is_active = bool(request.data.get("is_active", True))
+        sort_order = int(request.data.get("sort_order", 0) or 0)
+        banks.update(
+            name=bank_name,
+            is_active=is_active,
+            sort_order=sort_order,
+            updated_at=now(),
+        )
+
+        display_bank = banks.order_by("tenant_id").first()
+        return Response(
+            {
+                "data": AccountSerializer(
+                    display_bank, context=self.get_serializer_context()
+                ).data,
+                "message": "Opening bank updated across all dimensions.",
+            }
+        )
+
+    @action(
+        detail=False,
+        methods=["delete"],
+        url_path=r"opening-banks/(?P<bank_code>[^/.]+)",
+    )
+    def delete_opening_bank(self, request, bank_code=None):
+        banks = self._opening_bank_headers(bank_code)
+        if not banks.exists():
+            raise ValidationError({"code": "Opening bank was not found."})
+
+        bank_ids = list(banks.values_list("id", flat=True))
+        if Account.objects.filter(
+            parent_id__in=bank_ids,
+            deleted_at__isnull=True,
+        ).exists():
+            raise ValidationError(
+                {"detail": "Cannot delete a bank that still has opening accounts."}
+            )
+
+        for bank in banks:
+            try:
+                bank.delete()
+            except DjangoValidationError as exc:
+                return Response(
+                    {"detail": exc.messages[0]},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    def _resolve_opening_bank_account(self, request, bank_id, bank_code):
+        tenant_id = request.tenant_id
+        bank_code = (bank_code or "").strip()
+
+        if bank_code:
+            bank_account = Account.objects.filter(
+                tenant_id=tenant_id,
+                code=bank_code,
+                parent__code=self.OPENING_BANK_ROOT_CODE,
+                deleted_at__isnull=True,
+            ).first()
+            if not bank_account:
+                tenant_ids = self._get_shared_tenant_ids() or [tenant_id]
+                source_bank = (
+                    Account.objects.filter(
+                        tenant_id__in=tenant_ids,
+                        code=bank_code,
+                        parent__code=self.OPENING_BANK_ROOT_CODE,
+                        deleted_at__isnull=True,
+                    )
+                    .exclude(tenant_id=tenant_id)
+                    .order_by("tenant_id")
+                    .first()
+                )
+                if source_bank:
+                    dim_root = self._get_opening_bank_root(tenant_id)
+                    bank_account = Account.objects.create(
+                        tenant_id=tenant_id,
+                        code=source_bank.code,
+                        name=source_bank.name,
+                        parent=dim_root,
+                        account_group=source_bank.account_group,
+                        account_type=source_bank.account_type,
+                        account_nature=source_bank.account_nature,
+                        is_postable=False,
+                        is_active=source_bank.is_active,
+                        sort_order=source_bank.sort_order,
+                    )
+                else:
+                    raise ValidationError(
+                        {
+                            "bank_code": (
+                                f"Bank {bank_code} was not found. "
+                                "Create the bank first."
+                            )
+                        }
+                    )
+            return bank_account
+
+        if bank_id:
+            try:
+                shared_bank = Account.objects.get(
+                    id=bank_id,
+                    parent__code=self.OPENING_BANK_ROOT_CODE,
+                    deleted_at__isnull=True,
+                )
+            except Account.DoesNotExist:
+                raise ValidationError({"bank_id": "Selected bank was not found under 1110."})
+            return self._resolve_opening_bank_account(
+                request,
+                None,
+                shared_bank.code,
+            )
+
+        raise ValidationError({"bank_code": "Bank selection is required."})
+
     @action(detail=False, methods=["post"], url_path="opening-account-items")
     def create_opening_account_item(self, request):
-        tenant_id = request.tenant_id
-        bank_id = request.data.get("bank_id")
         account_name = (request.data.get("name") or "").strip()
 
-        if not bank_id:
-            raise ValidationError({"bank_id": "Bank selection is required."})
         if not account_name:
             raise ValidationError({"name": "Opening account name is required."})
 
-        # The selected bank can live in any of the user's dimensions because
-        # the chart of accounts is shared. The new account inherits the
-        # bank's tenant so the parent/child invariant still holds.
-        tenant_ids = self._get_shared_tenant_ids() or [tenant_id]
-        try:
-            bank_account = Account.objects.get(
-                id=bank_id,
-                tenant_id__in=tenant_ids,
-                parent__code=self.OPENING_BANK_ROOT_CODE,
-                deleted_at__isnull=True,
-            )
-        except Account.DoesNotExist:
-            raise ValidationError({"bank_id": "Selected bank was not found under 1110."})
+        bank_account = self._resolve_opening_bank_account(
+            request,
+            request.data.get("bank_id"),
+            request.data.get("bank_code"),
+        )
 
-        code = self._get_next_opening_account_code(bank_account)
+        code = self._resolve_opening_account_code(
+            bank_account,
+            request.data.get("code"),
+        )
 
         account = Account.objects.create(
             tenant_id=bank_account.tenant_id,
@@ -567,11 +828,11 @@ class AccountViewSet(ModelViewSet):
             try:
                 supplier = Supplier.objects.get(
                     id=ledger_id,
-                    tenant_id=tenant_id,
+                    tenant_id__in=user_tenant_ids,
                     deleted_at__isnull=True,
                 )
             except Supplier.DoesNotExist:
-                raise ValidationError({"ledger_id": "Supplier not found for this tenant."})
+                raise ValidationError({"ledger_id": "Supplier not found."})
             if not supplier.account_id or supplier.account.code not in descendant_codes:
                 raise ValidationError({"ledger_id": "Selected supplier does not belong to the chosen head."})
             ledger_key = {"business_name": supplier.business_name}
@@ -580,11 +841,11 @@ class AccountViewSet(ModelViewSet):
             try:
                 customer = Customer.objects.get(
                     id=ledger_id,
-                    tenant_id=tenant_id,
+                    tenant_id__in=user_tenant_ids,
                     deleted_at__isnull=True,
                 )
             except Customer.DoesNotExist:
-                raise ValidationError({"ledger_id": "Customer not found for this tenant."})
+                raise ValidationError({"ledger_id": "Customer not found."})
             if not customer.account_id or customer.account.code not in descendant_codes:
                 raise ValidationError({"ledger_id": "Selected customer does not belong to the chosen head."})
             ledger_key = {"business_name": customer.business_name}
@@ -1100,9 +1361,13 @@ class AccountViewSet(ModelViewSet):
         }
         return Response({"data": payload})
 
+    def _get_party_ledger_tenant_ids(self, request):
+        """Party ledger spans every dimension the user owns (not the view filter)."""
+        return get_shared_tenant_ids(request)
+
     @action(detail=False, methods=["get"], url_path="party-ledger-report")
     def party_ledger_report(self, request):
-        tenant_id = request.user.tenant_id
+        company_tenant_ids = self._get_party_ledger_tenant_ids(request)
         partner_type = request.query_params.get("partner_type")
         partner_id = request.query_params.get("partner_id")
         from_date_raw = request.query_params.get("from_date")
@@ -1117,13 +1382,14 @@ class AccountViewSet(ModelViewSet):
             try:
                 partner = Customer.objects.get(
                     id=partner_id,
-                    tenant_id=tenant_id,
+                    tenant_id__in=company_tenant_ids,
                     deleted_at__isnull=True,
                 )
             except Customer.DoesNotExist:
-                raise ValidationError({"partner_id": "Customer not found for this tenant."})
+                raise ValidationError({"partner_id": "Customer not found."})
             people_type = "Customer"
             summary_labels = [
+                "Opening Balance",
                 "Sales Invoice",
                 "Sales Return",
                 "Bank Receipt",
@@ -1133,13 +1399,14 @@ class AccountViewSet(ModelViewSet):
             try:
                 partner = Supplier.objects.get(
                     id=partner_id,
-                    tenant_id=tenant_id,
+                    tenant_id__in=company_tenant_ids,
                     deleted_at__isnull=True,
                 )
             except Supplier.DoesNotExist:
-                raise ValidationError({"partner_id": "Supplier not found for this tenant."})
+                raise ValidationError({"partner_id": "Supplier not found."})
             people_type = "Supplier"
             summary_labels = [
+                "Opening Balance",
                 "Purchase Invoice",
                 "Purchase Return",
                 "Bank Payment",
@@ -1162,7 +1429,7 @@ class AccountViewSet(ModelViewSet):
             raise ValidationError({"date": "From date cannot be greater than to date."})
 
         queryset = JournalLine.objects.filter(
-            tenant_id=tenant_id,
+            tenant_id__in=company_tenant_ids,
             deleted_at__isnull=True,
             journal_entry__deleted_at__isnull=True,
             people_type=people_type,
@@ -1207,13 +1474,15 @@ class AccountViewSet(ModelViewSet):
 
         if partner_type == "customer":
             grand_total = self._money(
-                document_totals.get("Sales Invoice", Decimal("0.00"))
+                document_totals.get("Opening Balance", Decimal("0.00"))
+                + document_totals.get("Sales Invoice", Decimal("0.00"))
                 - document_totals.get("Sales Return", Decimal("0.00"))
                 - document_totals.get("Bank Receipt", Decimal("0.00"))
             )
         else:
             grand_total = self._money(
-                document_totals.get("Purchase Invoice", Decimal("0.00"))
+                document_totals.get("Opening Balance", Decimal("0.00"))
+                + document_totals.get("Purchase Invoice", Decimal("0.00"))
                 - document_totals.get("Purchase Return", Decimal("0.00"))
                 - document_totals.get("Bank Payment", Decimal("0.00"))
             )

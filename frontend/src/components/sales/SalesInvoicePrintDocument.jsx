@@ -1,3 +1,4 @@
+import CompanyPrintFooter from "../print/CompanyPrintFooter";
 import { amountInWords, formatMoney } from "../../utils/format";
 
 const num = (value) => {
@@ -11,7 +12,7 @@ export const DEFAULT_TERMS = [
   "All disputes are subject to local jurisdiction only.",
 ];
 
-const SalesInvoicePrintDocument = ({ invoice, formatDisplayDate }) => {
+const SalesInvoicePrintDocument = ({ invoice, formatDisplayDate, company }) => {
   if (!invoice) return null;
 
   const invNo = invoice.invoice_number ?? invoice.invoiceNumber ?? "—";
@@ -53,13 +54,8 @@ const SalesInvoicePrintDocument = ({ invoice, formatDisplayDate }) => {
           />
           <div>
             <p className="text-lg font-black tracking-tight text-slate-900">
-              Sams Enterprise
+              {companyName}
             </p>
-            {dimension ? (
-              <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
-                {dimension}
-              </p>
-            ) : null}
           </div>
         </div>
         <div className="text-right">
@@ -209,11 +205,7 @@ const SalesInvoicePrintDocument = ({ invoice, formatDisplayDate }) => {
         </div>
       </div>
 
-      <footer className="border-t border-slate-100 bg-slate-50 px-8 py-5 text-center">
-        <p className="text-sm font-semibold text-slate-700">
-          Thank you for your business!
-        </p>
-      </footer>
+      <CompanyPrintFooter company={company} />
     </article>
   );
 };

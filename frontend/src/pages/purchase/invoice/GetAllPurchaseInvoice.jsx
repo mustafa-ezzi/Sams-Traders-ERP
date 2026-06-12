@@ -8,8 +8,11 @@ import StateView from "../../../components/StateView";
 import purchaseInvoiceService from "../../../api/services/purchaseInvoiceService";
 import { formatDecimal } from "../../../utils/format";
 import { useToast } from "../../../context/ToastContext";
+import { useAuth } from "../../../context/AuthContext";
 import IconButton from "../../../components/ui/IconButton";
+import DimensionPrintButtons from "../../../components/ui/DimensionPrintButtons";
 import PurchaseInvoicePrintModal from "../../../components/purchase/PurchaseInvoicePrintModal";
+import { dimensionToCompanyConfig } from "../../../utils/dimensionCompany";
 import {
   extractErrorMessage,
   formatDisplayDate,
@@ -22,6 +25,11 @@ import {
 const GetAllPurchaseInvoice = () => {
   const navigate = useNavigate();
   const toast = useToast();
+  const { allowedDimensions } = useAuth();
+  const printDimensions = useMemo(
+    () => (allowedDimensions || []).filter((dimension) => dimension.is_active),
+    [allowedDimensions],
+  );
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -68,14 +76,19 @@ const GetAllPurchaseInvoice = () => {
     printCancelledRef.current = true;
     setPrintModal(null);
   };
-  const handleOpenPrint = async (recordId) => {
+  const handleOpenPrint = async (recordId, dimensionCode) => {
     printCancelledRef.current = false;
     setPrintLoadingId(recordId);
-    setPrintModal({ loading: true, invoice: null });
+    const dimension = printDimensions.find((item) => item.code === dimensionCode);
+    setPrintModal({ loading: true, invoice: null, company: dimensionToCompanyConfig(dimension) });
     try {
       const inv = await purchaseInvoiceService.getById(recordId);
       if (printCancelledRef.current) return;
-      setPrintModal({ loading: false, invoice: inv });
+      setPrintModal({
+        loading: false,
+        invoice: inv,
+        company: dimensionToCompanyConfig(dimension),
+      });
     } catch (printError) {
       if (!printCancelledRef.current) {
         toast.error(
@@ -236,11 +249,11 @@ const GetAllPurchaseInvoice = () => {
                           {" "}
                           <div className="inline-flex justify-end gap-1">
                             {" "}
-                            <IconButton
-                              icon="print"
-                              label="Print receipt"
+                            <DimensionPrintButtons
+                              dimensions={printDimensions}
+                              recordId={record.id}
                               disabled={printLoadingId === record.id}
-                              onClick={() => handleOpenPrint(record.id)}
+                              onPrint={handleOpenPrint}
                             />{" "}
                             <IconButton
                               icon="edit"
@@ -300,6 +313,7 @@ const GetAllPurchaseInvoice = () => {
       {printModal ? (
         <PurchaseInvoicePrintModal
           invoice={printModal.invoice}
+          company={printModal.company}
           loading={printModal.loading}
           onClose={handleClosePrint}
           formatDisplayDate={formatDisplayDate}

@@ -349,8 +349,8 @@ const navigation = [
     dot: "bg-slate-400",
     items: [
       {
-        to: "/users/dimensions",
-        label: "Dimensions",
+        to: "/users/configure",
+        label: "Configure",
         icon: icons.users,
         perm: "dimensions",
       },
@@ -372,7 +372,8 @@ const pageTitles = {
   "/products/create": { title: "Create Product", eyebrow: "Inventory" },
   "/accounts": { title: "Chart of Accounts", eyebrow: "Accounting" },
   "/accounts/create": { title: "Create Account", eyebrow: "Accounting" },
-  "/users/dimensions": { title: "Dimensions", eyebrow: "Users" },
+  "/users/configure": { title: "Company Configure", eyebrow: "Users" },
+  "/users/configure/create": { title: "Create Company", eyebrow: "Users" },
   "/reports/balance-sheet": { title: "Balance Sheet", eyebrow: "Reports" },
   "/reports/ledger": { title: "Ledger Reports", eyebrow: "Reports" },
   "/reports/party-ledger": { title: "Party Ledger", eyebrow: "Reports" },
@@ -700,7 +701,7 @@ const Layout = () => {
       <div className="mt-3 px-2">
         {isOnboardingOnly ? (
           <NavLink
-            to="/users/dimensions"
+            to="/users/configure/create"
             onClick={() => setMobileOpen(false)}
             className={({ isActive }) =>
               `flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] font-semibold transition-all ${
@@ -713,7 +714,7 @@ const Layout = () => {
             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-500/20 text-blue-300">
               {icons.users}
             </span>
-            Create First Dimension
+            Create Company
           </NavLink>
         ) : showDashboardNav ? (
           <NavLink

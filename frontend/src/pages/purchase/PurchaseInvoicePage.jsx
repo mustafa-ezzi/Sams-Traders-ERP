@@ -10,8 +10,11 @@ import warehouseService from "../../api/services/warehouseService";
 import purchaseInvoiceService from "../../api/services/purchaseInvoiceService";
 import { formatDecimal } from "../../utils/format";
 import { useToast } from "../../context/ToastContext";
+import { useAuth } from "../../context/AuthContext";
 import IconButton from "../../components/ui/IconButton";
+import DimensionPrintButtons from "../../components/ui/DimensionPrintButtons";
 import PurchaseInvoicePrintModal from "../../components/purchase/PurchaseInvoicePrintModal";
+import { dimensionToCompanyConfig } from "../../utils/dimensionCompany";
 
 const selectClassName =
   "w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100";
@@ -270,6 +273,11 @@ const PaymentDetailsEye = ({ record }) => {
 
 const PurchaseInvoicePage = () => {
   const toast = useToast();
+  const { allowedDimensions } = useAuth();
+  const printDimensions = useMemo(
+    () => (allowedDimensions || []).filter((dimension) => dimension.is_active),
+    [allowedDimensions],
+  );
   const [records, setRecords] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
@@ -291,7 +299,7 @@ const PurchaseInvoicePage = () => {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [deleteId, setDeleteId] = useState("");
-  const [printInvoice, setPrintInvoice] = useState(null);
+  const [printModal, setPrintModal] = useState(null);
   const [printLoadingId, setPrintLoadingId] = useState("");
   const limit = 10;
 
@@ -984,11 +992,11 @@ const PurchaseInvoicePage = () => {
 
                         <td className="px-4 py-3 text-right">
                           <div className="inline-flex justify-end gap-1">
-                            <IconButton
-                              icon="print"
-                              label="Print receipt"
+                            <DimensionPrintButtons
+                              dimensions={printDimensions}
+                              recordId={record.id}
                               disabled={printLoadingId === record.id}
-                              onClick={() => handleOpenPrint(record.id)}
+                              onPrint={handleOpenPrint}
                             />
                             <IconButton
                               icon="edit"
@@ -1042,10 +1050,11 @@ const PurchaseInvoicePage = () => {
         onConfirm={confirmDelete}
       />
 
-      {printInvoice ? (
+      {printModal ? (
         <PurchaseInvoicePrintModal
-          invoice={printInvoice}
-          onClose={() => setPrintInvoice(null)}
+          invoice={printModal.invoice}
+          company={printModal.company}
+          onClose={() => setPrintModal(null)}
           formatDisplayDate={formatDisplayDate}
         />
       ) : null}

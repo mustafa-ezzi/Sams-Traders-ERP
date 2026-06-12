@@ -28,7 +28,8 @@ import SalesmenPage from "./pages/sales/SalesmenPage";
 import AccountsPage from "./pages/accounts/AccountsPage";
 import AccountFormPage from "./pages/accounts/AccountFormPage";
 import ExpensePage from "./pages/accounts/ExpensePage";
-import DimensionsPage from "./pages/users/DimensionsPage";
+import ConfigurePage from "./pages/users/ConfigurePage";
+import DimensionFormPage from "./pages/users/DimensionFormPage";
 import CoaCompletenessReportPage from "./pages/reports/CoaCompletenessReportPage";
 import BalanceSheetPage from "./pages/reports/BalanceSheetPage";
 import LedgerReportsPage from "./pages/reports/LedgerReportsPage";
@@ -49,8 +50,11 @@ const Protected = ({ children }) => {
   }
 
   const needsOnboarding = !isTenantChild && !allowedDimensions?.length;
-  if (needsOnboarding && location.pathname !== "/users/dimensions") {
-    return <Navigate to="/users/dimensions" replace />;
+  if (
+    needsOnboarding &&
+    !location.pathname.startsWith("/users/configure")
+  ) {
+    return <Navigate to="/users/configure/create" replace />;
   }
 
   if (
@@ -125,7 +129,13 @@ const App = () => (
         <Route path="accounts" element={<AccountsPage />} />
         <Route path="accounts/create" element={<AccountFormPage />} />
         <Route path="accounts/:id/edit" element={<AccountFormPage />} />
-        <Route path="users/dimensions" element={<DimensionsPage />} />
+        <Route path="users/configure" element={<ConfigurePage />} />
+        <Route path="users/configure/create" element={<DimensionFormPage />} />
+        <Route path="users/configure/:id/edit" element={<DimensionFormPage />} />
+        <Route
+          path="users/dimensions"
+          element={<Navigate to="/users/configure" replace />}
+        />
         <Route path="expenses" element={<ExpensePage />} />
         <Route path="reports/ledger" element={<LedgerReportsPage />} />
         <Route path="reports/party-ledger" element={<PartyLedgerReportsPage />} />

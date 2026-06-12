@@ -1,16 +1,21 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import Button from "../../components/ui/Button";
 import StateView from "../../components/StateView";
 import SalesInvoicePrintDocument from "../../components/sales/SalesInvoicePrintDocument";
 import salesInvoiceService from "../../api/services/salesInvoiceService";
+import dimensionService from "../../api/services/dimensionService";
 import { salesInvoicePdfTitle } from "../../utils/format";
+import { dimensionToCompanyConfig } from "../../utils/dimensionCompany";
 import { formatDisplayDate } from "./invoice/salesInvoiceShared";
 
 const SalesInvoicePrintPage = () => {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const dimensionCode = searchParams.get("dimension") || "";
   const [invoice, setInvoice] = useState(null);
+  const [company, setCompany] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -35,6 +40,29 @@ const SalesInvoicePrintPage = () => {
       cancelled = true;
     };
   }, [id]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    dimensionService
+      .list()
+      .then((items) => {
+        if (cancelled) return;
+        const dimensions = items || [];
+        const selected =
+          dimensions.find((item) => item.code === dimensionCode) ||
+          dimensions.find((item) => item.is_active) ||
+          dimensions[0];
+        setCompany(dimensionToCompanyConfig(selected));
+      })
+      .catch(() => {
+        if (!cancelled) setCompany(dimensionToCompanyConfig(null));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dimensionCode]);
 
   useEffect(() => {
     if (!invoice) return undefined;
@@ -137,6 +165,7 @@ const SalesInvoicePrintPage = () => {
             <SalesInvoicePrintDocument
               invoice={invoice}
               formatDisplayDate={formatDisplayDate}
+              company={company}
             />
           </StateView>
         </div>

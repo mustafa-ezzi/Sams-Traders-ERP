@@ -9,7 +9,10 @@ import FormInput from "./ui/FormInput";
 import ConfirmModal from "./ui/ConfirmModal";
 import IconButton from "./ui/IconButton";
 import { useToast } from "../context/ToastContext";
+import partyOpeningBalanceService from "../api/services/partyOpeningBalanceService";
+import PartyOpeningBalanceModal from "./parties/PartyOpeningBalanceModal";
 import { formatAccountLabel } from "../utils/accounts";
+import { formatMoney } from "../utils/format";
 
 const schema = z.object({
   name: z.string().trim().min(1, "Name is required"),
@@ -41,6 +44,7 @@ const selectClassName =
 const PartyCrudPage = ({
   title,
   service,
+  partyType = "",
   accountLabel = "Control Account",
   accountOptions = [],
   loadingAccounts = false,
@@ -54,6 +58,11 @@ const PartyCrudPage = ({
   const [total, setTotal] = useState(0);
   const [limit] = useState(10);
   const [deleteId, setDeleteId] = useState("");
+  const [openingBalances, setOpeningBalances] = useState([]);
+  const [openingLoading, setOpeningLoading] = useState(false);
+  const [openingModalOpen, setOpeningModalOpen] = useState(false);
+  const [editingOpening, setEditingOpening] = useState(null);
+  const [deleteOpeningId, setDeleteOpeningId] = useState("");
   const toast = useToast();
 
   const singularTitle = title.endsWith("s") ? title.slice(0, -1) : title;
@@ -92,8 +101,26 @@ const PartyCrudPage = ({
     }
   };
 
+  const loadOpeningBalances = async () => {
+    if (!partyType) return;
+    setOpeningLoading(true);
+    try {
+      const response = await partyOpeningBalanceService.list({
+        page: 1,
+        limit: 100,
+        partyType,
+      });
+      setOpeningBalances(response.data || []);
+    } catch {
+      toast.error("Failed to load opening accounts");
+    } finally {
+      setOpeningLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadRecords(1, "");
+    loadOpeningBalances();
   }, []);
 
   const resetForm = () => {
@@ -160,8 +187,63 @@ const PartyCrudPage = ({
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
 
+  const handleSaveOpening = async (payload, editingId) => {
+    if (editingId) {
+      const response = await partyOpeningBalanceService.update(editingId, {
+        date: payload.date,
+        amount: payload.amount,
+        remarks: payload.remarks,
+        party_type: payload.party_type,
+      });
+      toast.success(response.message || "Opening account updated");
+    } else {
+      const response = await partyOpeningBalanceService.create(payload);
+      toast.success(response.message || "Opening account saved");
+    }
+    await loadOpeningBalances();
+  };
+
+  const handleDeleteOpening = async (id) => {
+    try {
+      const response = await partyOpeningBalanceService.remove(id);
+      toast.success(response.message || "Opening account deleted");
+      await loadOpeningBalances();
+    } catch (deleteError) {
+      toast.error(
+        deleteError?.response?.data?.message || "Failed to delete opening account",
+      );
+    }
+  };
+
   return (
     <section className="space-y-6">
+      {partyType ? (
+        <PartyOpeningBalanceModal
+          open={openingModalOpen}
+          onClose={() => {
+            setOpeningModalOpen(false);
+            setEditingOpening(null);
+          }}
+          partyType={partyType}
+          partyLabel={singularTitle}
+          partyOptions={records}
+          editingRecord={editingOpening}
+          onSubmit={handleSaveOpening}
+        />
+      ) : null}
+
+      <ConfirmModal
+        open={Boolean(deleteOpeningId)}
+        title="Delete Opening Account"
+        description="This removes the opening balance and reverses its journal entry."
+        onCancel={() => setDeleteOpeningId("")}
+        onConfirm={async () => {
+          const selectedId = deleteOpeningId;
+          setDeleteOpeningId("");
+          await handleDeleteOpening(selectedId);
+        }}
+      />
+
       <ConfirmModal
         open={Boolean(deleteId)}
         title={`Delete ${singularTitle}`}
@@ -191,6 +273,17 @@ const PartyCrudPage = ({
             <Button variant="secondary" onClick={() => loadRecords(1, search)}>
               Search
             </Button>
+            {partyType ? (
+              <Button
+                type="button"
+                onClick={() => {
+                  setEditingOpening(null);
+                  setOpeningModalOpen(true);
+                }}
+              >
+                Opening Account
+              </Button>
+            ) : null}
           </div>
         </div>
       </Card>
@@ -375,6 +468,90 @@ const PartyCrudPage = ({
           </div>
         </Card>
       </StateView>
+
+      {partyType ? (
+        <Card className="space-y-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-lg font-bold text-slate-900">Opening Accounts</h3>
+              <p className="text-sm text-slate-500">
+                Posted to receivable/payable control accounts for party ledger reports.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setEditingOpening(null);
+                setOpeningModalOpen(true);
+              }}
+            >
+              Add Opening Account
+            </Button>
+          </div>
+
+          <div className="overflow-x-auto rounded-2xl border border-slate-200">
+            <table className="w-full min-w-[640px] text-sm">
+              <thead className="bg-slate-50 text-left">
+                <tr>
+                  <th className="px-4 py-3 font-bold text-slate-700">{singularTitle}</th>
+                  <th className="px-4 py-3 font-bold text-slate-700">Date</th>
+                  <th className="px-4 py-3 font-bold text-slate-700 text-right">Amount</th>
+                  <th className="px-4 py-3 font-bold text-slate-700">Remarks</th>
+                  <th className="px-4 py-3 text-right font-bold text-slate-700">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {openingLoading ? (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-6 text-center text-slate-500">
+                      Loading opening accounts...
+                    </td>
+                  </tr>
+                ) : openingBalances.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-6 text-center text-slate-500">
+                      No opening accounts yet.
+                    </td>
+                  </tr>
+                ) : (
+                  openingBalances.map((record) => (
+                    <tr key={record.id} className="border-t border-slate-100">
+                      <td className="px-4 py-3 font-medium text-slate-800">
+                        {record.partyName}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">{record.date}</td>
+                      <td className="px-4 py-3 text-right font-semibold tabular-nums text-slate-900">
+                        {formatMoney(record.amount)}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {record.remarks || "—"}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex justify-end gap-2">
+                          <IconButton
+                            icon="edit"
+                            label="Edit opening account"
+                            onClick={() => {
+                              setEditingOpening(record);
+                              setOpeningModalOpen(true);
+                            }}
+                          />
+                          <IconButton
+                            icon="delete"
+                            label="Delete opening account"
+                            onClick={() => setDeleteOpeningId(record.id)}
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      ) : null}
     </section>
   );
 };

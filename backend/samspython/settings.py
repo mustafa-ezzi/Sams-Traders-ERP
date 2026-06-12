@@ -1,3 +1,4 @@
+
 """
 Django settings for backend project.
 
@@ -10,6 +11,7 @@ For the full list of settings and their values, see
 https:
 """
 
+import os
 from pathlib import Path
 from datetime import timedelta
 
@@ -50,10 +52,29 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:5173",
-    "http://localhost:5175",
+    "http://127.0.0.1:5173",
     "http://localhost:5174",
+    "http://127.0.0.1:5174",
+    "http://localhost:5175",
+    "http://127.0.0.1:5175",
+    "http://localhost:4173",
+    "http://127.0.0.1:4173",
     "https://backend-production-d32f.up.railway.app",
     "https://coreledger.up.railway.app",
+]
+
+_extra_cors_origins = os.environ.get("CORS_ALLOWED_ORIGINS", "")
+if _extra_cors_origins:
+    CORS_ALLOWED_ORIGINS.extend(
+        origin.strip()
+        for origin in _extra_cors_origins.split(",")
+        if origin.strip()
+    )
+
+# Local Vite/React dev servers (localhost and 127.0.0.1, any port).
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^http://localhost:\d+$",
+    r"^http://127\.0\.0\.1:\d+$",
 ]
 
 CORS_ALLOW_CREDENTIALS = True

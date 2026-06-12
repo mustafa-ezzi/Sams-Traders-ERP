@@ -38,6 +38,7 @@ const CustomersPage = () => {
     <PartyCrudPage
       title="Customers"
       service={customerService}
+      partyType="customer"
       accountLabel="Receivable Account"
       accountOptions={accountOptions}
       loadingAccounts={loadingAccounts}

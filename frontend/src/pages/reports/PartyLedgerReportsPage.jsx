@@ -3,11 +3,11 @@ import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import FormInput from "../../components/ui/FormInput";
 import StateView from "../../components/StateView";
-import axiosInstance from "../../api/axiosInstance";
 import accountService from "../../api/services/accountService";
 import { formatDecimal } from "../../utils/format";
 import { useToast } from "../../context/ToastContext";
-import { useAuth } from "../../context/AuthContext";
+import customerService from "../../api/services/customerService";
+import supplierService from "../../api/services/supplierService";
 
 const selectClassName =
   "w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100";
@@ -45,7 +45,6 @@ const extractErrorMessage = (error) => {
 
 const PartyLedgerReportsPage = () => {
   const toast = useToast();
-  const { tenantId } = useAuth();
   const [customers, setCustomers] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [loadingSetup, setLoadingSetup] = useState(false);
@@ -91,16 +90,12 @@ const PartyLedgerReportsPage = () => {
       setError("");
       try {
         const [customerResponse, supplierResponse] = await Promise.all([
-          axiosInstance.get("/inventory/customers", {
-            headers: { "x-tenant-id": tenantId },
-          }),
-          axiosInstance.get("/inventory/suppliers", {
-            headers: { "x-tenant-id": tenantId },
-          }),
+          customerService.list({ page: 1, limit: 500, search: "" }),
+          supplierService.list({ page: 1, limit: 500, search: "" }),
         ]);
 
-        setCustomers(customerResponse.data?.data || []);
-        setSuppliers(supplierResponse.data?.data || []);
+        setCustomers(customerResponse.data || []);
+        setSuppliers(supplierResponse.data || []);
       } catch (loadError) {
         setError(
           extractErrorMessage(loadError) || "Failed to load partner filters",
@@ -111,7 +106,7 @@ const PartyLedgerReportsPage = () => {
     };
 
     loadParties();
-  }, [tenantId]);
+  }, []);
 
   useEffect(() => {
     setForm((current) => ({
@@ -140,15 +135,12 @@ const PartyLedgerReportsPage = () => {
 
     setLoadingReport(true);
     try {
-      const response = await accountService.getPartyLedgerReport(
-        {
-          partner_type: form.partnerType,
-          partner_id: form.partnerId,
-          from_date: form.fromDate,
-          to_date: form.toDate,
-        },
-        tenantId,
-      );
+      const response = await accountService.getPartyLedgerReport({
+        partner_type: form.partnerType,
+        partner_id: form.partnerId,
+        from_date: form.fromDate,
+        to_date: form.toDate,
+      });
       setReport(response);
     } catch (reportError) {
       const message =

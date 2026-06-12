@@ -1,6 +1,7 @@
 import { useCallback, useEffect } from "react";
 import { createPortal } from "react-dom";
 import Button from "../ui/Button";
+import CompanyPrintFooter from "../print/CompanyPrintFooter";
 import { formatDecimal } from "../../utils/format";
 
 const num = (value) => {
@@ -56,10 +57,7 @@ const PurchaseInvoicePrintModal = ({ invoice, onClose, formatDisplayDate }) => {
   const net = num(invoice.net_amount ?? invoice.netAmount);
   const paid = num(invoice.paid_amount ?? invoice.paidAmount);
   const balance = num(invoice.balance_amount ?? invoice.balanceAmount);
-  const dimension =
-    typeof localStorage !== "undefined"
-      ? localStorage.getItem("tenantId") || ""
-      : "";
+  const companyName = company?.name || "Company";
   const lines = invoice.lines || [];
 
   return createPortal(
@@ -315,15 +313,7 @@ const PurchaseInvoicePrintModal = ({ invoice, onClose, formatDisplayDate }) => {
               </div>
             </div>
 
-            <footer className="border-t border-slate-100 bg-slate-50 px-8 py-5 text-center text-xs text-slate-500">
-              <p className="font-medium text-slate-600">
-                Thank you for your business.
-              </p>
-              <p className="mt-1">
-                This document was generated from CoreLedger and is valid without
-                signature unless otherwise required.
-              </p>
-            </footer>
+            <CompanyPrintFooter company={company} />
           </article>
         </div>
       </div>

@@ -7,11 +7,14 @@ from decimal import Decimal
 from django.db.models import DecimalField, ExpressionWrapper, F, Prefetch, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from rest_framework.decorators import action
+from accounts.journal import delete_journal_entry
+from accounts.models import JournalEntry
 from .models import (
     Brand,
     Category,
     Customer,
     OpeningStock,
+    PartyOpeningBalance,
     ProductStock,
     Production,
     Product,
@@ -30,6 +33,7 @@ from .serializers import (
     get_category_account_for_tenant,
     OpeningStockSerializer,
     PartySerializer,
+    PartyOpeningBalanceSerializer,
     SalesmanSerializer,
     ProductionSerializer,
     ProductSerializer,
@@ -1033,6 +1037,43 @@ class CustomerViewSet(SharedPartyViewSet):
 
 class SupplierViewSet(SharedPartyViewSet):
     party_model = Supplier
+
+
+class PartyOpeningBalanceViewSet(SharedMasterViewSet):
+    queryset = PartyOpeningBalance.objects.select_related("customer", "supplier")
+    serializer_class = PartyOpeningBalanceSerializer
+    search_fields = ["customer__business_name", "supplier__business_name", "remarks"]
+
+    def perform_create(self, serializer):
+        serializer.save()
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        party_type = self.request.query_params.get("party_type")
+        if party_type == "customer":
+            queryset = queryset.filter(party_type=PartyOpeningBalance.PartyType.CUSTOMER)
+        elif party_type == "supplier":
+            queryset = queryset.filter(party_type=PartyOpeningBalance.PartyType.SUPPLIER)
+        return queryset
+
+    def perform_destroy(self, instance):
+        delete_journal_entry(
+            JournalEntry.SourceType.PARTY_OPENING_BALANCE,
+            instance.id,
+            instance.tenant_id,
+        )
+        instance.deleted_at = now()
+        instance.save()
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        self.perform_destroy(instance)
+        return Response(
+            {
+                "data": None,
+                "message": "Opening balance deleted successfully",
+            }
+        )
 
 
 class SalesmanViewSet(SharedMasterViewSet):

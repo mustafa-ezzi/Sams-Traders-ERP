@@ -38,6 +38,10 @@ class Dimension(models.Model):
     code = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=255, unique=True)
     sku_code = models.CharField(max_length=20, blank=True, default="")
+    address = models.TextField(blank=True, default="")
+    phone_number = models.CharField(max_length=50, blank=True, default="")
+    ntn_number = models.CharField(max_length=50, blank=True, default="")
+    email = models.EmailField(blank=True, default="")
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -248,6 +252,7 @@ class JournalEntry(BaseModel):
         SALES_RETURN = "SALES_RETURN", "Sales Return"
         SALES_BANK_RECEIPT = "SALES_BANK_RECEIPT", "Sales Bank Receipt"
         EXPENSE = "EXPENSE", "Expense"
+        PARTY_OPENING_BALANCE = "PARTY_OPENING_BALANCE", "Party Opening Balance"
 
     date = models.DateField()
     reference = models.CharField(max_length=50)

@@ -18,11 +18,27 @@ class AdminLoginSerializer(serializers.Serializer):
 class DimensionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Dimension
-        fields = ["id", "code", "name", "sku_code", "is_active", "created_at", "updated_at"]
+        fields = [
+            "id",
+            "code",
+            "name",
+            "sku_code",
+            "address",
+            "phone_number",
+            "ntn_number",
+            "email",
+            "is_active",
+            "created_at",
+            "updated_at",
+        ]
         read_only_fields = ["id", "created_at", "updated_at"]
         extra_kwargs = {
             "code": {"required": False, "allow_blank": True},
             "sku_code": {"required": False, "allow_blank": True},
+            "address": {"required": False, "allow_blank": True},
+            "phone_number": {"required": False, "allow_blank": True},
+            "ntn_number": {"required": False, "allow_blank": True},
+            "email": {"required": False, "allow_blank": True},
         }
 
     def validate(self, attrs):
@@ -54,12 +70,20 @@ class DimensionSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"sku_code": "SKU code is required."})
         if len(sku_code) > 20:
             raise serializers.ValidationError({"sku_code": "SKU code cannot exceed 20 characters."})
-        if not sku_code.replace("_", "").replace("-", "").isalnum():
+        if sku_code and not sku_code.replace("_", "").replace("-", "").isalnum():
             raise serializers.ValidationError({"sku_code": "SKU code can contain letters, numbers, hyphens, and underscores only."})
 
         attrs["name"] = name
         attrs["code"] = code
         attrs["sku_code"] = sku_code
+        attrs["address"] = str(attrs.get("address") or getattr(self.instance, "address", "") or "").strip()
+        attrs["phone_number"] = str(
+            attrs.get("phone_number") or getattr(self.instance, "phone_number", "") or ""
+        ).strip()
+        attrs["ntn_number"] = str(
+            attrs.get("ntn_number") or getattr(self.instance, "ntn_number", "") or ""
+        ).strip()
+        attrs["email"] = str(attrs.get("email") or getattr(self.instance, "email", "") or "").strip()
         return attrs
 
 
@@ -340,22 +364,41 @@ class AccountSerializer(serializers.ModelSerializer):
             tenant_ids.append(tenant_id)
         return tenant_ids
 
+    @staticmethod
+    def _is_opening_bank_header(account):
+        return (
+            account.level == 4
+            and account.parent is not None
+            and account.parent.code == "1110"
+        )
+
     def _dedupe_shared_display_accounts(self, accounts):
         deduped = []
-        seen = set()
+        seen_codes = set()
 
         for account in accounts:
-            if account.level <= self.SHARED_DISPLAY_LEVEL:
-                key = (account.level, account.code)
-                if key in seen:
-                    continue
-                seen.add(key)
+            if account.code in seen_codes:
+                continue
+            seen_codes.add(account.code)
             deduped.append(account)
 
         return deduped
 
     def get_children(self, obj):
-        if obj.level <= self.SHARED_DISPLAY_LEVEL:
+        if self._is_opening_bank_header(obj):
+            bank_parents = Account.objects.filter(
+                tenant_id__in=self._get_display_tenant_ids(),
+                code=obj.code,
+                parent__code="1110",
+                deleted_at__isnull=True,
+            )
+            accounts = list(
+                Account.objects.filter(
+                    parent__in=bank_parents,
+                    deleted_at__isnull=True,
+                ).order_by("code", "tenant_id", "created_at")
+            )
+        else:
             parent_queryset = Account.objects.filter(
                 tenant_id__in=self._get_display_tenant_ids(),
                 code=obj.code,
@@ -367,12 +410,6 @@ class AccountSerializer(serializers.ModelSerializer):
                 deleted_at__isnull=True,
             ).order_by("code", "tenant_id", "created_at")
             accounts = self._dedupe_shared_display_accounts(list(queryset))
-        else:
-            accounts = list(
-                obj.children.filter(deleted_at__isnull=True).order_by(
-                    "code", "tenant_id", "created_at"
-                )
-            )
 
         return AccountSerializer(accounts, many=True, context=self.context).data
 
@@ -453,26 +490,120 @@ class AccountSerializer(serializers.ModelSerializer):
 
         return value
 
+    def _resolve_parent_for_dimension(self, parent, tenant_id):
+        if not parent:
+            return None
+        return (
+            Account.objects.filter(
+                tenant_id=tenant_id,
+                code=parent.code,
+                deleted_at__isnull=True,
+            )
+            .order_by("level", "code")
+            .first()
+        )
+
+    def _is_dimension_specific_opening_account_parent(self, parent, is_postable):
+        return bool(parent and self._is_opening_bank_header(parent) and is_postable)
+
     def create(self, validated_data):
         request = self.context["request"]
         parent = validated_data.get("parent")
-        # COA is shared across the user's dimensions. New leaves inherit
-        # the parent's tenant so the Account.parent.tenant_id == self.tenant_id
-        # invariant holds even when the user is currently viewing another
-        # dimension. Top-level roots fall back to the request tenant.
-        if parent:
-            validated_data["tenant_id"] = parent.tenant_id
-        else:
-            validated_data["tenant_id"] = request.tenant_id
+        tenant_ids = sorted(
+            get_user_active_dimension_codes(request.user) or [request.tenant_id]
+        )
+        is_postable = validated_data.get("is_postable", False)
+
         self._ensure_parent_is_header(parent)
-        return super().create(validated_data)
+
+        if self._is_dimension_specific_opening_account_parent(parent, is_postable):
+            dim_parent = self._resolve_parent_for_dimension(parent, request.tenant_id) or parent
+            validated_data["parent"] = dim_parent
+            validated_data["tenant_id"] = dim_parent.tenant_id
+            return super().create(validated_data)
+
+        if parent:
+            validated_data.setdefault(
+                "code",
+                self._generate_next_child_code(parent, tenant_ids[0]),
+            )
+
+        code = validated_data["code"]
+        primary = None
+
+        for dim_tenant in tenant_ids:
+            if Account.objects.filter(
+                tenant_id=dim_tenant,
+                code=code,
+                deleted_at__isnull=True,
+            ).exists():
+                existing = Account.objects.filter(
+                    tenant_id=dim_tenant,
+                    code=code,
+                    deleted_at__isnull=True,
+                ).first()
+                if primary is None:
+                    primary = existing
+                continue
+
+            dim_parent = self._resolve_parent_for_dimension(parent, dim_tenant)
+            if parent and not dim_parent:
+                continue
+
+            payload = dict(validated_data)
+            payload["tenant_id"] = dim_tenant
+            payload["parent"] = dim_parent
+            instance = Account.objects.create(**payload)
+            if primary is None:
+                primary = instance
+
+        if primary is None:
+            raise serializers.ValidationError(
+                {"code": f"Account {code} already exists in all dimensions."}
+            )
+        return primary
 
     def update(self, instance, validated_data):
         if "code" in validated_data and instance.code != validated_data["code"]:
             raise serializers.ValidationError("Account code cannot be changed.")
 
-        self._ensure_parent_is_header(validated_data.get("parent"))
-        return super().update(instance, validated_data)
+        request = self.context["request"]
+        parent = validated_data.get("parent", instance.parent)
+        self._ensure_parent_is_header(parent)
+
+        if self._is_dimension_specific_opening_account_parent(
+            instance.parent,
+            instance.is_postable,
+        ):
+            return super().update(instance, validated_data)
+
+        tenant_ids = get_user_active_dimension_codes(request.user) or [instance.tenant_id]
+        siblings = Account.objects.filter(
+            tenant_id__in=tenant_ids,
+            code=instance.code,
+            deleted_at__isnull=True,
+        )
+
+        sync_fields = {
+            key: value
+            for key, value in validated_data.items()
+            if key not in {"parent", "tenant_id", "code"}
+        }
+
+        for sibling in siblings:
+            for field, value in sync_fields.items():
+                setattr(sibling, field, value)
+            if "parent" in validated_data and validated_data["parent"]:
+                dim_parent = self._resolve_parent_for_dimension(
+                    validated_data["parent"],
+                    sibling.tenant_id,
+                )
+                if dim_parent:
+                    sibling.parent = dim_parent
+            sibling.save()
+
+        instance.refresh_from_db()
+        return instance
 
 
 class AccountMiniSerializer(serializers.Serializer):

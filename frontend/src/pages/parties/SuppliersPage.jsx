@@ -39,6 +39,7 @@ const SuppliersPage = () => {
     <PartyCrudPage
       title="Suppliers"
       service={supplierService}
+      partyType="supplier"
       accountLabel="Payable Account"
       accountOptions={accountOptions}
       loadingAccounts={loadingAccounts}
