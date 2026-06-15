@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from accounts.dimensions import build_dimension_code, get_user_active_dimension_codes
-from accounts.models import Account, Dimension, Expense, Inquiry, User
+from accounts.models import Account, Dimension, Expense, Inquiry, User, BankTransfer
 from common.tenancy import get_request_tenant_ids
 
 
@@ -717,6 +717,165 @@ class ExpenseSerializer(serializers.ModelSerializer):
         instance.date = validated_data.get("date", instance.date)
         instance.amount = validated_data.get("amount", instance.amount)
         instance.remarks = validated_data.get("remarks", instance.remarks)
+        instance.save()
+        return instance
+
+
+class BankTransferBankAccountSerializer(serializers.ModelSerializer):
+    dimension_name = serializers.SerializerMethodField()
+    bank_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Account
+        fields = ["id", "code", "name", "tenant_id", "dimension_name", "bank_name"]
+
+    def get_dimension_name(self, obj):
+        names = self.context.get("dimension_names", {})
+        return names.get(obj.tenant_id, obj.tenant_id)
+
+    def get_bank_name(self, obj):
+        return obj.parent.name if obj.parent_id else ""
+
+
+class BankTransferSerializer(serializers.ModelSerializer):
+    from_bank_account = BankTransferBankAccountSerializer(read_only=True)
+    from_bank_account_id = serializers.UUIDField(write_only=True)
+    to_bank_account = BankTransferBankAccountSerializer(read_only=True)
+    to_bank_account_id = serializers.UUIDField(write_only=True)
+
+    class Meta:
+        model = BankTransfer
+        fields = [
+            "id",
+            "transfer_number",
+            "date",
+            "from_bank_account",
+            "from_bank_account_id",
+            "to_bank_account",
+            "to_bank_account_id",
+            "amount",
+            "remarks",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "transfer_number",
+            "created_at",
+            "updated_at",
+        ]
+
+    def _allowed_account_tenant_ids(self):
+        request = self.context["request"]
+        tenant_ids = get_user_active_dimension_codes(request.user)
+        current = getattr(request, "tenant_id", "") or request.user.tenant_id
+        if current and current not in tenant_ids:
+            tenant_ids.append(current)
+        return tenant_ids
+
+    def _get_bank_account(self, value):
+        tenant_ids = self._allowed_account_tenant_ids()
+        try:
+            account = Account.objects.select_related("parent").get(
+                id=value,
+                tenant_id__in=tenant_ids,
+                deleted_at__isnull=True,
+            )
+        except Account.DoesNotExist:
+            raise serializers.ValidationError("Bank account not found")
+
+        if not account.is_active:
+            raise serializers.ValidationError("Selected bank account is inactive")
+        if not account.is_postable:
+            raise serializers.ValidationError("Selected bank account must be postable")
+        if account.account_group != Account.AccountGroup.ASSET:
+            raise serializers.ValidationError("Selected bank account must belong to asset group")
+        if account.account_type != Account.AccountType.BANK:
+            raise serializers.ValidationError("Selected account must have account type BANK")
+        return account
+
+    def validate_from_bank_account_id(self, value):
+        return value
+
+    def validate_to_bank_account_id(self, value):
+        return value
+
+    def validate_amount(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("Amount must be greater than 0")
+        return value
+
+    def validate(self, attrs):
+        from accounts.reporting import get_account_balance
+
+        from_id = attrs.get("from_bank_account_id")
+        to_id = attrs.get("to_bank_account_id")
+        if self.instance:
+            from_id = from_id or self.instance.from_bank_account_id
+            to_id = to_id or self.instance.to_bank_account_id
+
+        if not from_id or not to_id:
+            return attrs
+
+        if str(from_id) == str(to_id):
+            raise serializers.ValidationError(
+                {"to_bank_account_id": "From bank and to bank must be different."}
+            )
+
+        from_bank = self._get_bank_account(from_id)
+        self._get_bank_account(to_id)
+
+        amount = attrs.get("amount", getattr(self.instance, "amount", None))
+        if amount is None:
+            return attrs
+
+        available = get_account_balance(from_bank)
+        if self.instance and self.instance.from_bank_account_id == from_bank.id:
+            available += self.instance.amount
+
+        if amount > available:
+            raise serializers.ValidationError(
+                {
+                    "amount": (
+                        f"Insufficient balance in from bank. Available: {available}, "
+                        f"requested: {amount}."
+                    )
+                }
+            )
+
+        attrs["from_bank_account"] = from_bank
+        attrs["to_bank_account"] = self._get_bank_account(to_id)
+        return attrs
+
+    def _generate_transfer_number(self, tenant_id):
+        count = BankTransfer.objects.filter(tenant_id=tenant_id).count() + 1
+        return f"BT-{count:05d}"
+
+    def create(self, validated_data):
+        from_bank = validated_data.pop("from_bank_account")
+        to_bank = validated_data.pop("to_bank_account")
+        validated_data.pop("from_bank_account_id", None)
+        validated_data.pop("to_bank_account_id", None)
+        return BankTransfer.objects.create(
+            tenant_id=from_bank.tenant_id,
+            transfer_number=self._generate_transfer_number(from_bank.tenant_id),
+            from_bank_account=from_bank,
+            to_bank_account=to_bank,
+            **validated_data,
+        )
+
+    def update(self, instance, validated_data):
+        from_bank = validated_data.pop("from_bank_account", instance.from_bank_account)
+        to_bank = validated_data.pop("to_bank_account", instance.to_bank_account)
+        validated_data.pop("from_bank_account_id", None)
+        validated_data.pop("to_bank_account_id", None)
+
+        instance.from_bank_account = from_bank
+        instance.to_bank_account = to_bank
+        instance.date = validated_data.get("date", instance.date)
+        instance.amount = validated_data.get("amount", instance.amount)
+        instance.remarks = validated_data.get("remarks", instance.remarks)
+        instance.tenant_id = from_bank.tenant_id
         instance.save()
         return instance
 

@@ -14,6 +14,7 @@ TENANT_UI_PERMISSION_KEYS = frozenset(
         "purchase_bank_payments",
         "sales_bank_receipts",
         "expenses",
+        "bank_transfers",
         "reports_balance_sheet",
         "reports_profit_loss",
         "reports_ledger",

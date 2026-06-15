@@ -246,6 +246,12 @@ const navigation = [
         icon: icons.accounts,
         perm: "expenses",
       },
+      {
+        to: "/bank-transfers",
+        label: "Bank Transfers",
+        icon: icons.accounts,
+        perm: "bank_transfers",
+      },
     ],
   },
   {
@@ -392,6 +398,7 @@ const pageTitles = {
   "/purchase-returns": { title: "Purchase Returns", eyebrow: "Purchase" },
   "/purchase-bank-payments": { title: "Bank Payments", eyebrow: "Bank" },
   "/expenses": { title: "Expenses", eyebrow: "Accounting" },
+  "/bank-transfers": { title: "Bank Transfers", eyebrow: "Bank" },
   "/sales-invoices": { title: "Sales Invoices", eyebrow: "Sales" },
   "/sales-returns": { title: "Sales Returns", eyebrow: "Sales" },
   "/sales-bank-receipts": { title: "Bank Receipts", eyebrow: "Bank" },

@@ -378,18 +378,31 @@ const OpeningAccountsTab = () => {
               <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Dimension <span className="text-rose-500">*</span>
               </label>
-              <select
-                className={selectClassName}
-                value={accountDimension}
-                onChange={(event) => setAccountDimension(event.target.value)}
-                disabled={Boolean(editingAccountId)}
-              >
-                {dimensions.map((dimension) => (
-                  <option key={dimension.code} value={dimension.code}>
-                    {dimension.name}
-                  </option>
-                ))}
-              </select>
+              {editingAccountId ? (
+                <div className="space-y-2">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700">
+                    {accountDimensionName}
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Opening accounts belong to one dimension only and cannot be
+                    moved. To add this bank account for another dimension, cancel
+                    edit, switch &quot;View accounts for&quot; above the table,
+                    then create a new account.
+                  </p>
+                </div>
+              ) : (
+                <select
+                  className={selectClassName}
+                  value={accountDimension}
+                  onChange={(event) => setAccountDimension(event.target.value)}
+                >
+                  {dimensions.map((dimension) => (
+                    <option key={dimension.code} value={dimension.code}>
+                      {dimension.name}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -399,6 +412,7 @@ const OpeningAccountsTab = () => {
               <select
                 className={selectClassName}
                 value={accountForm.bankCode}
+                disabled={Boolean(editingAccountId)}
                 onChange={(event) =>
                   setAccountForm((current) => ({
                     ...current,

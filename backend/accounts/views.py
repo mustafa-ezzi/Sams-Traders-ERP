@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
-from django.db.models import Count, Sum
+from django.db.models import Count, Q, Sum
 from django.db.models.functions import Coalesce, TruncMonth
 from django.utils.timezone import now
 from rest_framework import status
@@ -22,6 +22,7 @@ from accounts.reporting import (
     build_balance_sheet_report,
     build_ledger_report,
     build_profit_and_loss_report,
+    get_account_balance,
 )
 from inventory.models import (
     Category,
@@ -42,7 +43,13 @@ from sales.models import SalesBankReceipt, SalesInvoice, SalesInvoiceLine, Sales
 from sales.services import get_sales_invoice_financials
 
 from common.tenancy import get_request_tenant_filter, get_request_tenant_ids, get_shared_tenant_ids
-from .serializers import AccountSerializer, DimensionSerializer, ExpenseSerializer, LoginSerializer
+from .serializers import (
+    AccountSerializer,
+    BankTransferSerializer,
+    DimensionSerializer,
+    ExpenseSerializer,
+    LoginSerializer,
+)
 from .serializers import (
     AdminInquirySerializer,
     AdminLoginSerializer,
@@ -51,8 +58,13 @@ from .serializers import (
     TenantStaffSerializer,
 )
 from .services import admin_login_service, login_service
-from .models import Dimension, Expense, Inquiry, JournalEntry, JournalLine, User
-from .journal import delete_journal_entry, sync_expense_journal
+from .models import BankTransfer, Dimension, Expense, Inquiry, JournalEntry, JournalLine, User
+from .journal import (
+    delete_bank_transfer_journals,
+    delete_journal_entry,
+    sync_bank_transfer_journal,
+    sync_expense_journal,
+)
 from inventory.pagination import StandardResultsSetPagination
 from accounts.authentication import AdminJWTAuthentication
 
@@ -1609,6 +1621,115 @@ class ExpenseViewSet(ModelViewSet):
             )
         return Response(
             {"data": None, "message": "Expense deleted successfully"},
+            status=status.HTTP_200_OK,
+        )
+
+
+class BankTransferViewSet(ModelViewSet):
+    serializer_class = BankTransferSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+
+    def get_queryset(self):
+        tenant_ids = get_shared_tenant_ids(self.request) or [self.request.user.tenant_id]
+        return (
+            BankTransfer.objects.filter(deleted_at__isnull=True)
+            .filter(
+                Q(from_bank_account__tenant_id__in=tenant_ids)
+                | Q(to_bank_account__tenant_id__in=tenant_ids)
+            )
+            .select_related("from_bank_account__parent", "to_bank_account__parent")
+            .order_by("-date", "-created_at")
+        )
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        tenant_ids = get_shared_tenant_ids(self.request) or [self.request.user.tenant_id]
+        context["dimension_names"] = {
+            row.code: row.name for row in Dimension.objects.filter(code__in=tenant_ids)
+        }
+        return context
+
+    def _get_serializable_transfer(self, transfer_id):
+        return self.get_queryset().get(id=transfer_id)
+
+    @action(detail=False, methods=["get"], url_path="bank-accounts")
+    def bank_accounts(self, request):
+        tenant_ids = get_shared_tenant_ids(request) or [request.user.tenant_id]
+        dimension_names = {
+            row.code: row.name for row in Dimension.objects.filter(code__in=tenant_ids)
+        }
+        accounts = (
+            Account.objects.filter(
+                tenant_id__in=tenant_ids,
+                deleted_at__isnull=True,
+                is_active=True,
+                is_postable=True,
+                account_type=Account.AccountType.BANK,
+            )
+            .select_related("parent")
+            .order_by("tenant_id", "code", "name")
+        )
+
+        payload = []
+        for account in accounts:
+            balance = get_account_balance(account)
+            parent_name = account.parent.name if account.parent_id else ""
+            dimension_name = dimension_names.get(account.tenant_id, account.tenant_id)
+            payload.append(
+                {
+                    "id": str(account.id),
+                    "code": account.code,
+                    "name": account.name,
+                    "tenant_id": account.tenant_id,
+                    "dimension_name": dimension_name,
+                    "bank_name": parent_name,
+                    "label": (
+                        f"{dimension_name} - {account.code} - {parent_name} - {account.name}"
+                    ),
+                    "balance": str(balance),
+                }
+            )
+
+        return Response({"data": payload})
+
+    def create(self, request, *args, **kwargs):
+        with transaction.atomic():
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            transfer = serializer.save()
+            sync_bank_transfer_journal(self._get_serializable_transfer(transfer.id))
+        response_serializer = self.get_serializer(self._get_serializable_transfer(transfer.id))
+        return Response(
+            {
+                "data": response_serializer.data,
+                "message": "Bank transfer created successfully",
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop("partial", False)
+        instance = self.get_object()
+        with transaction.atomic():
+            serializer = self.get_serializer(instance, data=request.data, partial=partial)
+            serializer.is_valid(raise_exception=True)
+            transfer = serializer.save()
+            sync_bank_transfer_journal(self._get_serializable_transfer(transfer.id))
+        response_serializer = self.get_serializer(self._get_serializable_transfer(transfer.id))
+        return Response(response_serializer.data)
+
+    def perform_destroy(self, instance):
+        instance.deleted_at = now()
+        instance.save(update_fields=["deleted_at", "updated_at"])
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        with transaction.atomic():
+            self.perform_destroy(instance)
+            delete_bank_transfer_journals(instance)
+        return Response(
+            {"data": None, "message": "Bank transfer deleted successfully"},
             status=status.HTTP_200_OK,
         )
 

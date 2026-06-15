@@ -4,7 +4,7 @@ from django.db import transaction
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
-from accounts.models import Account, Expense, JournalEntry, JournalLine
+from accounts.models import Account, Expense, JournalEntry, JournalLine, BankTransfer
 from inventory.models import PartyOpeningBalance
 from inventory.party_accounts import resolve_opening_equity_account
 from purchase.models import PurchaseBankPayment, PurchaseInvoice, PurchaseReturn
@@ -666,6 +666,125 @@ def sync_expense_journal(expense):
     )
 
 
+def _build_bank_transfer_lines_same_tenant(transfer):
+    amount = quantize_money(transfer.amount)
+    return [
+        {
+            "account": transfer.to_bank_account,
+            "debit": amount,
+            "credit": Decimal("0.00"),
+            "line_description": "Bank Transfer In",
+        },
+        {
+            "account": transfer.from_bank_account,
+            "debit": Decimal("0.00"),
+            "credit": amount,
+            "line_description": "Bank Transfer Out",
+        },
+    ]
+
+
+def _build_bank_transfer_lines_from(transfer):
+    amount = quantize_money(transfer.amount)
+    equity_account = resolve_opening_equity_account(transfer.from_bank_account.tenant_id)
+    to_label = f"{transfer.to_bank_account.code} - {transfer.to_bank_account.name}"
+    return [
+        {
+            "account": equity_account,
+            "debit": amount,
+            "credit": Decimal("0.00"),
+            "line_description": f"Transfer to {to_label}",
+        },
+        {
+            "account": transfer.from_bank_account,
+            "debit": Decimal("0.00"),
+            "credit": amount,
+            "line_description": "Bank Transfer Out",
+        },
+    ]
+
+
+def _build_bank_transfer_lines_to(transfer):
+    amount = quantize_money(transfer.amount)
+    equity_account = resolve_opening_equity_account(transfer.to_bank_account.tenant_id)
+    from_label = f"{transfer.from_bank_account.code} - {transfer.from_bank_account.name}"
+    return [
+        {
+            "account": transfer.to_bank_account,
+            "debit": amount,
+            "credit": Decimal("0.00"),
+            "line_description": "Bank Transfer In",
+        },
+        {
+            "account": equity_account,
+            "debit": Decimal("0.00"),
+            "credit": amount,
+            "line_description": f"Transfer from {from_label}",
+        },
+    ]
+
+
+def delete_bank_transfer_journals(transfer):
+    delete_journal_entry(
+        JournalEntry.SourceType.BANK_TRANSFER,
+        transfer.id,
+        transfer.from_bank_account.tenant_id,
+    )
+    if transfer.from_bank_account.tenant_id != transfer.to_bank_account.tenant_id:
+        delete_journal_entry(
+            JournalEntry.SourceType.BANK_TRANSFER,
+            transfer.id,
+            transfer.to_bank_account.tenant_id,
+        )
+
+
+@transaction.atomic
+def sync_bank_transfer_journal(transfer):
+    transfer = BankTransfer.objects.select_related(
+        "from_bank_account",
+        "to_bank_account",
+    ).get(pk=transfer.pk)
+
+    if transfer.from_bank_account.tenant_id == transfer.to_bank_account.tenant_id:
+        return _upsert_journal_entry(
+            tenant_id=transfer.from_bank_account.tenant_id,
+            source_type=JournalEntry.SourceType.BANK_TRANSFER,
+            source_id=transfer.id,
+            date=transfer.date,
+            reference=transfer.transfer_number,
+            document_type="Bank Transfer",
+            description=transfer.remarks,
+            people_type="",
+            people_name="",
+            lines=_build_bank_transfer_lines_same_tenant(transfer),
+        )
+
+    _upsert_journal_entry(
+        tenant_id=transfer.from_bank_account.tenant_id,
+        source_type=JournalEntry.SourceType.BANK_TRANSFER,
+        source_id=transfer.id,
+        date=transfer.date,
+        reference=transfer.transfer_number,
+        document_type="Bank Transfer",
+        description=transfer.remarks,
+        people_type="",
+        people_name="",
+        lines=_build_bank_transfer_lines_from(transfer),
+    )
+    return _upsert_journal_entry(
+        tenant_id=transfer.to_bank_account.tenant_id,
+        source_type=JournalEntry.SourceType.BANK_TRANSFER,
+        source_id=transfer.id,
+        date=transfer.date,
+        reference=transfer.transfer_number,
+        document_type="Bank Transfer",
+        description=transfer.remarks,
+        people_type="",
+        people_name="",
+        lines=_build_bank_transfer_lines_to(transfer),
+    )
+
+
 @transaction.atomic
 def sync_all_journals():
     for invoice in PurchaseInvoice.objects.filter(deleted_at__isnull=True).select_related("supplier"):
@@ -682,6 +801,11 @@ def sync_all_journals():
         sync_sales_bank_receipt_journal(receipt)
     for expense in Expense.objects.filter(deleted_at__isnull=True).select_related("bank_account", "expense_account"):
         sync_expense_journal(expense)
+    for transfer in BankTransfer.objects.filter(deleted_at__isnull=True).select_related(
+        "from_bank_account",
+        "to_bank_account",
+    ):
+        sync_bank_transfer_journal(transfer)
     for opening_balance in PartyOpeningBalance.objects.filter(
         deleted_at__isnull=True,
     ).select_related("customer", "supplier"):

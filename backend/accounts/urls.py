@@ -5,6 +5,7 @@ from .views import (
     AdminInquiryViewSet,
     AdminLoginView,
     AdminUserViewSet,
+    BankTransferViewSet,
     DimensionViewSet,
     ExpenseViewSet,
     InquiryViewSet,
@@ -16,6 +17,7 @@ from rest_framework.routers import DefaultRouter
 router = DefaultRouter()
 router.register(r"accounts", AccountViewSet, basename="accounts")
 router.register(r"expenses", ExpenseViewSet, basename="expenses")
+router.register(r"bank-transfers", BankTransferViewSet, basename="bank-transfers")
 router.register(r"dimensions", DimensionViewSet, basename="dimensions")
 router.register(r"inquiries", InquiryViewSet, basename="inquiries")
 router.register(r"tenant-staff", TenantStaffViewSet, basename="tenant-staff")

@@ -28,6 +28,7 @@ import SalesmenPage from "./pages/sales/SalesmenPage";
 import AccountsPage from "./pages/accounts/AccountsPage";
 import AccountFormPage from "./pages/accounts/AccountFormPage";
 import ExpensePage from "./pages/accounts/ExpensePage";
+import BankTransferPage from "./pages/accounts/BankTransferPage";
 import ConfigurePage from "./pages/users/ConfigurePage";
 import DimensionFormPage from "./pages/users/DimensionFormPage";
 import CoaCompletenessReportPage from "./pages/reports/CoaCompletenessReportPage";
@@ -138,6 +139,7 @@ const App = () => (
           element={<Navigate to="/users/configure" replace />}
         />
         <Route path="expenses" element={<ExpensePage />} />
+        <Route path="bank-transfers" element={<BankTransferPage />} />
         <Route path="reports/ledger" element={<LedgerReportsPage />} />
         <Route path="reports/party-ledger" element={<PartyLedgerReportsPage />} />
         <Route path="reports/balance-sheet" element={<BalanceSheetPage />} />

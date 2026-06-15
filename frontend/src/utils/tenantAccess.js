@@ -14,6 +14,7 @@ const PERM_HOME = {
   purchase_bank_payments: "/purchase-bank-payments",
   sales_bank_receipts: "/sales-bank-receipts",
   expenses: "/expenses",
+  bank_transfers: "/bank-transfers",
   reports_balance_sheet: "/reports/balance-sheet",
   reports_profit_loss: "/reports/profit-loss",
   reports_ledger: "/reports/ledger",
@@ -68,6 +69,7 @@ export function pathToPermissionKey(pathname) {
   if (p.startsWith("/salesmen")) return "salesmen";
   if (p.startsWith("/suppliers")) return "suppliers";
   if (p.startsWith("/expenses")) return "expenses";
+  if (p.startsWith("/bank-transfers")) return "bank_transfers";
 
   if (p.startsWith("/reports/balance-sheet")) return "reports_balance_sheet";
   if (p.startsWith("/reports/profit-loss")) return "reports_profit_loss";

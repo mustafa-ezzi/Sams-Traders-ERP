@@ -253,6 +253,7 @@ class JournalEntry(BaseModel):
         SALES_BANK_RECEIPT = "SALES_BANK_RECEIPT", "Sales Bank Receipt"
         EXPENSE = "EXPENSE", "Expense"
         PARTY_OPENING_BALANCE = "PARTY_OPENING_BALANCE", "Party Opening Balance"
+        BANK_TRANSFER = "BANK_TRANSFER", "Bank Transfer"
 
     date = models.DateField()
     reference = models.CharField(max_length=50)
@@ -329,6 +330,36 @@ class Expense(BaseModel):
 
     def __str__(self):
         return self.expense_number
+
+
+class BankTransfer(BaseModel):
+    transfer_number = models.CharField(max_length=50)
+    date = models.DateField()
+    from_bank_account = models.ForeignKey(
+        Account,
+        on_delete=models.PROTECT,
+        related_name="outgoing_bank_transfers",
+    )
+    to_bank_account = models.ForeignKey(
+        Account,
+        on_delete=models.PROTECT,
+        related_name="incoming_bank_transfers",
+    )
+    amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    remarks = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["-date", "-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant_id", "transfer_number"],
+                condition=Q(deleted_at__isnull=True),
+                name="unique_active_bank_transfer_number_per_tenant",
+            )
+        ]
+
+    def __str__(self):
+        return self.transfer_number
 
 
 class Inquiry(BaseModel):

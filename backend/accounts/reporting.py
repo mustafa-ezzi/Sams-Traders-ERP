@@ -24,6 +24,28 @@ def _serialize_line(line, show_tenant=False):
     }
 
 
+def get_account_balance(account, as_of_date=None):
+    """Current ledger balance for a single postable account."""
+    queryset = JournalLine.objects.filter(
+        tenant_id=account.tenant_id,
+        account_id=account.id,
+        deleted_at__isnull=True,
+        journal_entry__deleted_at__isnull=True,
+    )
+    if as_of_date is not None:
+        queryset = queryset.filter(journal_entry__date__lte=as_of_date)
+
+    totals = queryset.aggregate(
+        debit=Coalesce(Sum("debit"), Decimal("0.00")),
+        credit=Coalesce(Sum("credit"), Decimal("0.00")),
+    )
+    return _balance_for_account(
+        account,
+        _money(totals["debit"]),
+        _money(totals["credit"]),
+    )
+
+
 def build_ledger_report(tenant_ids, ledger_type, ledger_key, from_date, to_date, title=""):
     show_tenant = len(tenant_ids) > 1
     queryset = JournalLine.objects.filter(
