@@ -21,6 +21,8 @@ TENANT_UI_PERMISSION_KEYS = frozenset(
         "reports_ledger",
         "reports_party_ledger",
         "reports_coa_completeness",
+        "reports_aging",
+        "reports_salesman",
         "masters_units",
         "masters_brands",
         "masters_categories",

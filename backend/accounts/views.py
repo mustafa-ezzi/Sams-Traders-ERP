@@ -21,7 +21,10 @@ from accounts.dimensions import get_user_active_dimension_codes, seed_default_co
 from accounts.reporting import (
     build_balance_sheet_report,
     build_ledger_report,
+    build_payable_aging_report,
     build_profit_and_loss_report,
+    build_receivable_aging_report,
+    build_salesman_performance_report,
     get_account_balance,
 )
 from inventory.models import (
@@ -1104,6 +1107,98 @@ class AccountViewSet(ModelViewSet):
             tenant_ids=tenant_ids,
             from_date=from_date,
             to_date=to_date,
+        )
+
+        return Response(
+            {
+                "data": {
+                    "tenant_scope": tenant_scope,
+                    **payload,
+                }
+            }
+        )
+
+    @action(detail=False, methods=["get"], url_path="receivable-aging-report")
+    def receivable_aging_report(self, request):
+        tenant_scope = request.query_params.get("tenant_scope") or request.user.tenant_id
+        as_of_date_raw = request.query_params.get("as_of_date")
+
+        if as_of_date_raw:
+            try:
+                as_of_date = date.fromisoformat(as_of_date_raw)
+            except ValueError:
+                raise ValidationError({"as_of_date": "As of date must be in YYYY-MM-DD format."})
+        else:
+            as_of_date = date.today()
+
+        tenant_ids = self._resolve_tenant_ids(tenant_scope)
+        payload = build_receivable_aging_report(
+            tenant_ids=tenant_ids,
+            as_of_date=as_of_date,
+        )
+
+        return Response(
+            {
+                "data": {
+                    "tenant_scope": tenant_scope,
+                    **payload,
+                }
+            }
+        )
+
+    @action(detail=False, methods=["get"], url_path="payable-aging-report")
+    def payable_aging_report(self, request):
+        tenant_scope = request.query_params.get("tenant_scope") or request.user.tenant_id
+        as_of_date_raw = request.query_params.get("as_of_date")
+
+        if as_of_date_raw:
+            try:
+                as_of_date = date.fromisoformat(as_of_date_raw)
+            except ValueError:
+                raise ValidationError({"as_of_date": "As of date must be in YYYY-MM-DD format."})
+        else:
+            as_of_date = date.today()
+
+        tenant_ids = self._resolve_tenant_ids(tenant_scope)
+        payload = build_payable_aging_report(
+            tenant_ids=tenant_ids,
+            as_of_date=as_of_date,
+        )
+
+        return Response(
+            {
+                "data": {
+                    "tenant_scope": tenant_scope,
+                    **payload,
+                }
+            }
+        )
+
+    @action(detail=False, methods=["get"], url_path="salesman-performance-report")
+    def salesman_performance_report(self, request):
+        tenant_scope = request.query_params.get("tenant_scope") or request.user.tenant_id
+        from_raw = request.query_params.get("from_date")
+        to_raw = request.query_params.get("to_date")
+        salesman_id = request.query_params.get("salesman_id") or None
+
+        if not from_raw or not to_raw:
+            raise ValidationError({"date": "From date and to date are required."})
+
+        try:
+            from_date = date.fromisoformat(from_raw)
+            to_date = date.fromisoformat(to_raw)
+        except ValueError:
+            raise ValidationError({"date": "Dates must be in YYYY-MM-DD format."})
+
+        if from_date > to_date:
+            raise ValidationError({"date": "From date cannot be after to date."})
+
+        tenant_ids = self._resolve_tenant_ids(tenant_scope)
+        payload = build_salesman_performance_report(
+            tenant_ids=tenant_ids,
+            from_date=from_date,
+            to_date=to_date,
+            salesman_id=salesman_id,
         )
 
         return Response(

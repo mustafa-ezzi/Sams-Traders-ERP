@@ -292,6 +292,18 @@ const navigation = [
         perm: "reports_party_ledger",
       },
       {
+        to: "/reports/aging",
+        label: "Aging (AR / AP)",
+        icon: icons.reports,
+        perm: "reports_aging",
+      },
+      {
+        to: "/reports/salesman",
+        label: "Salesman Performance",
+        icon: icons.reports,
+        perm: "reports_salesman",
+      },
+      {
         to: "/reports/coa-completeness",
         label: "COA Completeness",
         icon: icons.reports,
@@ -397,6 +409,8 @@ const pageTitles = {
   "/reports/profit-loss": { title: "Profit & Loss", eyebrow: "Reports" },
   "/reports/ledger": { title: "Ledger Reports", eyebrow: "Reports" },
   "/reports/party-ledger": { title: "Party Ledger", eyebrow: "Reports" },
+  "/reports/aging": { title: "Aging Reports", eyebrow: "Reports" },
+  "/reports/salesman": { title: "Salesman Performance", eyebrow: "Reports" },
   "/warehouses": { title: "Warehouses", eyebrow: "Inventory" },
   "/opening-stock": { title: "Opening Stock", eyebrow: "Inventory" },
   "/production": { title: "Assembly Process", eyebrow: "Inventory" },

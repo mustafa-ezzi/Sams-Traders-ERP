@@ -43,6 +43,8 @@ export const TENANT_UI_PERMISSION_GROUPS = [
       { id: "reports_ledger", label: "Ledger reports" },
       { id: "reports_party_ledger", label: "Party ledger" },
       { id: "reports_coa_completeness", label: "COA completeness" },
+      { id: "reports_aging", label: "Aging (AR / AP)" },
+      { id: "reports_salesman", label: "Salesman performance" },
     ],
   },
   {

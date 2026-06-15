@@ -98,6 +98,36 @@ const accountService = {
     });
     return response.data.data || {};
   },
+  async getReceivableAgingReport(params, selectedTenant = "") {
+    const response = await axiosInstance.get(
+      "/accounts/accounts/receivable-aging-report/",
+      {
+        params,
+        headers: tenantHeader(selectedTenant),
+      },
+    );
+    return response.data.data || {};
+  },
+  async getPayableAgingReport(params, selectedTenant = "") {
+    const response = await axiosInstance.get(
+      "/accounts/accounts/payable-aging-report/",
+      {
+        params,
+        headers: tenantHeader(selectedTenant),
+      },
+    );
+    return response.data.data || {};
+  },
+  async getSalesmanPerformanceReport(params, selectedTenant = "") {
+    const response = await axiosInstance.get(
+      "/accounts/accounts/salesman-performance-report/",
+      {
+        params,
+        headers: tenantHeader(selectedTenant),
+      },
+    );
+    return response.data.data || {};
+  },
   async getDashboardOverview(selectedTenant = "", period = "all") {
     const response = await axiosInstance.get("/accounts/accounts/dashboard-overview/", {
       params: { period },

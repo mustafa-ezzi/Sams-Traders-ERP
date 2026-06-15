@@ -47,6 +47,8 @@ import DimensionFormPage from "./pages/users/DimensionFormPage";
 import CoaCompletenessReportPage from "./pages/reports/CoaCompletenessReportPage";
 import BalanceSheetPage from "./pages/reports/BalanceSheetPage";
 import ProfitLossPage from "./pages/reports/ProfitLossPage";
+import AgingReportsPage from "./pages/reports/AgingReportsPage";
+import SalesmanReportsPage from "./pages/reports/SalesmanReportsPage";
 import LedgerReportsPage from "./pages/reports/LedgerReportsPage";
 import PartyLedgerReportsPage from "./pages/reports/PartyLedgerReportsPage";
 import AdminLoginPage from "./pages/admin/AdminLoginPage";
@@ -161,6 +163,8 @@ const App = () => (
         <Route path="reports/party-ledger" element={<PartyLedgerReportsPage />} />
         <Route path="reports/balance-sheet" element={<BalanceSheetPage />} />
         <Route path="reports/profit-loss" element={<ProfitLossPage />} />
+        <Route path="reports/aging" element={<AgingReportsPage />} />
+        <Route path="reports/salesman" element={<SalesmanReportsPage />} />
         <Route path="reports/coa-completeness" element={<CoaCompletenessReportPage />} />
         <Route path="warehouses" element={<WarehousePage />} />
         <Route path="opening-stock" element={<OpeningStockPage />} />
