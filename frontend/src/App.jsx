@@ -15,20 +15,31 @@ import WarehousePage from "./pages/warehouse/WarehousePage";
 import OpeningStockPage from "./pages/inventory/OpeningStockPage";
 import ProductionPage from "./pages/administrator/production/GetAllProduction";
 import ProductionFormPage from "./pages/administrator/production/CreateUpdateProduction";
-import PurchaseInvoicePage from "./pages/purchase/PurchaseInvoicePage";
-import PurchaseReturnPage from "./pages/purchase/PurchaseReturnPage";
-import PurchaseBankPaymentPage from "./pages/purchase/PurchaseBankPaymentPage";
-import SalesInvoicePage from "./pages/sales/SalesInvoicePage";
+import PurchaseInvoicePage from "./pages/purchase/invoice/GetAllPurchaseInvoice";
+import CreateUpdatePurchaseInvoice from "./pages/purchase/invoice/CreateUpdatePurchaseInvoice";
+import PurchaseReturnPage from "./pages/purchase/return/GetAllPurchaseReturn";
+import CreateUpdatePurchaseReturn from "./pages/purchase/return/CreateUpdatePurchaseReturn";
+import PurchaseBankPaymentPage from "./pages/purchase/bankPayment/GetAllPurchaseBankPayment";
+import CreateUpdatePurchaseBankPayment from "./pages/purchase/bankPayment/CreateUpdatePurchaseBankPayment";
+import SalesInvoicePage from "./pages/sales/invoice/GetAllSalesInvoice";
+import CreateUpdateSalesInvoice from "./pages/sales/invoice/CreateUpdateSalesInvoice";
 import SalesInvoicePrintPage from "./pages/sales/SalesInvoicePrintPage";
-import SalesReturnPage from "./pages/sales/SalesReturnPage";
-import SalesBankReceiptPage from "./pages/sales/SalesBankReceiptPage";
-import CustomersPage from "./pages/parties/CustomersPage";
-import SuppliersPage from "./pages/parties/SuppliersPage";
-import SalesmenPage from "./pages/sales/SalesmenPage";
+import SalesReturnPage from "./pages/sales/return/GetAllSalesReturn";
+import CreateUpdateSalesReturn from "./pages/sales/return/CreateUpdateSalesReturn";
+import SalesBankReceiptPage from "./pages/sales/bankReceipt/GetAllSalesBankReceipt";
+import CreateUpdateSalesBankReceipt from "./pages/sales/bankReceipt/CreateUpdateSalesBankReceipt";
+import CustomersPage from "./pages/sales/customer/GetAllCustomer";
+import CreateUpdateCustomer from "./pages/sales/customer/CreateUpdateCustomer";
+import SuppliersPage from "./pages/purchase/supplier/GetAllSupplier";
+import CreateUpdateSupplier from "./pages/purchase/supplier/CreateUpdateSupplier";
+import SalesmenPage from "./pages/sales/salesman/GetAllSalesman";
+import CreateUpdateSalesman from "./pages/sales/salesman/CreateUpdateSalesman";
 import AccountsPage from "./pages/accounts/AccountsPage";
 import AccountFormPage from "./pages/accounts/AccountFormPage";
-import ExpensePage from "./pages/accounts/ExpensePage";
-import BankTransferPage from "./pages/accounts/BankTransferPage";
+import ExpensePage from "./pages/accounts/expense/GetAllExpense";
+import CreateUpdateExpense from "./pages/accounts/expense/CreateUpdateExpense";
+import BankTransferPage from "./pages/accounts/bankTransfer/GetAllBankTransfer";
+import CreateUpdateBankTransfer from "./pages/accounts/bankTransfer/CreateUpdateBankTransfer";
 import ConfigurePage from "./pages/users/ConfigurePage";
 import DimensionFormPage from "./pages/users/DimensionFormPage";
 import CoaCompletenessReportPage from "./pages/reports/CoaCompletenessReportPage";
@@ -139,7 +150,11 @@ const App = () => (
           element={<Navigate to="/users/configure" replace />}
         />
         <Route path="expenses" element={<ExpensePage />} />
+        <Route path="expenses/create" element={<CreateUpdateExpense />} />
+        <Route path="expenses/:id/edit" element={<CreateUpdateExpense />} />
         <Route path="bank-transfers" element={<BankTransferPage />} />
+        <Route path="bank-transfers/create" element={<CreateUpdateBankTransfer />} />
+        <Route path="bank-transfers/:id/edit" element={<CreateUpdateBankTransfer />} />
         <Route path="reports/ledger" element={<LedgerReportsPage />} />
         <Route path="reports/party-ledger" element={<PartyLedgerReportsPage />} />
         <Route path="reports/balance-sheet" element={<BalanceSheetPage />} />
@@ -151,14 +166,41 @@ const App = () => (
         <Route path="production/create" element={<ProductionFormPage />} />
         <Route path="production/:id/edit" element={<ProductionFormPage />} />
         <Route path="purchase-invoices" element={<PurchaseInvoicePage />} />
+        <Route path="purchase-invoices/create" element={<CreateUpdatePurchaseInvoice />} />
+        <Route path="purchase-invoices/:id/edit" element={<CreateUpdatePurchaseInvoice />} />
         <Route path="purchase-returns" element={<PurchaseReturnPage />} />
+        <Route path="purchase-returns/create" element={<CreateUpdatePurchaseReturn />} />
+        <Route path="purchase-returns/:id/edit" element={<CreateUpdatePurchaseReturn />} />
         <Route path="purchase-bank-payments" element={<PurchaseBankPaymentPage />} />
+        <Route
+          path="purchase-bank-payments/create"
+          element={<CreateUpdatePurchaseBankPayment />}
+        />
+        <Route
+          path="purchase-bank-payments/:id/edit"
+          element={<CreateUpdatePurchaseBankPayment />}
+        />
         <Route path="sales-invoices" element={<SalesInvoicePage />} />
+        <Route path="sales-invoices/create" element={<CreateUpdateSalesInvoice />} />
+        <Route path="sales-invoices/:id/edit" element={<CreateUpdateSalesInvoice />} />
         <Route path="sales-returns" element={<SalesReturnPage />} />
+        <Route path="sales-returns/create" element={<CreateUpdateSalesReturn />} />
+        <Route path="sales-returns/:id/edit" element={<CreateUpdateSalesReturn />} />
         <Route path="sales-bank-receipts" element={<SalesBankReceiptPage />} />
+        <Route path="sales-bank-receipts/create" element={<CreateUpdateSalesBankReceipt />} />
+        <Route
+          path="sales-bank-receipts/:id/edit"
+          element={<CreateUpdateSalesBankReceipt />}
+        />
         <Route path="customers" element={<CustomersPage />} />
+        <Route path="customers/create" element={<CreateUpdateCustomer />} />
+        <Route path="customers/:id/edit" element={<CreateUpdateCustomer />} />
         <Route path="salesmen" element={<SalesmenPage />} />
+        <Route path="salesmen/create" element={<CreateUpdateSalesman />} />
+        <Route path="salesmen/:id/edit" element={<CreateUpdateSalesman />} />
         <Route path="suppliers" element={<SuppliersPage />} />
+        <Route path="suppliers/create" element={<CreateUpdateSupplier />} />
+        <Route path="suppliers/:id/edit" element={<CreateUpdateSupplier />} />
         <Route path="support" element={<SupportPage />} />
         <Route path="settings/staff" element={<TenantStaffPage />} />
       </Route>

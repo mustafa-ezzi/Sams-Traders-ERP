@@ -35,6 +35,7 @@ const GetAllSupplier = () => {
       view="list"
       basePath="/suppliers"
       title="Suppliers"
+      partyType="supplier"
       service={supplierService}
       accountLabel="Payable Account"
       accountOptions={accountOptions}

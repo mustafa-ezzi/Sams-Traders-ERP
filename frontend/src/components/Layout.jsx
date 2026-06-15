@@ -395,13 +395,27 @@ const pageTitles = {
   "/production": { title: "Assembly Process", eyebrow: "Inventory" },
   "/production/create": { title: "Create Assembly Process", eyebrow: "Inventory" },
   "/purchase-invoices": { title: "Purchase Invoices", eyebrow: "Purchase" },
+  "/purchase-invoices/create": { title: "Create Purchase Invoice", eyebrow: "Purchase" },
   "/purchase-returns": { title: "Purchase Returns", eyebrow: "Purchase" },
+  "/purchase-returns/create": { title: "Create Purchase Return", eyebrow: "Purchase" },
   "/purchase-bank-payments": { title: "Bank Payments", eyebrow: "Bank" },
+  "/purchase-bank-payments/create": { title: "Create Bank Payment", eyebrow: "Bank" },
   "/expenses": { title: "Expenses", eyebrow: "Accounting" },
+  "/expenses/create": { title: "Create Expense", eyebrow: "Accounting" },
   "/bank-transfers": { title: "Bank Transfers", eyebrow: "Bank" },
+  "/bank-transfers/create": { title: "Create Bank Transfer", eyebrow: "Bank" },
   "/sales-invoices": { title: "Sales Invoices", eyebrow: "Sales" },
+  "/sales-invoices/create": { title: "Create Sales Invoice", eyebrow: "Sales" },
   "/sales-returns": { title: "Sales Returns", eyebrow: "Sales" },
+  "/sales-returns/create": { title: "Create Sales Return", eyebrow: "Sales" },
   "/sales-bank-receipts": { title: "Bank Receipts", eyebrow: "Bank" },
+  "/sales-bank-receipts/create": { title: "Create Bank Receipt", eyebrow: "Bank" },
+  "/customers": { title: "Customers", eyebrow: "Sales" },
+  "/customers/create": { title: "Create Customer", eyebrow: "Sales" },
+  "/salesmen": { title: "Salesmen", eyebrow: "Sales" },
+  "/salesmen/create": { title: "Create Salesman", eyebrow: "Sales" },
+  "/suppliers": { title: "Suppliers", eyebrow: "Purchase" },
+  "/suppliers/create": { title: "Create Supplier", eyebrow: "Purchase" },
   "/masters/units": { title: "Units", eyebrow: "Masters" },
   "/masters/categories": { title: "Categories", eyebrow: "Masters" },
   "/masters/categories/create": { title: "Create Category", eyebrow: "Masters" },
@@ -594,6 +608,39 @@ const Layout = () => {
     }
     if (pathname.startsWith("/accounts/") && pathname.endsWith("/edit")) {
       return { title: "Edit Account", eyebrow: "Accounting" };
+    }
+    if (pathname.startsWith("/purchase-invoices/") && pathname.endsWith("/edit")) {
+      return { title: "Edit Purchase Invoice", eyebrow: "Purchase" };
+    }
+    if (pathname.startsWith("/purchase-returns/") && pathname.endsWith("/edit")) {
+      return { title: "Edit Purchase Return", eyebrow: "Purchase" };
+    }
+    if (pathname.startsWith("/purchase-bank-payments/") && pathname.endsWith("/edit")) {
+      return { title: "Edit Bank Payment", eyebrow: "Bank" };
+    }
+    if (pathname.startsWith("/sales-invoices/") && pathname.endsWith("/edit")) {
+      return { title: "Edit Sales Invoice", eyebrow: "Sales" };
+    }
+    if (pathname.startsWith("/sales-returns/") && pathname.endsWith("/edit")) {
+      return { title: "Edit Sales Return", eyebrow: "Sales" };
+    }
+    if (pathname.startsWith("/sales-bank-receipts/") && pathname.endsWith("/edit")) {
+      return { title: "Edit Bank Receipt", eyebrow: "Bank" };
+    }
+    if (pathname.startsWith("/expenses/") && pathname.endsWith("/edit")) {
+      return { title: "Edit Expense", eyebrow: "Accounting" };
+    }
+    if (pathname.startsWith("/bank-transfers/") && pathname.endsWith("/edit")) {
+      return { title: "Edit Bank Transfer", eyebrow: "Bank" };
+    }
+    if (pathname.startsWith("/customers/") && pathname.endsWith("/edit")) {
+      return { title: "Edit Customer", eyebrow: "Sales" };
+    }
+    if (pathname.startsWith("/salesmen/") && pathname.endsWith("/edit")) {
+      return { title: "Edit Salesman", eyebrow: "Sales" };
+    }
+    if (pathname.startsWith("/suppliers/") && pathname.endsWith("/edit")) {
+      return { title: "Edit Supplier", eyebrow: "Purchase" };
     }
     return pageTitles[pathname] || { title: "Workspace", eyebrow: "ERP" };
   }, [pathname]);

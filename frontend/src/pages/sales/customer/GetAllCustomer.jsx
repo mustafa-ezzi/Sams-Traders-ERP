@@ -34,6 +34,7 @@ const GetAllCustomer = () => {
       view="list"
       basePath="/customers"
       title="Customers"
+      partyType="customer"
       service={customerService}
       accountLabel="Receivable Account"
       accountOptions={accountOptions}

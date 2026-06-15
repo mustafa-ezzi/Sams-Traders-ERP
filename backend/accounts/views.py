@@ -397,38 +397,39 @@ class AccountViewSet(ModelViewSet):
             )
         return f"{bank_root.code[:-1]}{next_suffix}"
 
-    def _get_dimension_account_suffix(self, tenant_id):
-        tenant_ids = sorted(self._get_shared_tenant_ids() or [tenant_id])
-        try:
-            return tenant_ids.index(tenant_id) + 1
-        except ValueError:
-            return 1
+    def _get_next_opening_account_code(self, bank_account, tenant_id):
+        bank_code = bank_account.code
+        code_length = len(bank_code) + 1
 
-    def _get_opening_account_code_for_dimension(self, bank_account, tenant_id):
-        suffix = self._get_dimension_account_suffix(tenant_id)
-        if suffix > 9:
-            raise ValidationError(
-                {
-                    "detail": (
-                        f"Only 9 dimensions are supported for opening accounts under "
-                        f"bank {bank_account.code}."
-                    )
-                }
-            )
-
-        code = f"{bank_account.code}{suffix}"
-        existing = Account.objects.filter(
+        used_suffixes = set()
+        for code in Account.objects.filter(
             tenant_id=tenant_id,
-            code=code,
+            code__startswith=bank_code,
             deleted_at__isnull=True,
-        ).first()
-        if existing:
-            if existing.parent_id == bank_account.id:
-                return code
-            raise ValidationError(
-                {"code": f"Code {code} already exists in this dimension."}
-            )
-        return code
+        ).values_list("code", flat=True):
+            suffix_part = code[len(bank_code) :]
+            if len(code) == code_length and suffix_part.isdigit() and len(suffix_part) == 1:
+                used_suffixes.add(int(suffix_part))
+
+        next_suffix = (max(used_suffixes) if used_suffixes else 0) + 1
+        while next_suffix <= 9:
+            candidate = f"{bank_code}{next_suffix}"
+            if not Account.objects.filter(
+                tenant_id=tenant_id,
+                code=candidate,
+                deleted_at__isnull=True,
+            ).exists():
+                return candidate
+            next_suffix += 1
+
+        raise ValidationError(
+            {
+                "detail": (
+                    f"Only 9 opening accounts can be created under bank {bank_code} "
+                    "in this dimension with the current code format."
+                )
+            }
+        )
 
     def _serialize_opening_banks(self, account_tenant_id):
         tenant_ids = self._get_shared_tenant_ids() or [account_tenant_id]
@@ -519,7 +520,7 @@ class AccountViewSet(ModelViewSet):
                     {"code": f"Code {requested_code} already exists in this dimension."}
                 )
             return requested_code
-        return self._get_opening_account_code_for_dimension(
+        return self._get_next_opening_account_code(
             bank_account,
             bank_account.tenant_id,
         )
@@ -703,18 +704,50 @@ class AccountViewSet(ModelViewSet):
                 )
                 if source_bank:
                     dim_root = self._get_opening_bank_root(tenant_id)
-                    bank_account = Account.objects.create(
+                    existing_same_code = Account.objects.filter(
                         tenant_id=tenant_id,
-                        code=source_bank.code,
-                        name=source_bank.name,
-                        parent=dim_root,
-                        account_group=source_bank.account_group,
-                        account_type=source_bank.account_type,
-                        account_nature=source_bank.account_nature,
-                        is_postable=False,
-                        is_active=source_bank.is_active,
-                        sort_order=source_bank.sort_order,
-                    )
+                        code=bank_code,
+                        deleted_at__isnull=True,
+                    ).first()
+                    if existing_same_code:
+                        if (
+                            existing_same_code.parent_id == dim_root.id
+                            and not existing_same_code.is_postable
+                        ):
+                            bank_account = existing_same_code
+                        elif existing_same_code.parent_id is None:
+                            existing_same_code.parent = dim_root
+                            existing_same_code.name = source_bank.name
+                            existing_same_code.account_group = source_bank.account_group
+                            existing_same_code.account_type = source_bank.account_type
+                            existing_same_code.account_nature = source_bank.account_nature
+                            existing_same_code.is_postable = False
+                            existing_same_code.is_active = source_bank.is_active
+                            existing_same_code.sort_order = source_bank.sort_order
+                            existing_same_code.save()
+                            bank_account = existing_same_code
+                        else:
+                            raise ValidationError(
+                                {
+                                    "bank_code": (
+                                        f"Code {bank_code} is already used by another "
+                                        "account in this dimension."
+                                    )
+                                }
+                            )
+                    else:
+                        bank_account = Account.objects.create(
+                            tenant_id=tenant_id,
+                            code=source_bank.code,
+                            name=source_bank.name,
+                            parent=dim_root,
+                            account_group=source_bank.account_group,
+                            account_type=source_bank.account_type,
+                            account_nature=source_bank.account_nature,
+                            is_postable=False,
+                            is_active=source_bank.is_active,
+                            sort_order=source_bank.sort_order,
+                        )
                 else:
                     raise ValidationError(
                         {

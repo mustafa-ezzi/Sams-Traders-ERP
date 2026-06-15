@@ -5,6 +5,7 @@ const CreateUpdateCustomer = () => (
     view="form"
     basePath="/customers"
     title="Customers"
+    partyType="customer"
     service={customerService}
     autoControlAccount
     accountLabel="Receivable account"

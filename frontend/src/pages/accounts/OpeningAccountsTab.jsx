@@ -276,8 +276,9 @@ const OpeningAccountsTab = () => {
             </h2>
             <p className="mt-2 max-w-3xl text-sm text-slate-500">
               Each bank (e.g. Bank Alfalah = 1111) is created once and shared.
-              Opening accounts get dimension-specific codes: first dimension
-              11111, second 11112; Soneri (1112) uses 11121 and 11122, and so on.
+              Opening accounts are dimension-specific and auto-numbered under that
+              bank: 11111, 11112, 11113, and so on (Soneri = 1112 uses 11121,
+              11122, etc.).
             </p>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">

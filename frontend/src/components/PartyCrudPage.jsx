@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import StateView from "./StateView";
 import Card from "./ui/Card";
 import Button from "./ui/Button";
@@ -45,14 +46,24 @@ const PartyCrudPage = ({
   title,
   service,
   partyType = "",
+  view = "combined",
+  basePath = "",
   accountLabel = "Control Account",
   accountOptions = [],
   loadingAccounts = false,
+  autoControlAccount = false,
+  controlAccountHint = "",
 }) => {
+  const navigate = useNavigate();
+  const { id: routeId } = useParams();
+  const isListView = view === "list";
+  const isFormView = view === "form";
+  const isCombinedView = !isListView && !isFormView;
+
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [editingId, setEditingId] = useState("");
+  const [inlineEditingId, setInlineEditingId] = useState("");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -63,8 +74,10 @@ const PartyCrudPage = ({
   const [openingModalOpen, setOpeningModalOpen] = useState(false);
   const [editingOpening, setEditingOpening] = useState(null);
   const [deleteOpeningId, setDeleteOpeningId] = useState("");
+  const [loadingRecord, setLoadingRecord] = useState(false);
   const toast = useToast();
 
+  const editingId = isFormView ? routeId || "" : inlineEditingId;
   const singularTitle = title.endsWith("s") ? title.slice(0, -1) : title;
   const accountMap = useMemo(
     () =>
@@ -102,7 +115,7 @@ const PartyCrudPage = ({
   };
 
   const loadOpeningBalances = async () => {
-    if (!partyType) return;
+    if (!partyType || isFormView) return;
     setOpeningLoading(true);
     try {
       const response = await partyOpeningBalanceService.list({
@@ -119,12 +132,61 @@ const PartyCrudPage = ({
   };
 
   useEffect(() => {
-    loadRecords(1, "");
-    loadOpeningBalances();
-  }, []);
+    if (!isFormView) {
+      loadRecords(1, "");
+      loadOpeningBalances();
+    }
+  }, [isFormView, partyType]);
+
+  useEffect(() => {
+    if (!isFormView) return;
+
+    if (!routeId) {
+      form.reset(defaultValues);
+      setLoadingRecord(false);
+      return;
+    }
+
+    let cancelled = false;
+    const load = async () => {
+      setLoadingRecord(true);
+      try {
+        const response = await service.getById(routeId);
+        const record = response.data || response;
+        if (cancelled) return;
+        form.reset({
+          name: record.name || "",
+          email: record.email || "",
+          phone_number: record.phone_number || "",
+          business_name: record.business_name || "",
+          address: record.address || "",
+          account: record.account || "",
+        });
+      } catch (editError) {
+        if (!cancelled) {
+          toast.error(
+            editError?.response?.data?.message ||
+              `Failed to load ${singularTitle.toLowerCase()}`,
+          );
+          navigate(basePath, { replace: true });
+        }
+      } finally {
+        if (!cancelled) setLoadingRecord(false);
+      }
+    };
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [routeId, isFormView, basePath, service, form, navigate, singularTitle, toast]);
 
   const resetForm = () => {
-    setEditingId("");
+    if (isFormView && basePath) {
+      navigate(basePath);
+      return;
+    }
+    setInlineEditingId("");
     form.reset(defaultValues);
   };
 
@@ -132,7 +194,7 @@ const PartyCrudPage = ({
     try {
       const payload = {
         ...values,
-        account: values.account || null,
+        account: autoControlAccount ? null : values.account || null,
       };
 
       if (editingId) {
@@ -142,6 +204,12 @@ const PartyCrudPage = ({
         await service.create(payload);
         toast.success(`${singularTitle} created`);
       }
+
+      if (isFormView && basePath) {
+        navigate(basePath);
+        return;
+      }
+
       resetForm();
       await loadRecords();
     } catch (submitError) {
@@ -152,10 +220,15 @@ const PartyCrudPage = ({
   });
 
   const onEdit = async (recordId) => {
+    if (isListView && basePath) {
+      navigate(`${basePath}/${recordId}/edit`);
+      return;
+    }
+
     try {
       const response = await service.getById(recordId);
       const record = response.data || response;
-      setEditingId(record.id);
+      setInlineEditingId(record.id);
       form.reset({
         name: record.name || "",
         email: record.email || "",
@@ -173,9 +246,9 @@ const PartyCrudPage = ({
     }
   };
 
-  const onDelete = async (id) => {
+  const onDelete = async (recordId) => {
     try {
-      await service.remove(id);
+      await service.remove(recordId);
       toast.success(`${singularTitle} deleted`);
       await loadRecords();
     } catch (deleteError) {
@@ -187,9 +260,9 @@ const PartyCrudPage = ({
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
 
-  const handleSaveOpening = async (payload, editingId) => {
-    if (editingId) {
-      const response = await partyOpeningBalanceService.update(editingId, {
+  const handleSaveOpening = async (payload, openingId) => {
+    if (openingId) {
+      const response = await partyOpeningBalanceService.update(openingId, {
         date: payload.date,
         amount: payload.amount,
         remarks: payload.remarks,
@@ -203,9 +276,9 @@ const PartyCrudPage = ({
     await loadOpeningBalances();
   };
 
-  const handleDeleteOpening = async (id) => {
+  const handleDeleteOpening = async (openingId) => {
     try {
-      const response = await partyOpeningBalanceService.remove(id);
+      const response = await partyOpeningBalanceService.remove(openingId);
       toast.success(response.message || "Opening account deleted");
       await loadOpeningBalances();
     } catch (deleteError) {
@@ -215,9 +288,116 @@ const PartyCrudPage = ({
     }
   };
 
+  const showForm = isFormView || isCombinedView;
+  const showList = isListView || isCombinedView;
+
+  const formCard = showForm ? (
+    <Card>
+      {isFormView ? (
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-bold text-slate-900">
+              {editingId ? `Edit ${singularTitle}` : `Create ${singularTitle}`}
+            </h3>
+          </div>
+          <Button type="button" variant="secondary" onClick={resetForm}>
+            Back to list
+          </Button>
+        </div>
+      ) : null}
+
+      {loadingRecord ? (
+        <p className="text-sm text-slate-500">Loading...</p>
+      ) : (
+        <form className="grid gap-4 md:grid-cols-2" onSubmit={onSubmit}>
+          <FormInput
+            label="Name"
+            required
+            placeholder={`Enter ${singularTitle.toLowerCase()} name`}
+            error={form.formState.errors.name?.message}
+            {...form.register("name")}
+          />
+          <FormInput
+            label="Business Name"
+            required
+            placeholder="Enter business name"
+            error={form.formState.errors.business_name?.message}
+            {...form.register("business_name")}
+          />
+          <FormInput
+            label="Email"
+            placeholder="Enter email"
+            error={form.formState.errors.email?.message}
+            {...form.register("email")}
+          />
+          <FormInput
+            label="Phone Number"
+            placeholder="Enter phone number (optional)"
+            error={form.formState.errors.phone_number?.message}
+            {...form.register("phone_number")}
+          />
+          {!autoControlAccount ? (
+            <div className="space-y-2">
+              <label className="block text-sm font-semibold text-slate-700">
+                {accountLabel}
+              </label>
+              <select
+                className={selectClassName}
+                disabled={loadingAccounts}
+                {...form.register("account")}
+              >
+                <option value="">Select account</option>
+                {accountOptions.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {formatAccountLabel(account)}
+                  </option>
+                ))}
+              </select>
+              {form.formState.errors.account?.message && (
+                <p className="text-sm text-rose-600">
+                  {form.formState.errors.account.message}
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-600 md:col-span-2">
+              {controlAccountHint ||
+                "The control account is assigned automatically for this dimension."}
+            </div>
+          )}
+          <FormInput
+            label="Address"
+            required
+            as="textarea"
+            rows={3}
+            className="min-h-[112px] resize-y"
+            placeholder="Enter address"
+            error={form.formState.errors.address?.message}
+            {...form.register("address")}
+          />
+          <div className="flex flex-col gap-3 md:justify-end">
+            <Button type="submit" className="w-full">
+              {editingId ? "Update" : "Create"}
+            </Button>
+            {editingId && isCombinedView ? (
+              <Button
+                type="button"
+                variant="secondary"
+                className="w-full"
+                onClick={resetForm}
+              >
+                Cancel
+              </Button>
+            ) : null}
+          </div>
+        </form>
+      )}
+    </Card>
+  ) : null;
+
   return (
     <section className="space-y-6">
-      {partyType ? (
+      {partyType && !isFormView ? (
         <PartyOpeningBalanceModal
           open={openingModalOpen}
           onClose={() => {
@@ -256,302 +436,237 @@ const PartyCrudPage = ({
         }}
       />
 
-      <Card className="bg-[linear-gradient(135deg,rgba(255,255,255,0.92),rgba(224,242,254,0.96))]">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">
-              {title}
-            </h2>
-          </div>
-          <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
-            <input
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-100 sm:w-72"
-              placeholder={`Search ${title.toLowerCase()}`}
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
-            <Button variant="secondary" onClick={() => loadRecords(1, search)}>
-              Search
-            </Button>
-            {partyType ? (
-              <Button
-                type="button"
-                onClick={() => {
-                  setEditingOpening(null);
-                  setOpeningModalOpen(true);
-                }}
-              >
-                Opening Account
-              </Button>
-            ) : null}
-          </div>
-        </div>
-      </Card>
-
-      <Card>
-        <form className="grid gap-4 md:grid-cols-2" onSubmit={onSubmit}>
-          <FormInput
-            label="Name"
-            required
-            placeholder={`Enter ${singularTitle.toLowerCase()} name`}
-            error={form.formState.errors.name?.message}
-            {...form.register("name")}
-          />
-          <FormInput
-            label="Business Name"
-            required
-            placeholder="Enter business name"
-            error={form.formState.errors.business_name?.message}
-            {...form.register("business_name")}
-          />
-          <FormInput
-            label="Email"
-            placeholder="Enter email"
-            error={form.formState.errors.email?.message}
-            {...form.register("email")}
-          />
-          <FormInput
-            label="Phone Number"
-            placeholder="Enter phone number (optional)"
-            error={form.formState.errors.phone_number?.message}
-            {...form.register("phone_number")}
-          />
-          <div className="space-y-2">
-            <label className="block text-sm font-semibold text-slate-700">
-              {accountLabel}
-            </label>
-            <select
-              className={selectClassName}
-              disabled={loadingAccounts}
-              {...form.register("account")}
-            >
-              <option value="">Select account</option>
-              {accountOptions.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {formatAccountLabel(account)}
-                </option>
-              ))}
-            </select>
-            {form.formState.errors.account?.message && (
-              <p className="text-sm text-rose-600">
-                {form.formState.errors.account.message}
-              </p>
-            )}
-          </div>
-          <FormInput
-            label="Address"
-            required
-            as="textarea"
-            rows={3}
-            className="min-h-[112px] resize-y"
-            placeholder="Enter address"
-            error={form.formState.errors.address?.message}
-            {...form.register("address")}
-          />
-          <div className="flex flex-col gap-3 md:justify-end">
-            <Button type="submit" className="w-full">
-              {editingId ? "Update" : "Create"}
-            </Button>
-            {editingId && (
-              <Button
-                type="button"
-                variant="secondary"
-                className="w-full"
-                onClick={resetForm}
-              >
-                Cancel
-              </Button>
-            )}
-          </div>
-        </form>
-      </Card>
-
-      <StateView
-        loading={loading}
-        error={error}
-        isEmpty={!loading && !error && records.length === 0}
-        emptyMessage={`No ${title.toLowerCase()} found`}
-      >
-        <Card className="overflow-hidden p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1080px] text-sm">
-              <thead className="bg-[linear-gradient(180deg,#edf4ff,#e1ebff)] text-left">
-                <tr>
-                  <th className="px-5 py-4 font-bold text-slate-700">Name</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">
-                    Business Name
-                  </th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Email</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">Phone</th>
-                  <th className="px-5 py-4 font-bold text-slate-700">
-                    Account
-                  </th>
-                  <th className="px-5 py-4 font-bold text-slate-700">
-                    Address
-                  </th>
-                  <th className="px-5 py-4 text-right font-bold text-slate-700">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {records.map((record) => (
-                  <tr
-                    key={record.id}
-                    className="border-t border-slate-100 bg-white/80 transition hover:bg-blue-50/50"
+      {showList ? (
+        <>
+          <Card className="bg-[linear-gradient(135deg,rgba(255,255,255,0.92),rgba(224,242,254,0.96))]">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">
+                  {title}
+                </h2>
+              </div>
+              <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
+                <input
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-100 sm:w-72"
+                  placeholder={`Search ${title.toLowerCase()}`}
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                />
+                <Button variant="secondary" onClick={() => loadRecords(1, search)}>
+                  Search
+                </Button>
+                {isListView && basePath ? (
+                  <Link to={`${basePath}/create`}>
+                    <Button type="button">Create {singularTitle}</Button>
+                  </Link>
+                ) : null}
+                {partyType ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => {
+                      setEditingOpening(null);
+                      setOpeningModalOpen(true);
+                    }}
                   >
-                    <td className="px-5 py-4 font-medium text-slate-700">
-                      {record.name}
-                    </td>
-                    <td className="px-5 py-4 text-slate-600">
-                      {record.business_name}
-                    </td>
-                    <td className="px-5 py-4 text-slate-600">
-                      {record.email || "-"}
-                    </td>
-                    <td className="px-5 py-4 text-slate-600">
-                      {record.phone_number}
-                    </td>
-                    <td className="px-5 py-4 text-slate-600">
-                      {record.account && accountMap[record.account]
-                        ? formatAccountLabel(accountMap[record.account]).trim()
-                        : "-"}
-                    </td>
-                    <td className="px-5 py-4 text-slate-600">
-                      {record.address}
-                    </td>
-                    <td className="px-5 py-4 text-right">
-                      <div className="flex justify-end gap-2">
-                        <IconButton
-                          icon="edit"
-                          label={`Edit ${singularTitle}`}
-                          onClick={() => onEdit(record.id)}
-                        />
-                        <IconButton
-                          icon="delete"
-                          label={`Delete ${singularTitle}`}
-                          onClick={() => setDeleteId(record.id)}
-                        />
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="flex flex-col gap-3 border-t border-slate-100 px-5 py-4 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-            <span className="text-center sm:text-left">
-              {total} total records
-            </span>
-            <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-end">
-              <Button
-                variant="secondary"
-                type="button"
-                disabled={page <= 1}
-                onClick={() => loadRecords(page - 1, search)}
-              >
-                Prev
-              </Button>
-              <span className="font-semibold text-slate-700">
-                Page {page} / {totalPages}
-              </span>
-              <Button
-                variant="secondary"
-                type="button"
-                disabled={page >= totalPages}
-                onClick={() => loadRecords(page + 1, search)}
-              >
-                Next
-              </Button>
+                    Opening Account
+                  </Button>
+                ) : null}
+              </div>
             </div>
-          </div>
-        </Card>
-      </StateView>
+          </Card>
 
-      {partyType ? (
-        <Card className="space-y-4">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h3 className="text-lg font-bold text-slate-900">Opening Accounts</h3>
-              <p className="text-sm text-slate-500">
-                Posted to receivable/payable control accounts for party ledger reports.
-              </p>
-            </div>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => {
-                setEditingOpening(null);
-                setOpeningModalOpen(true);
-              }}
-            >
-              Add Opening Account
-            </Button>
-          </div>
-
-          <div className="overflow-x-auto rounded-2xl border border-slate-200">
-            <table className="w-full min-w-[640px] text-sm">
-              <thead className="bg-slate-50 text-left">
-                <tr>
-                  <th className="px-4 py-3 font-bold text-slate-700">{singularTitle}</th>
-                  <th className="px-4 py-3 font-bold text-slate-700">Date</th>
-                  <th className="px-4 py-3 font-bold text-slate-700 text-right">Amount</th>
-                  <th className="px-4 py-3 font-bold text-slate-700">Remarks</th>
-                  <th className="px-4 py-3 text-right font-bold text-slate-700">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {openingLoading ? (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-6 text-center text-slate-500">
-                      Loading opening accounts...
-                    </td>
-                  </tr>
-                ) : openingBalances.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-6 text-center text-slate-500">
-                      No opening accounts yet.
-                    </td>
-                  </tr>
-                ) : (
-                  openingBalances.map((record) => (
-                    <tr key={record.id} className="border-t border-slate-100">
-                      <td className="px-4 py-3 font-medium text-slate-800">
-                        {record.partyName}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">{record.date}</td>
-                      <td className="px-4 py-3 text-right font-semibold tabular-nums text-slate-900">
-                        {formatMoney(record.amount)}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">
-                        {record.remarks || "—"}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex justify-end gap-2">
-                          <IconButton
-                            icon="edit"
-                            label="Edit opening account"
-                            onClick={() => {
-                              setEditingOpening(record);
-                              setOpeningModalOpen(true);
-                            }}
-                          />
-                          <IconButton
-                            icon="delete"
-                            label="Delete opening account"
-                            onClick={() => setDeleteOpeningId(record.id)}
-                          />
-                        </div>
-                      </td>
+          <StateView
+            loading={loading}
+            error={error}
+            isEmpty={!loading && !error && records.length === 0}
+            emptyMessage={`No ${title.toLowerCase()} found`}
+          >
+            <Card className="overflow-hidden p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[1080px] text-sm">
+                  <thead className="bg-[linear-gradient(180deg,#edf4ff,#e1ebff)] text-left">
+                    <tr>
+                      <th className="px-5 py-4 font-bold text-slate-700">Name</th>
+                      <th className="px-5 py-4 font-bold text-slate-700">
+                        Business Name
+                      </th>
+                      <th className="px-5 py-4 font-bold text-slate-700">Email</th>
+                      <th className="px-5 py-4 font-bold text-slate-700">Phone</th>
+                      <th className="px-5 py-4 font-bold text-slate-700">
+                        Account
+                      </th>
+                      <th className="px-5 py-4 font-bold text-slate-700">
+                        Address
+                      </th>
+                      <th className="px-5 py-4 text-right font-bold text-slate-700">
+                        Actions
+                      </th>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </Card>
+                  </thead>
+                  <tbody>
+                    {records.map((record) => (
+                      <tr
+                        key={record.id}
+                        className="border-t border-slate-100 bg-white/80 transition hover:bg-blue-50/50"
+                      >
+                        <td className="px-5 py-4 font-medium text-slate-700">
+                          {record.name}
+                        </td>
+                        <td className="px-5 py-4 text-slate-600">
+                          {record.business_name}
+                        </td>
+                        <td className="px-5 py-4 text-slate-600">
+                          {record.email || "-"}
+                        </td>
+                        <td className="px-5 py-4 text-slate-600">
+                          {record.phone_number}
+                        </td>
+                        <td className="px-5 py-4 text-slate-600">
+                          {record.account && accountMap[record.account]
+                            ? formatAccountLabel(accountMap[record.account]).trim()
+                            : "-"}
+                        </td>
+                        <td className="px-5 py-4 text-slate-600">
+                          {record.address}
+                        </td>
+                        <td className="px-5 py-4 text-right">
+                          <div className="flex justify-end gap-2">
+                            <IconButton
+                              icon="edit"
+                              label={`Edit ${singularTitle}`}
+                              onClick={() => onEdit(record.id)}
+                            />
+                            <IconButton
+                              icon="delete"
+                              label={`Delete ${singularTitle}`}
+                              onClick={() => setDeleteId(record.id)}
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex flex-col gap-3 border-t border-slate-100 px-5 py-4 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+                <span className="text-center sm:text-left">
+                  {total} total records
+                </span>
+                <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-end">
+                  <Button
+                    variant="secondary"
+                    type="button"
+                    disabled={page <= 1}
+                    onClick={() => loadRecords(page - 1, search)}
+                  >
+                    Prev
+                  </Button>
+                  <span className="font-semibold text-slate-700">
+                    Page {page} / {totalPages}
+                  </span>
+                  <Button
+                    variant="secondary"
+                    type="button"
+                    disabled={page >= totalPages}
+                    onClick={() => loadRecords(page + 1, search)}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          </StateView>
+
+          {partyType ? (
+            <Card className="space-y-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Opening Accounts</h3>
+                  <p className="text-sm text-slate-500">
+                    Posted to receivable/payable control accounts for party ledger reports.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    setEditingOpening(null);
+                    setOpeningModalOpen(true);
+                  }}
+                >
+                  Add Opening Account
+                </Button>
+              </div>
+
+              <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                <table className="w-full min-w-[640px] text-sm">
+                  <thead className="bg-slate-50 text-left">
+                    <tr>
+                      <th className="px-4 py-3 font-bold text-slate-700">{singularTitle}</th>
+                      <th className="px-4 py-3 font-bold text-slate-700">Date</th>
+                      <th className="px-4 py-3 font-bold text-slate-700 text-right">Amount</th>
+                      <th className="px-4 py-3 font-bold text-slate-700">Remarks</th>
+                      <th className="px-4 py-3 text-right font-bold text-slate-700">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {openingLoading ? (
+                      <tr>
+                        <td colSpan={5} className="px-4 py-6 text-center text-slate-500">
+                          Loading opening accounts...
+                        </td>
+                      </tr>
+                    ) : openingBalances.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="px-4 py-6 text-center text-slate-500">
+                          No opening accounts yet.
+                        </td>
+                      </tr>
+                    ) : (
+                      openingBalances.map((record) => (
+                        <tr key={record.id} className="border-t border-slate-100">
+                          <td className="px-4 py-3 font-medium text-slate-800">
+                            {record.partyName}
+                          </td>
+                          <td className="px-4 py-3 text-slate-600">{record.date}</td>
+                          <td className="px-4 py-3 text-right font-semibold tabular-nums text-slate-900">
+                            {formatMoney(record.amount)}
+                          </td>
+                          <td className="px-4 py-3 text-slate-600">
+                            {record.remarks || "—"}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex justify-end gap-2">
+                              <IconButton
+                                icon="edit"
+                                label="Edit opening account"
+                                onClick={() => {
+                                  setEditingOpening(record);
+                                  setOpeningModalOpen(true);
+                                }}
+                              />
+                              <IconButton
+                                icon="delete"
+                                label="Delete opening account"
+                                onClick={() => setDeleteOpeningId(record.id)}
+                              />
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          ) : null}
+        </>
       ) : null}
+
+      {isCombinedView ? formCard : null}
+      {isFormView ? formCard : null}
     </section>
   );
 };

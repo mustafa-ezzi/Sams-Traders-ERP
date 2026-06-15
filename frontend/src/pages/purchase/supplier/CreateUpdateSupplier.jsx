@@ -5,6 +5,7 @@ const CreateUpdateSupplier = () => (
     view="form"
     basePath="/suppliers"
     title="Suppliers"
+    partyType="supplier"
     service={supplierService}
     autoControlAccount
     accountLabel="Payable account"

@@ -812,6 +812,100 @@ class OpeningAccountsStructureTests(TestCase):
         self.assertTrue(created.is_postable)
         self.assertEqual(created.level, 5)
 
+    def test_can_create_second_opening_account_with_next_code(self):
+        bank = Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="1111",
+            name="Bank Alfalah",
+            parent=self.bank_root,
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.BANK,
+            account_nature=Account.AccountNature.DEBIT,
+            level=3,
+            is_postable=False,
+            is_active=True,
+            sort_order=0,
+        )
+        Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="11111",
+            name="Current Account",
+            parent=bank,
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.BANK,
+            account_nature=Account.AccountNature.DEBIT,
+            level=5,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+
+        request = self._build_request(
+            "post",
+            "/accounts/accounts/opening-account-items/",
+            {"bank_code": bank.code, "name": "Savings Account", "is_active": True},
+        )
+
+        response = AccountViewSet.as_view({"post": "create_opening_account_item"})(request)
+
+        self.assertEqual(response.status_code, 201)
+        created = Account.objects.get(name="Savings Account")
+        self.assertEqual(created.code, "11112")
+        self.assertEqual(created.parent_id, bank.id)
+
+    def test_opening_account_code_skips_codes_used_elsewhere_in_dimension(self):
+        bank = Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="1111",
+            name="Bank Alfalah",
+            parent=self.bank_root,
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.BANK,
+            account_nature=Account.AccountNature.DEBIT,
+            level=3,
+            is_postable=False,
+            is_active=True,
+            sort_order=0,
+        )
+        Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="11112",
+            name="Legacy Account",
+            parent=self.current_asset,
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.BANK,
+            account_nature=Account.AccountNature.DEBIT,
+            level=3,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+        Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="11111",
+            name="Current Account",
+            parent=bank,
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.BANK,
+            account_nature=Account.AccountNature.DEBIT,
+            level=5,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+
+        request = self._build_request(
+            "post",
+            "/accounts/accounts/opening-account-items/",
+            {"bank_code": bank.code, "name": "Savings Account", "is_active": True},
+        )
+
+        response = AccountViewSet.as_view({"post": "create_opening_account_item"})(request)
+
+        self.assertEqual(response.status_code, 201)
+        created = Account.objects.get(name="Savings Account")
+        self.assertEqual(created.code, "11113")
+
     def test_nested_chart_account_appends_digit_after_level_three(self):
         inventory = Account.objects.create(
             tenant_id=self.tenant_id,
