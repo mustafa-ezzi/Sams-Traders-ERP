@@ -6,6 +6,8 @@ import FormInput from "../../../components/ui/FormInput";
 import customerService from "../../../api/services/customerService";
 import warehouseService from "../../../api/services/warehouseService";
 import salesInvoiceService from "../../../api/services/salesInvoiceService";
+import salesOrderService from "../../../api/services/salesOrderService";
+import salesmanService from "../../../api/services/salesmanService";
 import { formatDecimal } from "../../../utils/format";
 import { useToast } from "../../../context/ToastContext";
 const selectClassName =
@@ -15,12 +17,66 @@ const createEmptyLine = () => ({
   quantity: "1",
   rate: "0",
   discount: "0",
+  discountPercent: "0",
 });
 const toNumber = (value) => {
   const parsedValue = Number(value);
   return Number.isFinite(parsedValue) ? parsedValue : 0;
 };
 const toRateString = (value) => String(toNumber(value));
+const roundMoney = (value) => Math.round(toNumber(value) * 100) / 100;
+const roundPercent = (value) => Math.round(toNumber(value) * 100) / 100;
+const formatInputNumber = (value) => {
+  const rounded = roundMoney(value);
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2);
+};
+const amountFromPercent = (baseAmount, percent) => {
+  const base = roundMoney(baseAmount);
+  if (base <= 0) return 0;
+  const normalizedPercent = Math.min(100, Math.max(0, toNumber(percent)));
+  return roundMoney(Math.min(base, (base * normalizedPercent) / 100));
+};
+const percentFromAmount = (baseAmount, amount) => {
+  const base = roundMoney(baseAmount);
+  if (base <= 0) return 0;
+  return roundPercent(
+    (Math.min(base, Math.max(0, toNumber(amount))) / base) * 100,
+  );
+};
+const recalcLineFromPercent = (line) => {
+  const baseAmount = toNumber(line.quantity) * toNumber(line.rate);
+  const percent = Math.min(100, Math.max(0, toNumber(line.discountPercent)));
+  const discount = amountFromPercent(baseAmount, percent);
+  return {
+    ...line,
+    discountPercent: formatInputNumber(percent),
+    discount: formatInputNumber(discount),
+  };
+};
+const recalcLineFromAmount = (line) => {
+  const baseAmount = toNumber(line.quantity) * toNumber(line.rate);
+  const discount = Math.min(baseAmount, Math.max(0, toNumber(line.discount)));
+  return {
+    ...line,
+    discount: formatInputNumber(discount),
+    discountPercent: formatInputNumber(percentFromAmount(baseAmount, discount)),
+  };
+};
+const mapLineFromInvoice = (line) => {
+  const baseAmount = toNumber(line.quantity) * toNumber(line.rate);
+  const discount = toNumber(line.discount);
+  return {
+    productId: line.productId,
+    quantity: String(line.quantity),
+    rate: String(line.rate),
+    discount: String(line.discount ?? 0),
+    discountPercent: formatInputNumber(percentFromAmount(baseAmount, discount)),
+  };
+};
+const lineGrossTotal = (line) => {
+  const amount = toNumber(line.quantity) * toNumber(line.rate);
+  return Math.max(amount - toNumber(line.discount), 0);
+};
 const extractErrorMessage = (error) => {
   const data = error?.response?.data;
   if (!data) return "Something went wrong";
@@ -43,14 +99,20 @@ const CreateUpdateSalesInvoice = () => {
   const editingId = id || "";
   const [customers, setCustomers] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
+  const [salesmen, setSalesmen] = useState([]);
+  const [openOrders, setOpenOrders] = useState([]);
   const [productOptions, setProductOptions] = useState([]);
   const [form, setForm] = useState({
     date: new Date().toISOString().slice(0, 10),
     dueDate: "",
     customerId: "",
     warehouseId: "",
+    salesmanId: "",
+    salesOrderId: "",
+    orderReference: "",
     remarks: "",
     invoiceDiscount: "0",
+    invoiceDiscountPercent: "0",
     lines: [createEmptyLine()],
   });
   const [submitting, setSubmitting] = useState(false);
@@ -101,6 +163,15 @@ const CreateUpdateSalesInvoice = () => {
     () => netAmount - estimatedCostTotal,
     [estimatedCostTotal, netAmount],
   );
+  const selectedSalesman = useMemo(
+    () => salesmen.find((salesman) => salesman.id === form.salesmanId) || null,
+    [form.salesmanId, salesmen],
+  );
+  const estimatedSalesmanCommission = useMemo(() => {
+    const rate = toNumber(selectedSalesman?.commission_on_sales);
+    if (!form.salesmanId || rate <= 0) return 0;
+    return (netAmount * rate) / 100;
+  }, [form.salesmanId, netAmount, selectedSalesman]);
   const loadProductOptions = async (warehouseId) => {
     try {
       const response = await salesInvoiceService.getProductOptions(warehouseId);
@@ -113,16 +184,33 @@ const CreateUpdateSalesInvoice = () => {
     Promise.all([
       customerService.list({ page: 1, limit: 100, search: "" }),
       warehouseService.list({ page: 1, limit: 100, search: "" }),
+      salesmanService.list({ page: 1, limit: 100, search: "" }),
+      salesOrderService.list({ page: 1, limit: 200, invoiced: false }),
     ])
-      .then(([customerResponse, warehouseResponse]) => {
+      .then(([customerResponse, warehouseResponse, salesmanResponse, orderResponse]) => {
         setCustomers(customerResponse.data || []);
         setWarehouses(warehouseResponse.data || []);
+        setSalesmen(salesmanResponse.data || []);
+        setOpenOrders(orderResponse.data || []);
       })
       .catch(() => toast.error("Failed to load sales setup options"));
   }, [toast]);
   useEffect(() => {
     loadProductOptions(form.warehouseId);
   }, [form.warehouseId]);
+  useEffect(() => {
+    const percent = toNumber(form.invoiceDiscountPercent);
+    if (percent <= 0) return;
+
+    const nextAmount = amountFromPercent(grossAmount, percent);
+    setForm((current) => {
+      if (roundMoney(current.invoiceDiscount) === nextAmount) return current;
+      return {
+        ...current,
+        invoiceDiscount: formatInputNumber(nextAmount),
+      };
+    });
+  }, [grossAmount, form.invoiceDiscountPercent]);
   useEffect(() => {
     if (!id) {
       setLoadingInvoice(false);
@@ -134,23 +222,52 @@ const CreateUpdateSalesInvoice = () => {
       try {
         const invoice = await salesInvoiceService.getById(id);
         if (cancelled) return;
+        const loadedLines =
+          invoice.lines?.length > 0
+            ? invoice.lines.map((line) =>
+                mapLineFromInvoice({
+                  productId: line.productId,
+                  quantity: line.quantity,
+                  rate: line.rate,
+                  discount: line.discount,
+                }),
+              )
+            : [createEmptyLine()];
+        const loadedGross = loadedLines.reduce(
+          (sum, line) => sum + lineGrossTotal(line),
+          0,
+        );
+        const loadedInvoiceDiscount = toNumber(invoice.invoiceDiscount);
         setForm({
           date: invoice.date,
           dueDate: invoice.dueDate ? String(invoice.dueDate).slice(0, 10) : "",
           customerId: invoice.customerId,
           warehouseId: invoice.warehouseId,
+          salesmanId: invoice.salesmanId || "",
+          salesOrderId: invoice.salesOrderId || "",
+          orderReference: invoice.orderReference || "",
           remarks: invoice.remarks || "",
-          invoiceDiscount: String(invoice.invoiceDiscount || 0),
-          lines:
-            invoice.lines?.length > 0
-              ? invoice.lines.map((line) => ({
-                  productId: line.productId,
-                  quantity: String(line.quantity),
-                  rate: String(line.rate),
-                  discount: String(line.discount),
-                }))
-              : [createEmptyLine()],
+          invoiceDiscount: formatInputNumber(loadedInvoiceDiscount),
+          invoiceDiscountPercent: formatInputNumber(
+            percentFromAmount(loadedGross, loadedInvoiceDiscount),
+          ),
+          lines: loadedLines,
         });
+        if (invoice.salesOrderId) {
+          setOpenOrders((current) => {
+            const exists = current.some((order) => order.id === invoice.salesOrderId);
+            if (exists || !invoice.salesOrder) return current;
+            return [
+              {
+                id: invoice.salesOrder.id,
+                order_number: invoice.salesOrder.orderNumber,
+                customer: invoice.customer,
+                isInvoiced: true,
+              },
+              ...current,
+            ];
+          });
+        }
         await loadProductOptions(invoice.warehouseId);
       } catch (editError) {
         if (!cancelled) {
@@ -171,18 +288,97 @@ const CreateUpdateSalesInvoice = () => {
   const handleChange = (field, value) => {
     setForm((current) => ({ ...current, [field]: value }));
   };
+  const handleInvoiceDiscountAmount = (value) => {
+    const amount = Math.min(grossAmount, Math.max(0, toNumber(value)));
+    setForm((current) => ({
+      ...current,
+      invoiceDiscount: formatInputNumber(amount),
+      invoiceDiscountPercent: formatInputNumber(
+        percentFromAmount(grossAmount, amount),
+      ),
+    }));
+  };
+  const handleInvoiceDiscountPercent = (value) => {
+    const percent = Math.min(100, Math.max(0, toNumber(value)));
+    const amount = amountFromPercent(grossAmount, percent);
+    setForm((current) => ({
+      ...current,
+      invoiceDiscountPercent: formatInputNumber(percent),
+      invoiceDiscount: formatInputNumber(amount),
+    }));
+  };
+  const applySalesOrder = async (orderId) => {
+    if (!orderId) {
+      setForm((current) => ({
+        ...current,
+        salesOrderId: "",
+        orderReference: "",
+      }));
+      return;
+    }
+    try {
+      const order = await salesOrderService.getById(orderId);
+      const loadedLines =
+        order.lines?.length > 0
+          ? order.lines.map((line) =>
+              mapLineFromInvoice({
+                productId: line.productId,
+                quantity: line.quantity,
+                rate: line.rate,
+                discount: line.discount,
+              }),
+            )
+          : [createEmptyLine()];
+      const loadedGross = loadedLines.reduce(
+        (sum, line) => sum + lineGrossTotal(line),
+        0,
+      );
+      const loadedOrderDiscount = toNumber(order.orderDiscount);
+      setForm({
+        date: order.date,
+        dueDate: order.dueDate ? String(order.dueDate).slice(0, 10) : "",
+        customerId: order.customerId,
+        warehouseId: order.warehouseId,
+        salesmanId: order.salesmanId || "",
+        salesOrderId: order.id,
+        orderReference: order.order_number,
+        remarks: order.remarks || "",
+        invoiceDiscount: formatInputNumber(loadedOrderDiscount),
+        invoiceDiscountPercent: formatInputNumber(
+          percentFromAmount(loadedGross, loadedOrderDiscount),
+        ),
+        lines: loadedLines,
+      });
+      await loadProductOptions(order.warehouseId);
+    } catch (orderError) {
+      toast.error(extractErrorMessage(orderError) || "Failed to load sales order");
+    }
+  };
+  const handleSalesOrderChange = (orderId) => {
+    applySalesOrder(orderId);
+  };
   const handleLineChange = (index, field, value) => {
     setForm((current) => {
       const nextLines = [...current.lines];
-      const nextLine =
-        field === "productId"
-          ? {
-              ...nextLines[index],
-              productId: value,
-              rate: value ? toRateString(productMap[value]?.net_amount) : "0",
-            }
-          : { ...nextLines[index], [field]: value };
-      nextLines[index] = { ...nextLine };
+      let nextLine = { ...nextLines[index], [field]: value };
+
+      if (field === "productId") {
+        nextLine.productId = value;
+        nextLine.rate = value ? toRateString(productMap[value]?.net_amount) : "0";
+      }
+
+      if (field === "discountPercent") {
+        nextLine = recalcLineFromPercent(nextLine);
+      } else if (field === "discount") {
+        nextLine = recalcLineFromAmount(nextLine);
+      } else if (["quantity", "rate", "productId"].includes(field)) {
+        nextLine =
+          toNumber(nextLine.discountPercent) > 0
+            ? recalcLineFromPercent(nextLine)
+            : recalcLineFromAmount(nextLine);
+      }
+
+      nextLines[index] = nextLine;
       return { ...current, lines: nextLines };
     });
   };
@@ -206,6 +402,8 @@ const CreateUpdateSalesInvoice = () => {
     due_date: form.dueDate || null,
     customer_id: form.customerId,
     warehouse_id: form.warehouseId,
+    salesman_id: form.salesmanId || null,
+    sales_order_id: form.salesOrderId || null,
     remarks: form.remarks,
     invoice_discount: toNumber(form.invoiceDiscount),
     lines: form.lines
@@ -330,27 +528,76 @@ const CreateUpdateSalesInvoice = () => {
               </select>{" "}
             </div>{" "}
             <div className="space-y-1">
-              {" "}
               <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 dark:text-slate-500">
-                {" "}
-                Warehouse <span className="text-rose-500">*</span>{" "}
-              </label>{" "}
+                Warehouse <span className="text-rose-500">*</span>
+              </label>
               <select
                 className={selectClassName}
                 value={form.warehouseId}
                 onChange={(e) => handleChange("warehouseId", e.target.value)}
               >
-                {" "}
-                <option value="">Select Warehouse</option>{" "}
+                <option value="">Select Warehouse</option>
                 {warehouses.map((warehouse) => (
                   <option key={warehouse.id} value={warehouse.id}>
-                    {" "}
-                    {warehouse.name}{" "}
+                    {warehouse.name}
                   </option>
-                ))}{" "}
-              </select>{" "}
-            </div>{" "}
-          </div>{" "}
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Salesman
+              </label>
+              <select
+                className={selectClassName}
+                value={form.salesmanId}
+                onChange={(e) => handleChange("salesmanId", e.target.value)}
+              >
+                <option value="">No salesman</option>
+                {salesmen.map((salesman) => (
+                  <option key={salesman.id} value={salesman.id}>
+                    {salesman.code} - {salesman.name} (
+                    {toNumber(salesman.commission_on_sales)}% sales)
+                  </option>
+                ))}
+              </select>
+              {form.salesmanId ? (
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Commission is tracked separately and does not change the invoice total.
+                </p>
+              ) : null}
+            </div>
+            {!editingId ? (
+              <div className="space-y-1">
+                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                  Sales Order
+                </label>
+                <select
+                  className={selectClassName}
+                  value={form.salesOrderId}
+                  onChange={(e) => handleSalesOrderChange(e.target.value)}
+                >
+                  <option value="">Select open order (optional)</option>
+                  {openOrders.map((order) => (
+                    <option
+                      key={order.id}
+                      value={order.id}
+                      className={!order.isInvoiced ? "text-red-600" : ""}
+                    >
+                      {order.order_number} — {order.customer?.business_name || "Customer"}
+                      {!order.isInvoiced ? " (pending)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
+            <FormInput
+              label="Order Reference"
+              value={form.orderReference}
+              readOnly
+              placeholder="Filled when a sales order is selected"
+            />
+          </div>
           <div className="grid grid-cols-1 gap-3">
             {" "}
             <FormInput
@@ -368,14 +615,21 @@ const CreateUpdateSalesInvoice = () => {
               className="grid gap-2 bg-indigo-50 px-4 py-3 text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400 dark:text-slate-500"
               style={{
                 gridTemplateColumns:
-                  "1.8fr 80px 90px 70px 110px 110px 110px 110px 110px 110px 40px",
+                  "1.8fr 80px 90px 70px 110px 110px 85px 85px 110px 110px 110px 40px",
               }}
             >
-              {" "}
-              <span>Product Name</span> <span>Qty</span> <span>In Stock</span>{" "}
-              <span>Unit</span> <span>Rate (Price)</span> <span>Amount</span>{" "}
-              <span>Disc (Amt)</span> <span>Avg Cost</span> <span>COGS</span>{" "}
-              <span>Profit</span> <span></span>{" "}
+              <span>Product Name</span>
+              <span>Qty</span>
+              <span>In Stock</span>
+              <span>Unit</span>
+              <span>Rate (Price)</span>
+              <span>Amount</span>
+              <span>Disc %</span>
+              <span>Disc (Amt)</span>
+              <span>Avg Cost</span>
+              <span>COGS</span>
+              <span>Profit</span>
+              <span />
             </div>{" "}
             <div className="space-y-0 divide-y divide-slate-100 dark:divide-slate-700 px-4 py-2">
               {" "}
@@ -388,7 +642,7 @@ const CreateUpdateSalesInvoice = () => {
                     className="grid items-center gap-2 py-3"
                     style={{
                       gridTemplateColumns:
-                        "1.8fr 80px 90px 70px 110px 110px 110px 110px 110px 110px 40px",
+                        "1.8fr 80px 90px 70px 110px 110px 85px 85px 110px 110px 110px 40px",
                     }}
                   >
                     {" "}
@@ -444,13 +698,28 @@ const CreateUpdateSalesInvoice = () => {
                     <FormInput
                       type="number"
                       min="0"
+                      max="100"
+                      step="0.01"
+                      placeholder="0"
+                      value={line.discountPercent}
+                      onChange={(e) =>
+                        handleLineChange(
+                          index,
+                          "discountPercent",
+                          e.target.value,
+                        )
+                      }
+                    />
+                    <FormInput
+                      type="number"
+                      min="0"
                       step="0.01"
                       placeholder="0.00"
                       value={line.discount}
                       onChange={(e) =>
                         handleLineChange(index, "discount", e.target.value)
                       }
-                    />{" "}
+                    />
                     <div className="flex items-center rounded-2xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 px-3 py-3 text-sm font-semibold text-emerald-700 dark:text-emerald-300">
                       {" "}
                       {formatDecimal(metrics?.averageCost || 0)}{" "}
@@ -484,25 +753,35 @@ const CreateUpdateSalesInvoice = () => {
             </div>{" "}
           </div>{" "}
           <div className="flex flex-col items-end gap-3">
-            {" "}
-            <div className="flex gap-3">
-              {" "}
-              <div className="min-w-[180px] rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-5 py-3">
-                {" "}
+            <div className="flex flex-wrap justify-end gap-3">
+              <div className="min-w-[180px] rounded-2xl border border-slate-200 bg-white px-5 py-3 dark:border-slate-700 dark:bg-slate-800">
+                <p className="mb-1 text-xs text-slate-400 dark:text-slate-500">
+                  Invoice Discount (%)
+                </p>
+                <FormInput
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={form.invoiceDiscountPercent}
+                  onChange={(e) =>
+                    handleInvoiceDiscountPercent(e.target.value)
+                  }
+                />
+              </div>
+              <div className="min-w-[180px] rounded-2xl border border-slate-200 bg-white px-5 py-3 dark:border-slate-700 dark:bg-slate-800">
                 <p className="mb-1 text-xs text-slate-400 dark:text-slate-500">
                   Invoice Discount (Amount)
-                </p>{" "}
+                </p>
                 <FormInput
                   type="number"
                   min="0"
                   step="0.01"
                   value={form.invoiceDiscount}
-                  onChange={(e) =>
-                    handleChange("invoiceDiscount", e.target.value)
-                  }
-                />{" "}
-              </div>{" "}
-            </div>{" "}
+                  onChange={(e) => handleInvoiceDiscountAmount(e.target.value)}
+                />
+              </div>
+            </div>
             <div className="flex w-full justify-end gap-6 border-t border-slate-200 dark:border-slate-700 pt-3 text-sm text-slate-600 dark:text-slate-300">
               {" "}
               <div className="text-right">
@@ -515,15 +794,16 @@ const CreateUpdateSalesInvoice = () => {
                 </p>{" "}
               </div>{" "}
               <div className="text-right">
-                {" "}
                 <p className="mb-0.5 text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
                   Invoice Discount
-                </p>{" "}
+                </p>
                 <p className="text-base font-bold text-slate-800 dark:text-slate-100">
-                  {" "}
-                  - {formatDecimal(toNumber(form.invoiceDiscount))}{" "}
-                </p>{" "}
-              </div>{" "}
+                  - {formatDecimal(toNumber(form.invoiceDiscount))}
+                </p>
+                <p className="text-xs text-slate-400 dark:text-slate-500">
+                  {formatDecimal(toNumber(form.invoiceDiscountPercent))}%
+                </p>
+              </div>
               <div className="border-l border-slate-200 dark:border-slate-700 pl-6 text-right">
                 {" "}
                 <p className="mb-0.5 text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
@@ -543,15 +823,27 @@ const CreateUpdateSalesInvoice = () => {
                 </p>{" "}
               </div>{" "}
               <div className="border-l border-slate-200 dark:border-slate-700 pl-6 text-right">
-                {" "}
                 <p className="mb-0.5 text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
                   Est. Profit
-                </p>{" "}
+                </p>
                 <p className="text-xl font-extrabold text-emerald-600 dark:text-emerald-400">
                   {formatDecimal(estimatedProfit)}
-                </p>{" "}
-              </div>{" "}
-            </div>{" "}
+                </p>
+              </div>
+              {form.salesmanId ? (
+                <div className="border-l border-slate-200 dark:border-slate-700 pl-6 text-right">
+                  <p className="mb-0.5 text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                    Salesman Commission
+                  </p>
+                  <p className="text-base font-bold text-violet-600 dark:text-violet-400">
+                    {formatDecimal(estimatedSalesmanCommission)}
+                  </p>
+                  <p className="text-xs text-slate-400 dark:text-slate-500">
+                    {toNumber(selectedSalesman?.commission_on_sales)}% of net
+                  </p>
+                </div>
+              ) : null}
+            </div>
           </div>{" "}
           <div className="flex justify-end border-t border-slate-100 dark:border-slate-700 pt-4">
             {" "}

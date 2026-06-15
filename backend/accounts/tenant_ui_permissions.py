@@ -8,6 +8,7 @@ TENANT_UI_PERMISSION_KEYS = frozenset(
         "opening_stock",
         "suppliers",
         "sales_invoices",
+        "sales_orders",
         "sales_returns",
         "customers",
         "salesmen",

@@ -197,11 +197,18 @@ const navigation = [
     dot: "bg-emerald-400",
     items: [
       {
+        to: "/sales-orders",
+        label: "Orders",
+        icon: icons.stock,
+        perm: "sales_orders",
+      },
+      {
         to: "/sales-invoices",
         label: "Invoices",
         icon: icons.stock,
         perm: "sales_invoices",
       },
+      
       {
         to: "/sales-returns",
         label: "Returns",
@@ -406,6 +413,8 @@ const pageTitles = {
   "/bank-transfers/create": { title: "Create Bank Transfer", eyebrow: "Bank" },
   "/sales-invoices": { title: "Sales Invoices", eyebrow: "Sales" },
   "/sales-invoices/create": { title: "Create Sales Invoice", eyebrow: "Sales" },
+  "/sales-orders": { title: "Sales Orders", eyebrow: "Sales" },
+  "/sales-orders/create": { title: "Create Sales Order", eyebrow: "Sales" },
   "/sales-returns": { title: "Sales Returns", eyebrow: "Sales" },
   "/sales-returns/create": { title: "Create Sales Return", eyebrow: "Sales" },
   "/sales-bank-receipts": { title: "Bank Receipts", eyebrow: "Bank" },
@@ -620,6 +629,9 @@ const Layout = () => {
     }
     if (pathname.startsWith("/sales-invoices/") && pathname.endsWith("/edit")) {
       return { title: "Edit Sales Invoice", eyebrow: "Sales" };
+    }
+    if (pathname.startsWith("/sales-orders/") && pathname.endsWith("/edit")) {
+      return { title: "Edit Sales Order", eyebrow: "Sales" };
     }
     if (pathname.startsWith("/sales-returns/") && pathname.endsWith("/edit")) {
       return { title: "Edit Sales Return", eyebrow: "Sales" };

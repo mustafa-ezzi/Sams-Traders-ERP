@@ -254,3 +254,31 @@ button {
 .dark :where(.border-emerald-200) {
   border-color: rgb(6 78 59);
 }
+
+@keyframes order-pending-blink {
+  0%,
+  100% {
+    background-color: rgb(254 226 226 / 0.35);
+  }
+  50% {
+    background-color: rgb(254 202 202 / 0.9);
+  }
+}
+
+.dark .order-pending-blink {
+  animation: order-pending-blink-dark 1.2s ease-in-out infinite;
+}
+
+.order-pending-blink {
+  animation: order-pending-blink 1.2s ease-in-out infinite;
+}
+
+@keyframes order-pending-blink-dark {
+  0%,
+  100% {
+    background-color: rgb(127 29 29 / 0.25);
+  }
+  50% {
+    background-color: rgb(185 28 28 / 0.55);
+  }
+}

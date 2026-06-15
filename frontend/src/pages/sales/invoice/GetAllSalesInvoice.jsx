@@ -126,8 +126,9 @@ const GetAllSalesInvoice = () => {
                   {" "}
                   <tr>
                     {" "}
-                    <th className="px-4 py-3">Invoice</th>{" "}
-                    <th className="px-4 py-3">Date</th>{" "}
+                    <th className="px-4 py-3">Invoice</th>
+                    <th className="px-4 py-3">Order Ref</th>
+                    <th className="px-4 py-3">Date</th>
                     <th className="px-4 py-3">Customer</th>{" "}
                     <th className="px-4 py-3">Warehouse</th>{" "}
                     <th className="px-4 py-3">Gross</th>{" "}
@@ -145,10 +146,13 @@ const GetAllSalesInvoice = () => {
                       {" "}
                       <td className="px-4 py-3 font-semibold text-slate-900 dark:text-slate-100">
                         {record.invoice_number}
-                      </td>{" "}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
+                        {record.orderReference || "—"}
+                      </td>
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
                         {record.date}
-                      </td>{" "}
+                      </td>
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
                         {" "}
                         {record.customer?.business_name}{" "}

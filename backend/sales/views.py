@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Prefetch
+from django.db.models import Exists, OuterRef, Prefetch
 from django.utils.timezone import now
 from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
@@ -23,10 +23,19 @@ from inventory.services import (
     rebuild_product_costing,
     sync_product_stock_quantity,
 )
-from sales.models import SalesBankReceipt, SalesInvoice, SalesInvoiceLine, SalesReturn, SalesReturnLine
+from sales.models import (
+    SalesBankReceipt,
+    SalesInvoice,
+    SalesInvoiceLine,
+    SalesOrder,
+    SalesOrderLine,
+    SalesReturn,
+    SalesReturnLine,
+)
 from sales.serializers import (
     SalesBankReceiptSerializer,
     SalesInvoiceSerializer,
+    SalesOrderSerializer,
     SalesReturnInvoiceLinePreviewSerializer,
     SalesReturnSerializer,
 )
@@ -48,6 +57,7 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
         "invoice_number",
         "dc_number",
         "due_date",
+        "order_reference",
         "customer__business_name",
         "remarks",
         "warehouse__name",
@@ -59,7 +69,7 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
                 **get_shared_tenant_filter(self.request),
                 deleted_at__isnull=True,
             )
-            .select_related("customer", "warehouse", "salesman")
+            .select_related("customer", "warehouse", "salesman", "sales_order")
             .prefetch_related(
                 Prefetch(
                     "lines",
@@ -143,6 +153,144 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
             )
         return Response(
             {"data": None, "message": "Sales invoice deleted successfully"},
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=False, methods=["get"], url_path="product-options")
+    def product_options(self, request):
+        tenant_ids = get_shared_tenant_ids(request)
+        warehouse_id = request.query_params.get("warehouse_id")
+        search = request.query_params.get("search", "").strip()
+
+        dimension_names = {
+            row["code"]: row["name"]
+            for row in Dimension.objects.filter(code__in=tenant_ids).values("code", "name")
+        }
+
+        queryset = Product.objects.filter(
+            tenant_id__in=tenant_ids,
+            deleted_at__isnull=True,
+        ).select_related("unit").order_by("tenant_id", "name")
+
+        if search:
+            queryset = queryset.filter(name__icontains=search)
+
+        products = []
+        for product in queryset[:500]:
+            quantity = Decimal("0.00")
+            if warehouse_id:
+                stock = ProductStock.objects.filter(
+                    tenant_id=product.tenant_id,
+                    warehouse_id=warehouse_id,
+                    product_id=product.id,
+                    deleted_at__isnull=True,
+                ).first()
+                quantity = stock.quantity if stock else Decimal("0.00")
+            dimension_name = dimension_names.get(product.tenant_id, product.tenant_id)
+            products.append(
+                {
+                    "id": str(product.id),
+                    "name": product.name,
+                    "dimension_code": product.tenant_id,
+                    "dimension_name": dimension_name,
+                    "quantity": str(quantity),
+                    "unit": product.unit.name if product.unit else None,
+                    "product_type": product.product_type,
+                    "net_amount": str(product.net_amount),
+                    "average_cost": str(
+                        get_current_product_average_cost(product.tenant_id, product.id)
+                    ),
+                }
+            )
+
+        return Response({"data": products})
+
+
+class SalesOrderViewSet(viewsets.ModelViewSet):
+    serializer_class = SalesOrderSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+    filter_backends = [filters.SearchFilter]
+    search_fields = [
+        "order_number",
+        "dc_number",
+        "due_date",
+        "customer__business_name",
+        "remarks",
+        "warehouse__name",
+    ]
+
+    def get_queryset(self):
+        invoiced_subquery = SalesInvoice.objects.filter(
+            sales_order_id=OuterRef("pk"),
+            deleted_at__isnull=True,
+        )
+        queryset = (
+            SalesOrder.objects.filter(
+                **get_shared_tenant_filter(self.request),
+                deleted_at__isnull=True,
+            )
+            .select_related("customer", "warehouse", "salesman")
+            .prefetch_related(
+                Prefetch(
+                    "lines",
+                    queryset=SalesOrderLine.objects.filter(
+                        deleted_at__isnull=True,
+                    ).select_related("product"),
+                )
+            )
+            .annotate(_is_invoiced=Exists(invoiced_subquery))
+            .order_by("-date", "-created_at")
+        )
+
+        invoiced_param = self.request.query_params.get("invoiced", "").strip().lower()
+        if invoiced_param == "false":
+            queryset = queryset.filter(_is_invoiced=False)
+        elif invoiced_param == "true":
+            queryset = queryset.filter(_is_invoiced=True)
+
+        return queryset
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        order = serializer.save()
+        response_serializer = self.get_serializer(order)
+        return Response(
+            {
+                "data": response_serializer.data,
+                "message": "Sales order created successfully",
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop("partial", False)
+        instance = self.get_object()
+        if instance.invoices.filter(deleted_at__isnull=True).exists():
+            return Response(
+                {"message": "This sales order is already linked to an invoice and cannot be edited."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        order = serializer.save()
+        response_serializer = self.get_serializer(order)
+        return Response(response_serializer.data)
+
+    def perform_destroy(self, instance):
+        if instance.invoices.filter(deleted_at__isnull=True).exists():
+            raise ValidationError("This sales order is already linked to an invoice and cannot be deleted.")
+        instance.deleted_at = now()
+        instance.save(update_fields=["deleted_at", "updated_at"])
+        instance.lines.filter(deleted_at__isnull=True).update(deleted_at=now())
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        with transaction.atomic():
+            self.perform_destroy(instance)
+        return Response(
+            {"data": None, "message": "Sales order deleted successfully"},
             status=status.HTTP_200_OK,
         )
 

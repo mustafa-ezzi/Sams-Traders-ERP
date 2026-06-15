@@ -8,6 +8,7 @@ const PERM_HOME = {
   opening_stock: "/opening-stock",
   suppliers: "/suppliers",
   sales_invoices: "/sales-invoices",
+  sales_orders: "/sales-orders",
   sales_returns: "/sales-returns",
   customers: "/customers",
   salesmen: "/salesmen",
@@ -62,6 +63,7 @@ export function pathToPermissionKey(pathname) {
   if (p.startsWith("/purchase-bank-payments")) return "purchase_bank_payments";
 
   if (p.startsWith("/sales-invoices")) return "sales_invoices";
+  if (p.startsWith("/sales-orders")) return "sales_orders";
   if (p.startsWith("/sales-returns")) return "sales_returns";
   if (p.startsWith("/sales-bank-receipts")) return "sales_bank_receipts";
 

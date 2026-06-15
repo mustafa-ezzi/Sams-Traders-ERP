@@ -10,7 +10,15 @@ from common.tenancy import get_shared_tenant_ids, shared_master_exists
 from accounts.models import Account
 from inventory.models import Customer, Product, ProductStock, Salesman, Warehouse
 from inventory.serializers import ProductDetailedSerializer
-from sales.models import SalesBankReceipt, SalesInvoice, SalesInvoiceLine, SalesReturn, SalesReturnLine
+from sales.models import (
+    SalesBankReceipt,
+    SalesInvoice,
+    SalesInvoiceLine,
+    SalesOrder,
+    SalesOrderLine,
+    SalesReturn,
+    SalesReturnLine,
+)
 from sales.services import (
     get_available_sale_quantity,
     get_sales_invoice_financials,
@@ -42,6 +50,12 @@ class SalesmanMiniSerializer(serializers.Serializer):
 class SalesInvoiceMiniSerializer(serializers.Serializer):
     id = serializers.UUIDField()
     invoice_number = serializers.CharField()
+    date = serializers.DateField()
+
+
+class SalesOrderMiniSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    order_number = serializers.CharField()
     date = serializers.DateField()
 
 
@@ -140,6 +154,8 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
     warehouse_id = serializers.UUIDField(write_only=True)
     salesman = SalesmanMiniSerializer(read_only=True)
     salesman_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
+    sales_order = SalesOrderMiniSerializer(read_only=True)
+    sales_order_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
     due_date = serializers.DateField(allow_null=True, required=False)
     lines = SalesInvoiceLineSerializer(many=True)
     returned_amount = serializers.SerializerMethodField()
@@ -160,6 +176,9 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
             "warehouse_id",
             "salesman",
             "salesman_id",
+            "sales_order",
+            "sales_order_id",
+            "order_reference",
             "salesman_commission_rate",
             "salesman_commission_amount",
             "remarks",
@@ -176,6 +195,7 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id",
             "invoice_number",
+            "order_reference",
             "gross_amount",
             "net_amount",
             "salesman_commission_rate",
@@ -231,6 +251,34 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
 
         if not shared_master_exists(Salesman, self.context["request"], value):
             raise serializers.ValidationError("Salesman not found")
+        return value
+
+    def _sales_order_is_invoiced(self, sales_order_id, exclude_invoice_id=None):
+        queryset = SalesInvoice.objects.filter(
+            sales_order_id=sales_order_id,
+            deleted_at__isnull=True,
+        )
+        if exclude_invoice_id:
+            queryset = queryset.exclude(id=exclude_invoice_id)
+        return queryset.exists()
+
+    def validate_sales_order_id(self, value):
+        if not value:
+            return None
+
+        request = self.context["request"]
+        sales_order = SalesOrder.objects.filter(
+            id=value,
+            tenant_id__in=get_shared_tenant_ids(request),
+            deleted_at__isnull=True,
+        ).first()
+        if not sales_order:
+            raise serializers.ValidationError("Sales order not found")
+
+        exclude_id = self.instance.id if self.instance else None
+        if self._sales_order_is_invoiced(value, exclude_invoice_id=exclude_id):
+            raise serializers.ValidationError("This sales order is already linked to an invoice.")
+
         return value
 
     def _calculate_salesman_commission(self, salesman, net_amount):
@@ -312,6 +360,40 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
         attrs["salesman"] = salesman
         attrs["salesman_commission_rate"] = rate
         attrs["salesman_commission_amount"] = amount
+
+        sales_order_id_provided = "sales_order_id" in attrs
+        sales_order_id = attrs.pop("sales_order_id", None)
+        if sales_order_id_provided:
+            sales_order = (
+                SalesOrder.objects.filter(
+                    id=sales_order_id,
+                    tenant_id__in=get_shared_tenant_ids(self.context["request"]),
+                    deleted_at__isnull=True,
+                ).first()
+                if sales_order_id
+                else None
+            )
+            if sales_order_id and not sales_order:
+                raise serializers.ValidationError({"sales_order_id": "Sales order not found"})
+            attrs["sales_order"] = sales_order
+            attrs["order_reference"] = sales_order.order_number if sales_order else ""
+        elif self.instance:
+            attrs["sales_order"] = getattr(self.instance, "sales_order", None)
+            attrs["order_reference"] = self.instance.order_reference or ""
+
+        sales_order = attrs.get("sales_order")
+        if sales_order:
+            customer_id = attrs.get("customer_id") or getattr(self.instance, "customer_id", None)
+            warehouse_id = attrs.get("warehouse_id") or getattr(self.instance, "warehouse_id", None)
+            if str(sales_order.customer_id) != str(customer_id):
+                raise serializers.ValidationError(
+                    {"sales_order_id": "Customer must match the selected sales order."}
+                )
+            if str(sales_order.warehouse_id) != str(warehouse_id):
+                raise serializers.ValidationError(
+                    {"sales_order_id": "Warehouse must match the selected sales order."}
+                )
+
         return attrs
 
     def _generate_invoice_number(self, request):
@@ -359,12 +441,14 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
         customer_id = validated_data.pop("customer_id")
         warehouse_id = validated_data.pop("warehouse_id")
         salesman = validated_data.pop("salesman", None)
+        sales_order = validated_data.pop("sales_order", None)
 
         invoice = SalesInvoice.objects.create(
             tenant_id=tenant_id,
             customer_id=customer_id,
             warehouse_id=warehouse_id,
             salesman=salesman,
+            sales_order=sales_order,
             invoice_number=self._generate_invoice_number(request),
             **validated_data,
         )
@@ -378,11 +462,304 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
         instance.warehouse_id = validated_data.pop("warehouse_id", instance.warehouse_id)
         if "salesman" in validated_data:
             instance.salesman = validated_data.pop("salesman")
+        if "sales_order" in validated_data:
+            instance.sales_order = validated_data.pop("sales_order")
+        if "order_reference" in validated_data:
+            instance.order_reference = validated_data.pop("order_reference")
         instance.date = validated_data.get("date", instance.date)
         instance.due_date = validated_data.get("due_date", instance.due_date)
         instance.dc_number = validated_data.get("dc_number", instance.dc_number)
         instance.remarks = validated_data.get("remarks", instance.remarks)
         instance.invoice_discount = validated_data.get("invoice_discount", instance.invoice_discount)
+        instance.gross_amount = validated_data.get("gross_amount", instance.gross_amount)
+        instance.net_amount = validated_data.get("net_amount", instance.net_amount)
+        instance.salesman_commission_rate = validated_data.get(
+            "salesman_commission_rate",
+            instance.salesman_commission_rate,
+        )
+        instance.salesman_commission_amount = validated_data.get(
+            "salesman_commission_amount",
+            instance.salesman_commission_amount,
+        )
+        instance.save()
+
+        instance.lines.filter(deleted_at__isnull=True).update(deleted_at=now())
+        self._create_lines(instance, lines_data, instance.tenant_id)
+        return instance
+
+
+class SalesOrderLineSerializer(serializers.ModelSerializer):
+    product = ProductDetailedSerializer(read_only=True)
+    product_id = serializers.UUIDField(write_only=True)
+
+    class Meta:
+        model = SalesOrderLine
+        fields = [
+            "id",
+            "product",
+            "product_id",
+            "quantity",
+            "rate",
+            "amount",
+            "discount",
+            "total_amount",
+        ]
+        read_only_fields = ["id", "amount", "total_amount"]
+
+    def validate_product_id(self, value):
+        tenant_ids = get_shared_tenant_ids(self.context["request"])
+        if not Product.objects.filter(
+            id=value,
+            tenant_id__in=tenant_ids,
+            deleted_at__isnull=True,
+        ).exists():
+            raise serializers.ValidationError("Product not found")
+        return value
+
+    def validate_quantity(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("Quantity must be greater than 0")
+        return quantize_money(value)
+
+    def validate_rate(self, value):
+        if value < 0:
+            raise serializers.ValidationError("Rate cannot be negative")
+        return quantize_money(value)
+
+    def validate_discount(self, value):
+        if value < 0:
+            raise serializers.ValidationError("Discount cannot be negative")
+        return quantize_money(value)
+
+    def validate(self, attrs):
+        quantity = quantize_money(attrs.get("quantity", 0))
+        rate = quantize_money(attrs.get("rate", 0))
+        discount = quantize_money(attrs.get("discount", 0))
+        amount = quantize_money(quantity * rate)
+
+        if discount > amount:
+            raise serializers.ValidationError({"discount": "Discount cannot exceed line amount."})
+
+        attrs["amount"] = amount
+        attrs["total_amount"] = quantize_money(amount - discount)
+        return attrs
+
+
+class SalesOrderSerializer(serializers.ModelSerializer):
+    customer = CustomerMiniSerializer(read_only=True)
+    customer_id = serializers.UUIDField(write_only=True)
+    warehouse = WarehouseMiniSerializer(read_only=True)
+    warehouse_id = serializers.UUIDField(write_only=True)
+    salesman = SalesmanMiniSerializer(read_only=True)
+    salesman_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
+    due_date = serializers.DateField(allow_null=True, required=False)
+    lines = SalesOrderLineSerializer(many=True)
+    is_invoiced = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SalesOrder
+        fields = [
+            "id",
+            "order_number",
+            "dc_number",
+            "date",
+            "due_date",
+            "customer",
+            "customer_id",
+            "warehouse",
+            "warehouse_id",
+            "salesman",
+            "salesman_id",
+            "salesman_commission_rate",
+            "salesman_commission_amount",
+            "remarks",
+            "order_discount",
+            "gross_amount",
+            "net_amount",
+            "is_invoiced",
+            "lines",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "order_number",
+            "gross_amount",
+            "net_amount",
+            "salesman_commission_rate",
+            "salesman_commission_amount",
+            "is_invoiced",
+            "created_at",
+            "updated_at",
+        ]
+
+    def get_is_invoiced(self, obj):
+        if hasattr(obj, "_is_invoiced"):
+            return bool(obj._is_invoiced)
+        return obj.invoices.filter(deleted_at__isnull=True).exists()
+
+    def validate_customer_id(self, value):
+        if not shared_master_exists(Customer, self.context["request"], value):
+            raise serializers.ValidationError("Customer not found")
+        return value
+
+    def validate_warehouse_id(self, value):
+        if not shared_master_exists(Warehouse, self.context["request"], value):
+            raise serializers.ValidationError("Warehouse not found")
+        return value
+
+    def validate_salesman_id(self, value):
+        if not value:
+            return None
+
+        if not shared_master_exists(Salesman, self.context["request"], value):
+            raise serializers.ValidationError("Salesman not found")
+        return value
+
+    def validate_order_discount(self, value):
+        if value < 0:
+            raise serializers.ValidationError("Order discount cannot be negative")
+        return quantize_money(value)
+
+    def validate_lines(self, value):
+        if not value:
+            raise serializers.ValidationError("At least one product line is required.")
+        return value
+
+    def validate(self, attrs):
+        line_items = attrs.get("lines") or []
+        seen_products = set()
+        gross_amount = Decimal("0.00")
+
+        for line in line_items:
+            product_id = str(line["product_id"])
+            if product_id in seen_products:
+                raise serializers.ValidationError(
+                    {"lines": "Each product should appear only once per order."}
+                )
+            seen_products.add(product_id)
+            gross_amount += line["total_amount"]
+
+        gross_amount = quantize_money(gross_amount)
+        order_discount = quantize_money(attrs.get("order_discount", Decimal("0.00")))
+
+        if order_discount > gross_amount:
+            raise serializers.ValidationError(
+                {"order_discount": "Order discount cannot exceed gross amount."}
+            )
+
+        attrs["gross_amount"] = gross_amount
+        net_amount = quantize_money(gross_amount - order_discount)
+        attrs["net_amount"] = net_amount
+
+        salesman_id_provided = "salesman_id" in attrs
+        salesman_id = attrs.pop("salesman_id", None)
+        if salesman_id_provided:
+            salesman = (
+                Salesman.objects.filter(
+                    id=salesman_id,
+                    tenant_id__in=get_shared_tenant_ids(self.context["request"]),
+                    deleted_at__isnull=True,
+                ).first()
+                if salesman_id
+                else None
+            )
+            if salesman_id and not salesman:
+                raise serializers.ValidationError({"salesman_id": "Salesman not found"})
+        else:
+            salesman = getattr(self.instance, "salesman", None) if self.instance else None
+
+        rate, amount = self._calculate_salesman_commission(salesman, net_amount)
+        attrs["salesman"] = salesman
+        attrs["salesman_commission_rate"] = rate
+        attrs["salesman_commission_amount"] = amount
+        return attrs
+
+    def _calculate_salesman_commission(self, salesman, net_amount):
+        if not salesman:
+            return Decimal("0.00"), Decimal("0.00")
+
+        rate = quantize_money(salesman.commission_on_sales)
+        if rate <= 0:
+            return rate, Decimal("0.00")
+
+        amount = quantize_money((quantize_money(net_amount) * rate) / Decimal("100"))
+        return rate, amount
+
+    def _generate_order_number(self, request):
+        tenant_ids = get_shared_tenant_ids(request)
+        prefix = "SO - "
+        numbers = []
+        for order_number in SalesOrder.objects.filter(
+            tenant_id__in=tenant_ids,
+            deleted_at__isnull=True,
+            order_number__startswith=prefix,
+        ).values_list("order_number", flat=True):
+            match = re.fullmatch(r"SO - (\d+)", order_number or "")
+            if match:
+                numbers.append(int(match.group(1)))
+
+        next_number = (max(numbers) + 1) if numbers else 1
+        while True:
+            candidate = f"{prefix}{next_number:04d}"
+            if not SalesOrder.objects.filter(
+                tenant_id__in=tenant_ids,
+                deleted_at__isnull=True,
+                order_number=candidate,
+            ).exists():
+                return candidate
+            next_number += 1
+
+    def _create_lines(self, order, lines_data, tenant_id):
+        for line_data in lines_data:
+            SalesOrderLine.objects.create(
+                tenant_id=tenant_id,
+                sales_order=order,
+                product_id=line_data["product_id"],
+                quantity=line_data["quantity"],
+                rate=line_data["rate"],
+                amount=line_data["amount"],
+                discount=line_data["discount"],
+                total_amount=line_data["total_amount"],
+            )
+
+    @transaction.atomic
+    def create(self, validated_data):
+        request = self.context["request"]
+        tenant_id = getattr(request, "tenant_id", None) or request.user.tenant_id
+        lines_data = validated_data.pop("lines", [])
+        customer_id = validated_data.pop("customer_id")
+        warehouse_id = validated_data.pop("warehouse_id")
+        salesman = validated_data.pop("salesman", None)
+
+        order = SalesOrder.objects.create(
+            tenant_id=tenant_id,
+            customer_id=customer_id,
+            warehouse_id=warehouse_id,
+            salesman=salesman,
+            order_number=self._generate_order_number(request),
+            **validated_data,
+        )
+        self._create_lines(order, lines_data, tenant_id)
+        return order
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        if instance.invoices.filter(deleted_at__isnull=True).exists():
+            raise serializers.ValidationError(
+                "This sales order is already linked to an invoice and cannot be edited."
+            )
+
+        lines_data = validated_data.pop("lines", [])
+        instance.customer_id = validated_data.pop("customer_id", instance.customer_id)
+        instance.warehouse_id = validated_data.pop("warehouse_id", instance.warehouse_id)
+        if "salesman" in validated_data:
+            instance.salesman = validated_data.pop("salesman")
+        instance.date = validated_data.get("date", instance.date)
+        instance.due_date = validated_data.get("due_date", instance.due_date)
+        instance.dc_number = validated_data.get("dc_number", instance.dc_number)
+        instance.remarks = validated_data.get("remarks", instance.remarks)
+        instance.order_discount = validated_data.get("order_discount", instance.order_discount)
         instance.gross_amount = validated_data.get("gross_amount", instance.gross_amount)
         instance.net_amount = validated_data.get("net_amount", instance.net_amount)
         instance.salesman_commission_rate = validated_data.get(

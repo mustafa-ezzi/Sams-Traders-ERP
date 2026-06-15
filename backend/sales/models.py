@@ -5,6 +5,73 @@ from common.models import BaseModel
 from inventory.models import Customer, Product, Salesman, Warehouse
 
 
+class SalesOrder(BaseModel):
+    order_number = models.CharField(max_length=50)
+    dc_number = models.CharField(max_length=50, blank=True, default="")
+    date = models.DateField()
+    due_date = models.DateField(null=True, blank=True)
+    customer = models.ForeignKey(
+        Customer,
+        on_delete=models.PROTECT,
+        related_name="sales_orders",
+    )
+    warehouse = models.ForeignKey(
+        Warehouse,
+        on_delete=models.PROTECT,
+        related_name="sales_orders",
+    )
+    remarks = models.TextField(blank=True, default="")
+    order_discount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    gross_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    net_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    salesman = models.ForeignKey(
+        Salesman,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="sales_orders",
+    )
+    salesman_commission_rate = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    salesman_commission_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant_id", "order_number"],
+                condition=models.Q(deleted_at__isnull=True),
+                name="unique_active_sales_order_number_per_tenant",
+            )
+        ]
+        ordering = ["-date", "-created_at"]
+
+    def __str__(self):
+        return self.order_number
+
+
+class SalesOrderLine(BaseModel):
+    sales_order = models.ForeignKey(
+        SalesOrder,
+        on_delete=models.CASCADE,
+        related_name="lines",
+    )
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.PROTECT,
+        related_name="sales_order_lines",
+    )
+    quantity = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    rate = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    discount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+
+    class Meta:
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"{self.sales_order.order_number} - {self.product.name}"
+
+
 class SalesInvoice(BaseModel):
     invoice_number = models.CharField(max_length=50)
     dc_number = models.CharField(max_length=50, blank=True, default="")
@@ -33,6 +100,14 @@ class SalesInvoice(BaseModel):
     )
     salesman_commission_rate = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     salesman_commission_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    sales_order = models.ForeignKey(
+        SalesOrder,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="invoices",
+    )
+    order_reference = models.CharField(max_length=50, blank=True, default="")
 
     class Meta:
         constraints = [

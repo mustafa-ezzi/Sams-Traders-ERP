@@ -22,6 +22,19 @@ const mapInvoice = (invoice) => ({
   returnedAmount: invoice.returned_amount ?? invoice.returnedAmount ?? 0,
   receivedAmount: invoice.received_amount ?? invoice.receivedAmount ?? 0,
   balanceAmount: invoice.balance_amount ?? invoice.balanceAmount ?? 0,
+  salesOrderId: invoice.sales_order?.id || invoice.sales_order_id || "",
+  orderReference:
+    invoice.order_reference ??
+    invoice.orderReference ??
+    invoice.sales_order?.order_number ??
+    "",
+  salesOrder: invoice.sales_order
+    ? {
+        id: invoice.sales_order.id,
+        orderNumber: invoice.sales_order.order_number,
+        date: invoice.sales_order.date,
+      }
+    : null,
   lines: (invoice.lines || []).map((line) => {
     const mappedLine = {
       ...line,

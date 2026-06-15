@@ -23,6 +23,8 @@ import PurchaseBankPaymentPage from "./pages/purchase/bankPayment/GetAllPurchase
 import CreateUpdatePurchaseBankPayment from "./pages/purchase/bankPayment/CreateUpdatePurchaseBankPayment";
 import SalesInvoicePage from "./pages/sales/invoice/GetAllSalesInvoice";
 import CreateUpdateSalesInvoice from "./pages/sales/invoice/CreateUpdateSalesInvoice";
+import SalesOrderPage from "./pages/sales/order/GetAllSalesOrder";
+import CreateUpdateSalesOrder from "./pages/sales/order/CreateUpdateSalesOrder";
 import SalesInvoicePrintPage from "./pages/sales/SalesInvoicePrintPage";
 import SalesReturnPage from "./pages/sales/return/GetAllSalesReturn";
 import CreateUpdateSalesReturn from "./pages/sales/return/CreateUpdateSalesReturn";
@@ -183,6 +185,9 @@ const App = () => (
         <Route path="sales-invoices" element={<SalesInvoicePage />} />
         <Route path="sales-invoices/create" element={<CreateUpdateSalesInvoice />} />
         <Route path="sales-invoices/:id/edit" element={<CreateUpdateSalesInvoice />} />
+        <Route path="sales-orders" element={<SalesOrderPage />} />
+        <Route path="sales-orders/create" element={<CreateUpdateSalesOrder />} />
+        <Route path="sales-orders/:id/edit" element={<CreateUpdateSalesOrder />} />
         <Route path="sales-returns" element={<SalesReturnPage />} />
         <Route path="sales-returns/create" element={<CreateUpdateSalesReturn />} />
         <Route path="sales-returns/:id/edit" element={<CreateUpdateSalesReturn />} />
