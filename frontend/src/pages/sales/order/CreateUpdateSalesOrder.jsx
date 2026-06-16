@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Card from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
 import FormInput from "../../../components/ui/FormInput";
+import SearchableSelect from "../../../components/ui/SearchableSelect";
 import customerService from "../../../api/services/customerService";
 import warehouseService from "../../../api/services/warehouseService";
 import salesOrderService from "../../../api/services/salesOrderService";
@@ -47,7 +48,6 @@ const CreateUpdateSalesOrder = () => {
   const navigate = useNavigate();
   const toast = useToast();
   const editingId = id || "";
-  const [customers, setCustomers] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
   const [productOptions, setProductOptions] = useState([]);
   const [form, setForm] = useState({
@@ -104,16 +104,32 @@ const CreateUpdateSalesOrder = () => {
   };
 
   useEffect(() => {
-    Promise.all([
-      customerService.list({ page: 1, limit: 100, search: "" }),
-      warehouseService.list({ page: 1, limit: 100, search: "" }),
-    ])
-      .then(([customerResponse, warehouseResponse]) => {
-        setCustomers(customerResponse.data || []);
+    warehouseService
+      .list({ page: 1, limit: 100, search: "" })
+      .then((warehouseResponse) => {
         setWarehouses(warehouseResponse.data || []);
       })
-      .catch(() => toast.error("Failed to load sales setup options"));
+      .catch(() => toast.error("Failed to load warehouse options"));
   }, [toast]);
+
+  const searchCustomers = useCallback(async (search) => {
+    const response = await customerService.list({
+      page: 1,
+      limit: 20,
+      search,
+    });
+    return response.data || [];
+  }, []);
+
+  const resolveCustomer = useCallback(
+    async (customerId) => customerService.getById(customerId),
+    [],
+  );
+
+  const getCustomerLabel = useCallback(
+    (customer) => customer.business_name || customer.name || "Unnamed customer",
+    [],
+  );
 
   useEffect(() => {
     loadProductOptions(form.warehouseId);
@@ -309,23 +325,16 @@ const CreateUpdateSalesOrder = () => {
               value={form.dueDate}
               onChange={(e) => handleChange("dueDate", e.target.value)}
             />
-            <div className="space-y-1">
-              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                Customer <span className="text-rose-500">*</span>
-              </label>
-              <select
-                className={selectClassName}
-                value={form.customerId}
-                onChange={(e) => handleChange("customerId", e.target.value)}
-              >
-                <option value="">Select Customer</option>
-                {customers.map((customer) => (
-                  <option key={customer.id} value={customer.id}>
-                    {customer.business_name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <SearchableSelect
+              label="Customer"
+              required
+              value={form.customerId}
+              placeholder="Type customer name to search…"
+              onChange={(customerId) => handleChange("customerId", customerId)}
+              onSearch={searchCustomers}
+              resolveValue={resolveCustomer}
+              getOptionLabel={getCustomerLabel}
+            />
             <div className="space-y-1">
               <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 Warehouse <span className="text-rose-500">*</span>
