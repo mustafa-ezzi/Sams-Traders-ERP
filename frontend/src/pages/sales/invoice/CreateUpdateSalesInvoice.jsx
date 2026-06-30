@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Card from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
 import FormInput from "../../../components/ui/FormInput";
+import SearchableSelect from "../../../components/ui/SearchableSelect";
 import customerService from "../../../api/services/customerService";
 import warehouseService from "../../../api/services/warehouseService";
 import salesInvoiceService from "../../../api/services/salesInvoiceService";
@@ -167,6 +168,54 @@ const CreateUpdateSalesInvoice = () => {
     () => salesmen.find((salesman) => salesman.id === form.salesmanId) || null,
     [form.salesmanId, salesmen],
   );
+  const searchCustomers = useCallback(async (query) => {
+    const response = await customerService.list({
+      page: 1,
+      limit: 20,
+      search: query,
+    });
+    return response.data || [];
+  }, []);
+  const resolveCustomer = useCallback(
+    async (customerId) =>
+      customers.find((customer) => customer.id === customerId) ||
+      customerService.getById(customerId),
+    [customers],
+  );
+  const searchSalesmen = useCallback(async (query) => {
+    const response = await salesmanService.list({
+      page: 1,
+      limit: 20,
+      search: query,
+    });
+    return response.data || [];
+  }, []);
+  const resolveSalesman = useCallback(
+    async (salesmanId) =>
+      salesmen.find((salesman) => salesman.id === salesmanId) ||
+      salesmanService.getById(salesmanId),
+    [salesmen],
+  );
+  const handleCustomerSelect = (customerId, customer) => {
+    handleChange("customerId", customerId);
+    if (customer) {
+      setCustomers((current) =>
+        current.some((item) => item.id === customer.id)
+          ? current
+          : [customer, ...current],
+      );
+    }
+  };
+  const handleSalesmanSelect = (salesmanId, salesman) => {
+    handleChange("salesmanId", salesmanId);
+    if (salesman) {
+      setSalesmen((current) =>
+        current.some((item) => item.id === salesman.id)
+          ? current
+          : [salesman, ...current],
+      );
+    }
+  };
   const estimatedSalesmanCommission = useMemo(() => {
     const rate = toNumber(selectedSalesman?.commission_on_sales);
     if (!form.salesmanId || rate <= 0) return 0;
@@ -508,25 +557,18 @@ const CreateUpdateSalesInvoice = () => {
               value={form.dueDate}
               onChange={(e) => handleChange("dueDate", e.target.value)}
             />
-            <div className="space-y-1">
-              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 dark:text-slate-500">
-                Customer <span className="text-rose-500">*</span>
-              </label>
-              <select
-                className={selectClassName}
-                value={form.customerId}
-                onChange={(e) => handleChange("customerId", e.target.value)}
-              >
-                {" "}
-                <option value="">Select Customer</option>{" "}
-                {customers.map((customer) => (
-                  <option key={customer.id} value={customer.id}>
-                    {" "}
-                    {customer.business_name}{" "}
-                  </option>
-                ))}{" "}
-              </select>{" "}
-            </div>{" "}
+            <SearchableSelect
+              label="Customer"
+              required
+              value={form.customerId}
+              onChange={handleCustomerSelect}
+              onSearch={searchCustomers}
+              resolveValue={resolveCustomer}
+              getOptionLabel={(customer) =>
+                customer.business_name || customer.name || "Customer"
+              }
+              placeholder="Type to search customer"
+            />
             <div className="space-y-1">
               <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 dark:text-slate-500">
                 Warehouse <span className="text-rose-500">*</span>
@@ -545,22 +587,19 @@ const CreateUpdateSalesInvoice = () => {
               </select>
             </div>
             <div className="space-y-1">
-              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                Salesman
-              </label>
-              <select
-                className={selectClassName}
+              <SearchableSelect
+                label="Salesman"
                 value={form.salesmanId}
-                onChange={(e) => handleChange("salesmanId", e.target.value)}
-              >
-                <option value="">No salesman</option>
-                {salesmen.map((salesman) => (
-                  <option key={salesman.id} value={salesman.id}>
-                    {salesman.code} - {salesman.name} (
-                    {toNumber(salesman.commission_on_sales)}% sales)
-                  </option>
-                ))}
-              </select>
+                onChange={handleSalesmanSelect}
+                onSearch={searchSalesmen}
+                resolveValue={resolveSalesman}
+                getOptionLabel={(salesman) =>
+                  `${salesman.code ? `${salesman.code} - ` : ""}${salesman.name} (${toNumber(
+                    salesman.commission_on_sales,
+                  )}% sales)`
+                }
+                placeholder="Type to search salesman"
+              />
               {form.salesmanId ? (
                 <p className="text-xs text-slate-500 dark:text-slate-400">
                   Commission is tracked separately and does not change the invoice total.

@@ -2,7 +2,13 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from django.db.models import Sum
 
-from sales.models import SalesBankReceipt, SalesInvoiceLine, SalesReturn, SalesReturnLine
+from sales.models import (
+    SalesBankReceipt,
+    SalesInvoiceLine,
+    SalesmanCommissionPayment,
+    SalesReturn,
+    SalesReturnLine,
+)
 
 
 TWO_PLACES = Decimal("0.01")
@@ -107,4 +113,33 @@ def get_sales_invoice_financials(sales_invoice, excluded_receipt_ids=None):
         "returned_amount": returned_amount,
         "received_amount": received_amount,
         "balance_amount": balance_amount,
+    }
+
+
+def get_salesman_commission_financials(sales_invoice, excluded_payment_ids=None):
+    excluded_payment_ids = excluded_payment_ids or []
+
+    commission_amount = quantize_money(
+        sales_invoice.salesman_commission_amount or Decimal("0.00")
+    )
+    paid_amount = (
+        SalesmanCommissionPayment.objects.filter(
+            tenant_id=sales_invoice.tenant_id,
+            sales_invoice=sales_invoice,
+            deleted_at__isnull=True,
+        )
+        .exclude(id__in=excluded_payment_ids)
+        .aggregate(total=Sum("payment"))["total"]
+        or Decimal("0.00")
+    )
+    paid_amount = quantize_money(paid_amount)
+    pending_amount = max(
+        quantize_money(commission_amount - paid_amount),
+        Decimal("0.00"),
+    )
+
+    return {
+        "commission_amount": commission_amount,
+        "paid_amount": paid_amount,
+        "pending_amount": pending_amount,
     }

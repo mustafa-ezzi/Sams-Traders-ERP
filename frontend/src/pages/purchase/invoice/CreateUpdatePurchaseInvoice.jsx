@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Card from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
 import FormInput from "../../../components/ui/FormInput";
+import SearchableSelect from "../../../components/ui/SearchableSelect";
 import supplierService from "../../../api/services/supplierService";
 import warehouseService from "../../../api/services/warehouseService";
 import purchaseInvoiceService from "../../../api/services/purchaseInvoiceService";
@@ -62,6 +63,30 @@ const CreateUpdatePurchaseInvoice = () => {
     () => Math.max(grossAmount - toNumber(form.invoiceDiscount), 0),
     [grossAmount, form.invoiceDiscount],
   );
+  const searchSuppliers = useCallback(async (query) => {
+    const response = await supplierService.list({
+      page: 1,
+      limit: 20,
+      search: query,
+    });
+    return response.data || [];
+  }, []);
+  const resolveSupplier = useCallback(
+    async (supplierId) =>
+      suppliers.find((supplier) => supplier.id === supplierId) ||
+      supplierService.getById(supplierId),
+    [suppliers],
+  );
+  const handleSupplierSelect = (supplierId, supplier) => {
+    handleChange("supplierId", supplierId);
+    if (supplier) {
+      setSuppliers((current) =>
+        current.some((item) => item.id === supplier.id)
+          ? current
+          : [supplier, ...current],
+      );
+    }
+  };
   const loadProductOptions = async (warehouseId) => {
     try {
       const response =
@@ -289,27 +314,18 @@ const CreateUpdatePurchaseInvoice = () => {
               value={form.dueDate}
               onChange={(e) => handleChange("dueDate", e.target.value)}
             />{" "}
-            <div className="space-y-1">
-              {" "}
-              <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 dark:text-slate-500 uppercase tracking-wide">
-                {" "}
-                Supplier <span className="text-rose-500">*</span>{" "}
-              </label>{" "}
-              <select
-                className={selectClassName}
-                value={form.supplierId}
-                onChange={(e) => handleChange("supplierId", e.target.value)}
-              >
-                {" "}
-                <option value="">— Select Supplier —</option>{" "}
-                {suppliers.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {" "}
-                    {s.business_name}{" "}
-                  </option>
-                ))}{" "}
-              </select>{" "}
-            </div>{" "}
+            <SearchableSelect
+              label="Supplier"
+              required
+              value={form.supplierId}
+              onChange={handleSupplierSelect}
+              onSearch={searchSuppliers}
+              resolveValue={resolveSupplier}
+              getOptionLabel={(supplier) =>
+                supplier.business_name || supplier.name || "Supplier"
+              }
+              placeholder="Type to search supplier"
+            />
             <div className="space-y-1">
               {" "}
               <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 dark:text-slate-500 uppercase tracking-wide">

@@ -30,6 +30,8 @@ import SalesReturnPage from "./pages/sales/return/GetAllSalesReturn";
 import CreateUpdateSalesReturn from "./pages/sales/return/CreateUpdateSalesReturn";
 import SalesBankReceiptPage from "./pages/sales/bankReceipt/GetAllSalesBankReceipt";
 import CreateUpdateSalesBankReceipt from "./pages/sales/bankReceipt/CreateUpdateSalesBankReceipt";
+import SalesmanCommissionPaymentPage from "./pages/sales/commissionPayment/GetAllSalesmanCommissionPayment";
+import CreateUpdateSalesmanCommissionPayment from "./pages/sales/commissionPayment/CreateUpdateSalesmanCommissionPayment";
 import CustomersPage from "./pages/sales/customer/GetAllCustomer";
 import CreateUpdateCustomer from "./pages/sales/customer/CreateUpdateCustomer";
 import SuppliersPage from "./pages/purchase/supplier/GetAllSupplier";
@@ -200,6 +202,15 @@ const App = () => (
         <Route
           path="sales-bank-receipts/:id/edit"
           element={<CreateUpdateSalesBankReceipt />}
+        />
+        <Route path="salesman-commission-payments" element={<SalesmanCommissionPaymentPage />} />
+        <Route
+          path="salesman-commission-payments/create"
+          element={<CreateUpdateSalesmanCommissionPayment />}
+        />
+        <Route
+          path="salesman-commission-payments/:id/edit"
+          element={<CreateUpdateSalesmanCommissionPayment />}
         />
         <Route path="customers" element={<CustomersPage />} />
         <Route path="customers/create" element={<CreateUpdateCustomer />} />

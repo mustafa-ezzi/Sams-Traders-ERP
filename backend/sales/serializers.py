@@ -8,6 +8,7 @@ from rest_framework import serializers
 from accounts.dimensions import get_user_active_dimension_codes
 from common.tenancy import get_shared_tenant_ids, shared_master_exists
 from accounts.models import Account
+from inventory.party_accounts import resolve_default_payable_account
 from inventory.models import Customer, Product, ProductStock, Salesman, Warehouse
 from inventory.serializers import ProductDetailedSerializer
 from sales.models import (
@@ -18,10 +19,12 @@ from sales.models import (
     SalesOrderLine,
     SalesReturn,
     SalesReturnLine,
+    SalesmanCommissionPayment,
 )
 from sales.services import (
     get_available_sale_quantity,
     get_sales_invoice_financials,
+    get_salesman_commission_financials,
     get_sales_return_line_metrics,
     quantize_money,
 )
@@ -1220,6 +1223,211 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
         instance.bank_account_id = validated_data.pop("bank_account_id", instance.bank_account_id)
         instance.date = validated_data.get("date", instance.date)
         instance.amount = validated_data.get("amount", instance.amount)
+        instance.remarks = validated_data.get("remarks", instance.remarks)
+        instance.save()
+        return instance
+
+
+class SalesmanCommissionPaymentSerializer(serializers.ModelSerializer):
+    salesman = SalesmanMiniSerializer(read_only=True)
+    salesman_id = serializers.UUIDField(write_only=True)
+    sales_invoice = SalesInvoiceMiniSerializer(read_only=True)
+    sales_invoice_id = serializers.UUIDField(write_only=True)
+    payable_account = AccountMiniSerializer(read_only=True)
+    payment_account = AccountMiniSerializer(read_only=True)
+    payment_account_id = serializers.UUIDField(write_only=True)
+    commission_amount = serializers.SerializerMethodField()
+    commission_paid_amount = serializers.SerializerMethodField()
+    commission_pending_amount = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SalesmanCommissionPayment
+        fields = [
+            "id",
+            "voucher_number",
+            "date",
+            "salesman",
+            "salesman_id",
+            "sales_invoice",
+            "sales_invoice_id",
+            "payable_account",
+            "payment_account",
+            "payment_account_id",
+            "payment",
+            "remarks",
+            "commission_amount",
+            "commission_paid_amount",
+            "commission_pending_amount",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "voucher_number",
+            "payable_account",
+            "payment_account",
+            "commission_amount",
+            "commission_paid_amount",
+            "commission_pending_amount",
+            "created_at",
+            "updated_at",
+        ]
+
+    def _get_financials(self, obj):
+        excluded_ids = []
+        if obj and obj.pk:
+            excluded_ids = [obj.id]
+        return get_salesman_commission_financials(
+            obj.sales_invoice,
+            excluded_payment_ids=excluded_ids,
+        )
+
+    def get_commission_amount(self, obj):
+        return str(self._get_financials(obj)["commission_amount"])
+
+    def get_commission_paid_amount(self, obj):
+        financials = self._get_financials(obj)
+        return str(quantize_money(financials["paid_amount"] + obj.payment))
+
+    def get_commission_pending_amount(self, obj):
+        financials = self._get_financials(obj)
+        pending_after_payment = max(
+            quantize_money(financials["pending_amount"] - obj.payment),
+            Decimal("0.00"),
+        )
+        return str(pending_after_payment)
+
+    def validate_salesman_id(self, value):
+        if not shared_master_exists(Salesman, self.context["request"], value):
+            raise serializers.ValidationError("Salesman not found")
+        return value
+
+    def validate_sales_invoice_id(self, value):
+        if not shared_master_exists(SalesInvoice, self.context["request"], value):
+            raise serializers.ValidationError("Sales invoice not found")
+        return value
+
+    def validate_payment(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("Payment must be greater than 0")
+        return quantize_money(value)
+
+    def validate_payment_account_id(self, value):
+        request = self.context["request"]
+        tenant_ids = get_user_active_dimension_codes(request.user)
+        current = getattr(request, "tenant_id", "") or request.user.tenant_id
+        if current and current not in tenant_ids:
+            tenant_ids.append(current)
+        try:
+            account = Account.objects.get(
+                id=value,
+                tenant_id__in=tenant_ids,
+                deleted_at__isnull=True,
+            )
+        except Account.DoesNotExist:
+            raise serializers.ValidationError("Payment account not found")
+
+        if not account.is_active:
+            raise serializers.ValidationError("Selected payment account is inactive")
+        if not account.is_postable:
+            raise serializers.ValidationError("Selected payment account must be postable")
+        if account.account_group != Account.AccountGroup.ASSET:
+            raise serializers.ValidationError("Selected payment account must belong to asset group")
+        if account.account_type not in [Account.AccountType.BANK, Account.AccountType.CASH]:
+            raise serializers.ValidationError("Selected account must have account type BANK or CASH")
+
+        return value
+
+    def validate(self, attrs):
+        request = self.context["request"]
+        salesman_id = attrs.get("salesman_id") or getattr(self.instance, "salesman_id", None)
+        sales_invoice_id = attrs.get("sales_invoice_id") or getattr(
+            self.instance,
+            "sales_invoice_id",
+            None,
+        )
+
+        sales_invoice = SalesInvoice.objects.select_related("salesman").filter(
+            id=sales_invoice_id,
+            tenant_id__in=get_shared_tenant_ids(request),
+            deleted_at__isnull=True,
+        ).first()
+        if not sales_invoice:
+            raise serializers.ValidationError({"sales_invoice_id": "Sales invoice not found."})
+
+        if not sales_invoice.salesman_id:
+            raise serializers.ValidationError(
+                {"sales_invoice_id": "Selected invoice has no salesman commission."}
+            )
+
+        if sales_invoice.salesman_id != salesman_id:
+            raise serializers.ValidationError(
+                {"sales_invoice_id": "Selected invoice does not belong to the chosen salesman."}
+            )
+
+        payment = attrs.get("payment", getattr(self.instance, "payment", Decimal("0.00")))
+        excluded_ids = [self.instance.id] if self.instance else []
+        financials = get_salesman_commission_financials(
+            sales_invoice,
+            excluded_payment_ids=excluded_ids,
+        )
+        if payment > financials["pending_amount"]:
+            raise serializers.ValidationError(
+                {
+                    "payment": (
+                        "Payment cannot exceed pending commission "
+                        f"({financials['pending_amount']})."
+                    )
+                }
+            )
+
+        self.context["sales_invoice"] = sales_invoice
+        self.context["commission_financials"] = financials
+        return attrs
+
+    def _generate_voucher_number(self, tenant_id):
+        count = SalesmanCommissionPayment.objects.filter(tenant_id=tenant_id).count() + 1
+        return f"SCV-{count:05d}"
+
+    def _resolve_payable_account(self):
+        request = self.context["request"]
+        tenant_ids = get_user_active_dimension_codes(request.user)
+        current = getattr(request, "tenant_id", "") or request.user.tenant_id
+        if current and current not in tenant_ids:
+            tenant_ids.append(current)
+        return resolve_default_payable_account(tenant_ids)
+
+    @transaction.atomic
+    def create(self, validated_data):
+        tenant_id = self.context["request"].user.tenant_id
+        salesman_id = validated_data.pop("salesman_id")
+        sales_invoice_id = validated_data.pop("sales_invoice_id")
+        payment_account_id = validated_data.pop("payment_account_id")
+
+        return SalesmanCommissionPayment.objects.create(
+            tenant_id=tenant_id,
+            salesman_id=salesman_id,
+            sales_invoice_id=sales_invoice_id,
+            payable_account=self._resolve_payable_account(),
+            payment_account_id=payment_account_id,
+            voucher_number=self._generate_voucher_number(tenant_id),
+            **validated_data,
+        )
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        instance.salesman_id = validated_data.pop("salesman_id", instance.salesman_id)
+        instance.sales_invoice_id = validated_data.pop(
+            "sales_invoice_id",
+            instance.sales_invoice_id,
+        )
+        instance.payment_account_id = validated_data.pop(
+            "payment_account_id",
+            instance.payment_account_id,
+        )
+        instance.payable_account = self._resolve_payable_account()
+        instance.date = validated_data.get("date", instance.date)
+        instance.payment = validated_data.get("payment", instance.payment)
         instance.remarks = validated_data.get("remarks", instance.remarks)
         instance.save()
         return instance

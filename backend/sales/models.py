@@ -240,3 +240,45 @@ class SalesBankReceipt(BaseModel):
 
     def __str__(self):
         return self.receipt_number
+
+
+class SalesmanCommissionPayment(BaseModel):
+    voucher_number = models.CharField(max_length=50)
+    date = models.DateField()
+    salesman = models.ForeignKey(
+        Salesman,
+        on_delete=models.PROTECT,
+        related_name="commission_payments",
+    )
+    sales_invoice = models.ForeignKey(
+        SalesInvoice,
+        on_delete=models.PROTECT,
+        related_name="salesman_commission_payments",
+    )
+    payable_account = models.ForeignKey(
+        Account,
+        on_delete=models.PROTECT,
+        related_name="salesman_commission_payments",
+    )
+    payment_account = models.ForeignKey(
+        Account,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="salesman_commission_paid_vouchers",
+    )
+    payment = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    remarks = models.TextField(blank=True, default="")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant_id", "voucher_number"],
+                condition=models.Q(deleted_at__isnull=True),
+                name="unique_active_salesman_commission_voucher_per_tenant",
+            )
+        ]
+        ordering = ["-date", "-created_at"]
+
+    def __str__(self):
+        return self.voucher_number

@@ -251,6 +251,7 @@ class JournalEntry(BaseModel):
         SALES_INVOICE = "SALES_INVOICE", "Sales Invoice"
         SALES_RETURN = "SALES_RETURN", "Sales Return"
         SALES_BANK_RECEIPT = "SALES_BANK_RECEIPT", "Sales Bank Receipt"
+        SALESMAN_COMMISSION_PAYMENT = "SALESMAN_COMMISSION_PAYMENT", "Salesman Commission Payment"
         EXPENSE = "EXPENSE", "Expense"
         PARTY_OPENING_BALANCE = "PARTY_OPENING_BALANCE", "Party Opening Balance"
         BANK_TRANSFER = "BANK_TRANSFER", "Bank Transfer"

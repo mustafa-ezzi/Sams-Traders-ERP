@@ -248,6 +248,12 @@ const navigation = [
         perm: "sales_bank_receipts",
       },
       {
+        to: "/salesman-commission-payments",
+        label: "Commission Vouchers",
+        icon: icons.accounts,
+        perm: "salesman_commission_payments",
+      },
+      {
         to: "/expenses",
         label: "Expenses",
         icon: icons.accounts,
@@ -433,6 +439,8 @@ const pageTitles = {
   "/sales-returns/create": { title: "Create Sales Return", eyebrow: "Sales" },
   "/sales-bank-receipts": { title: "Bank Receipts", eyebrow: "Bank" },
   "/sales-bank-receipts/create": { title: "Create Bank Receipt", eyebrow: "Bank" },
+  "/salesman-commission-payments": { title: "Commission Vouchers", eyebrow: "Bank" },
+  "/salesman-commission-payments/create": { title: "Create Commission Voucher", eyebrow: "Bank" },
   "/customers": { title: "Customers", eyebrow: "Sales" },
   "/customers/create": { title: "Create Customer", eyebrow: "Sales" },
   "/salesmen": { title: "Salesmen", eyebrow: "Sales" },
@@ -652,6 +660,12 @@ const Layout = () => {
     }
     if (pathname.startsWith("/sales-bank-receipts/") && pathname.endsWith("/edit")) {
       return { title: "Edit Bank Receipt", eyebrow: "Bank" };
+    }
+    if (
+      pathname.startsWith("/salesman-commission-payments/") &&
+      pathname.endsWith("/edit")
+    ) {
+      return { title: "Edit Commission Voucher", eyebrow: "Bank" };
     }
     if (pathname.startsWith("/expenses/") && pathname.endsWith("/edit")) {
       return { title: "Edit Expense", eyebrow: "Accounting" };

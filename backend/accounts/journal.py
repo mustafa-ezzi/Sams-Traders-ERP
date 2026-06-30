@@ -456,6 +456,27 @@ def _build_sales_bank_receipt_lines(receipt):
     ]
 
 
+def _build_salesman_commission_payment_lines(payment):
+    return [
+        {
+            "account": payment.payable_account,
+            "debit": payment.payment,
+            "credit": Decimal("0.00"),
+            "line_description": "Salesman Commission Payable",
+            "people_type": "Salesman",
+            "people_name": payment.salesman.name,
+        },
+        {
+            "account": payment.payment_account or payment.payable_account,
+            "debit": Decimal("0.00"),
+            "credit": payment.payment,
+            "line_description": "Salesman Commission Payment",
+            "people_type": "Salesman",
+            "people_name": payment.salesman.name,
+        },
+    ]
+
+
 def _build_expense_lines(expense):
     return [
         {
@@ -566,6 +587,22 @@ def sync_sales_bank_receipt_journal(receipt):
         people_type="Customer",
         people_name=receipt.customer.business_name,
         lines=_build_sales_bank_receipt_lines(receipt),
+    )
+
+
+@transaction.atomic
+def sync_salesman_commission_payment_journal(payment):
+    return _upsert_journal_entry(
+        tenant_id=payment.tenant_id,
+        source_type=JournalEntry.SourceType.SALESMAN_COMMISSION_PAYMENT,
+        source_id=payment.id,
+        date=payment.date,
+        reference=payment.voucher_number,
+        document_type="Salesman Commission Voucher",
+        description=payment.remarks,
+        people_type="Salesman",
+        people_name=payment.salesman.name,
+        lines=_build_salesman_commission_payment_lines(payment),
     )
 
 

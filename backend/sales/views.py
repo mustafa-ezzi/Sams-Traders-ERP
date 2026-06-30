@@ -15,6 +15,7 @@ from accounts.journal import (
     sync_sales_bank_receipt_journal,
     sync_sales_invoice_journal,
     sync_sales_return_journal,
+    sync_salesman_commission_payment_journal,
 )
 from accounts.models import JournalEntry
 from inventory.models import Product, ProductStock
@@ -32,6 +33,7 @@ from sales.models import (
     SalesOrderLine,
     SalesReturn,
     SalesReturnLine,
+    SalesmanCommissionPayment,
 )
 from sales.serializers import (
     SalesBankReceiptSerializer,
@@ -39,9 +41,11 @@ from sales.serializers import (
     SalesOrderSerializer,
     SalesReturnInvoiceLinePreviewSerializer,
     SalesReturnSerializer,
+    SalesmanCommissionPaymentSerializer,
 )
 from sales.services import (
     get_sales_invoice_financials,
+    get_salesman_commission_financials,
     get_sales_return_line_metrics,
     quantize_money,
 )
@@ -755,6 +759,147 @@ class SalesBankReceiptViewSet(viewsets.ModelViewSet):
                     "returned_amount": str(financials["returned_amount"]),
                     "received_amount": str(financials["received_amount"]),
                     "balance_amount": str(financials["balance_amount"]),
+                }
+            )
+
+        return Response({"data": payload})
+
+
+class SalesmanCommissionPaymentViewSet(viewsets.ModelViewSet):
+    serializer_class = SalesmanCommissionPaymentSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+    filter_backends = [filters.SearchFilter]
+    search_fields = [
+        "voucher_number",
+        "sales_invoice__invoice_number",
+        "salesman__name",
+        "salesman__code",
+        "remarks",
+    ]
+
+    def get_queryset(self):
+        return (
+            SalesmanCommissionPayment.objects.filter(
+                **get_shared_tenant_filter(self.request),
+                deleted_at__isnull=True,
+            )
+            .select_related("salesman", "sales_invoice", "payable_account", "payment_account")
+            .order_by("-date", "-created_at")
+        )
+
+    def _get_serializable_payment(self, payment_id):
+        return self.get_queryset().get(id=payment_id)
+
+    def create(self, request, *args, **kwargs):
+        with transaction.atomic():
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            payment = serializer.save()
+            sync_salesman_commission_payment_journal(
+                self._get_serializable_payment(payment.id)
+            )
+        response_serializer = self.get_serializer(
+            self._get_serializable_payment(payment.id)
+        )
+        return Response(
+            {
+                "data": response_serializer.data,
+                "message": "Salesman commission voucher created successfully",
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop("partial", False)
+        instance = self.get_object()
+        with transaction.atomic():
+            serializer = self.get_serializer(instance, data=request.data, partial=partial)
+            serializer.is_valid(raise_exception=True)
+            payment = serializer.save()
+            sync_salesman_commission_payment_journal(
+                self._get_serializable_payment(payment.id)
+            )
+        response_serializer = self.get_serializer(
+            self._get_serializable_payment(payment.id)
+        )
+        return Response(response_serializer.data)
+
+    def perform_destroy(self, instance):
+        instance.deleted_at = now()
+        instance.save(update_fields=["deleted_at", "updated_at"])
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        with transaction.atomic():
+            self.perform_destroy(instance)
+            delete_journal_entry(
+                JournalEntry.SourceType.SALESMAN_COMMISSION_PAYMENT,
+                instance.id,
+                instance.tenant_id,
+            )
+        return Response(
+            {"data": None, "message": "Salesman commission voucher deleted successfully"},
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=False, methods=["get"], url_path="invoice-options")
+    def invoice_options(self, request):
+        salesman_id = request.query_params.get("salesman_id")
+        payment_id = request.query_params.get("payment_id")
+
+        if not salesman_id:
+            return Response({"data": []})
+
+        shared_filter = get_shared_tenant_filter(request)
+        current_payment = None
+        if payment_id:
+            try:
+                current_payment = SalesmanCommissionPayment.objects.select_related(
+                    "sales_invoice"
+                ).get(
+                    id=payment_id,
+                    tenant_id__in=shared_filter["tenant_id__in"],
+                    deleted_at__isnull=True,
+                )
+            except SalesmanCommissionPayment.DoesNotExist:
+                raise ValidationError(
+                    {"payment_id": "Salesman commission voucher not found."}
+                )
+
+        invoices = (
+            SalesInvoice.objects.filter(
+                **shared_filter,
+                salesman_id=salesman_id,
+                deleted_at__isnull=True,
+            )
+            .exclude(salesman_commission_amount__lte=Decimal("0.00"))
+            .select_related("customer", "salesman")
+            .order_by("-date", "-created_at")
+        )
+
+        payload = []
+        for invoice in invoices:
+            excluded_payment_ids = [current_payment.id] if current_payment else []
+            financials = get_salesman_commission_financials(
+                invoice,
+                excluded_payment_ids=excluded_payment_ids,
+            )
+            include_current_invoice = (
+                current_payment and current_payment.sales_invoice_id == invoice.id
+            )
+            if financials["pending_amount"] <= Decimal("0.00") and not include_current_invoice:
+                continue
+
+            payload.append(
+                {
+                    "id": str(invoice.id),
+                    "invoice_number": invoice.invoice_number,
+                    "date": invoice.date,
+                    "customer_name": invoice.customer.business_name,
+                    "commission_amount": str(financials["commission_amount"]),
+                    "paid_amount": str(financials["paid_amount"]),
+                    "pending_amount": str(financials["pending_amount"]),
                 }
             )
 
