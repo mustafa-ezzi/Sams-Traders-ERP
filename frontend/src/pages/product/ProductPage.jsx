@@ -9,6 +9,7 @@ import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import ConfirmModal from "../../components/ui/ConfirmModal";
 import IconButton from "../../components/ui/IconButton";
+import PageSizeSelect from "../../components/ui/PageSizeSelect";
 import SortableHeader, {
   getSortedRecords,
 } from "../../components/ui/SortableHeader";
@@ -50,11 +51,11 @@ const ProductPage = () => {
   const [cogsAccounts, setCogsAccounts] = useState([]);
   const [revenueAccounts, setRevenueAccounts] = useState([]);
   const [deleteId, setDeleteId] = useState("");
+  const [limit, setLimit] = useState(10);
   const [sortConfig, setSortConfig] = useState({
     key: "sku",
     direction: "asc",
   });
-  const limit = 10;
   const getTotalMaterialCost = (row) =>
     row.materials?.reduce((sum, m) => sum + (Number(m.amount) || 0), 0) || 0;
   const getUnitName = (row) =>
@@ -92,13 +93,17 @@ const ProductPage = () => {
     }));
   };
 
-  const load = async (nextPage = page, nextSearch = search) => {
+  const load = async (
+    nextPage = page,
+    nextSearch = search,
+    nextLimit = limit,
+  ) => {
     setLoading(true);
     setError("");
     try {
       const response = await productService.list({
         page: nextPage,
-        limit,
+        limit: nextLimit,
         search: nextSearch,
       });
       setRecords(response.data || []);
@@ -142,6 +147,11 @@ const ProductPage = () => {
       setError(message);
       toast.error(message);
     }
+  };
+  const handlePageSizeChange = (value) => {
+    setLimit(value);
+    setPage(1);
+    load(1, search, value);
   };
 
   return (
@@ -329,9 +339,16 @@ const ProductPage = () => {
           </div>
 
           <div className="flex flex-col gap-3 border-t border-slate-100 px-4 py-3 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-            <span className="text-center text-xs sm:text-left">
-              {total} total records
-            </span>
+            <div className="flex flex-col items-center gap-2 sm:flex-row">
+              <span className="text-center text-xs sm:text-left">
+                {total} total records
+              </span>
+              <PageSizeSelect
+                value={limit}
+                onChange={handlePageSizeChange}
+                disabled={loading}
+              />
+            </div>
             <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-end">
               <Button
                 variant="secondary"

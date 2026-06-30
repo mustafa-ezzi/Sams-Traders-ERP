@@ -5,6 +5,7 @@ import Button from "../../../components/ui/Button";
 import FormInput from "../../../components/ui/FormInput";
 import ConfirmModal from "../../../components/ui/ConfirmModal";
 import StateView from "../../../components/StateView";
+import PageSizeSelect from "../../../components/ui/PageSizeSelect";
 import SortableHeader, {
   getSortedRecords,
 } from "../../../components/ui/SortableHeader";
@@ -38,11 +39,11 @@ const GetAllSalesOrder = () => {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [deleteId, setDeleteId] = useState("");
+  const [limit, setLimit] = useState(10);
   const [sortConfig, setSortConfig] = useState({
     key: "order",
     direction: "asc",
   });
-  const limit = 10;
   const sortColumns = useMemo(
     () => [
       { key: "order", getValue: (row) => row.order_number },
@@ -67,13 +68,17 @@ const GetAllSalesOrder = () => {
     }));
   };
 
-  const loadOrders = async (nextPage = page, nextSearch = search) => {
+  const loadOrders = async (
+    nextPage = page,
+    nextSearch = search,
+    nextLimit = limit,
+  ) => {
     setLoading(true);
     setError("");
     try {
       const response = await salesOrderService.list({
         page: nextPage,
-        limit,
+        limit: nextLimit,
         search: nextSearch,
       });
       setRecords(response.data || []);
@@ -99,6 +104,11 @@ const GetAllSalesOrder = () => {
     } catch (deleteError) {
       toast.error(extractErrorMessage(deleteError) || "Failed to delete order");
     }
+  };
+  const handlePageSizeChange = (value) => {
+    setLimit(value);
+    setPage(1);
+    loadOrders(1, search, value);
   };
 
   return (
@@ -213,7 +223,13 @@ const GetAllSalesOrder = () => {
               </table>
             </div>
           </div>
-          {total > limit ? (
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <PageSizeSelect
+              value={limit}
+              onChange={handlePageSizeChange}
+              disabled={loading}
+            />
+            {total > limit ? (
             <div className="flex items-center justify-end gap-3">
               <Button
                 variant="secondary"
@@ -233,7 +249,8 @@ const GetAllSalesOrder = () => {
                 Next
               </Button>
             </div>
-          ) : null}
+            ) : null}
+          </div>
         </StateView>
       </Card>
       <ConfirmModal

@@ -5,6 +5,7 @@ import Button from "../../../components/ui/Button";
 import FormInput from "../../../components/ui/FormInput";
 import ConfirmModal from "../../../components/ui/ConfirmModal";
 import StateView from "../../../components/StateView";
+import PageSizeSelect from "../../../components/ui/PageSizeSelect";
 import SortableHeader, {
   getSortedRecords,
 } from "../../../components/ui/SortableHeader";
@@ -42,12 +43,12 @@ const GetAllPurchaseInvoice = () => {
   const [deleteId, setDeleteId] = useState("");
   const [printModal, setPrintModal] = useState(null);
   const [printLoadingId, setPrintLoadingId] = useState("");
+  const [limit, setLimit] = useState(10);
   const [sortConfig, setSortConfig] = useState({
     key: "invoice",
     direction: "asc",
   });
   const printCancelledRef = useRef(false);
-  const limit = 10;
   const sortColumns = useMemo(
     () => [
       { key: "invoice", getValue: (row) => row.invoice_number },
@@ -78,13 +79,17 @@ const GetAllPurchaseInvoice = () => {
       ),
     [records],
   );
-  const loadInvoices = async (nextPage = page, nextSearch = search) => {
+  const loadInvoices = async (
+    nextPage = page,
+    nextSearch = search,
+    nextLimit = limit,
+  ) => {
     setLoading(true);
     setError("");
     try {
       const response = await purchaseInvoiceService.list({
         page: nextPage,
-        limit,
+        limit: nextLimit,
         search: nextSearch,
       });
       setRecords(response.data || []);
@@ -143,6 +148,11 @@ const GetAllPurchaseInvoice = () => {
         extractErrorMessage(deleteError) || "Failed to delete invoice",
       );
     }
+  };
+  const handlePageSizeChange = (value) => {
+    setLimit(value);
+    setPage(1);
+    loadInvoices(1, search, value);
   };
   return (
     <div className="space-y-6">
@@ -305,7 +315,13 @@ const GetAllPurchaseInvoice = () => {
               </table>{" "}
             </div>{" "}
           </div>{" "}
-          {total > limit ? (
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <PageSizeSelect
+              value={limit}
+              onChange={handlePageSizeChange}
+              disabled={loading}
+            />
+            {total > limit ? (
             <div className="flex items-center justify-end gap-3">
               {" "}
               <Button
@@ -329,7 +345,8 @@ const GetAllPurchaseInvoice = () => {
                 Next{" "}
               </Button>{" "}
             </div>
-          ) : null}{" "}
+            ) : null}{" "}
+          </div>
         </StateView>{" "}
       </Card>{" "}
       <ConfirmModal
