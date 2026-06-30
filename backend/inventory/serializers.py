@@ -362,6 +362,7 @@ class ProductMaterialSerializer(serializers.ModelSerializer):
 class ProductSerializer(serializers.ModelSerializer):
     quantity = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
     materials = ProductMaterialSerializer(many=True, required=False)
+    tenant_name = serializers.SerializerMethodField()
     average_cost = serializers.SerializerMethodField()
     stock_value = serializers.SerializerMethodField()
 
@@ -369,6 +370,8 @@ class ProductSerializer(serializers.ModelSerializer):
         model = Product
         fields = [
             "id",
+            "tenant_id",
+            "tenant_name",
             "sku",
             "name",
             "product_type",
@@ -390,6 +393,17 @@ class ProductSerializer(serializers.ModelSerializer):
             "stock_value",
             "materials",
         ]
+        read_only_fields = ["tenant_id", "tenant_name"]
+
+    def get_tenant_name(self, obj):
+        if not hasattr(self, "_dimension_name_cache"):
+            self._dimension_name_cache = {}
+
+        tenant_id = obj.tenant_id
+        if tenant_id not in self._dimension_name_cache:
+            dimension = Dimension.objects.filter(code=tenant_id).only("name").first()
+            self._dimension_name_cache[tenant_id] = dimension.name if dimension else ""
+        return self._dimension_name_cache[tenant_id]
 
     def _get_cost_state(self, obj):
         if not hasattr(self, "_cost_state_cache"):
@@ -469,7 +483,7 @@ class ProductSerializer(serializers.ModelSerializer):
         return normalized_sku
 
     def validate(self, data):
-        tenant_id = self.context["request"].user.tenant_id
+        tenant_id = getattr(self.instance, "tenant_id", None) or self.context["request"].user.tenant_id
         shared_tenant_ids = get_request_user_dimension_codes(self.context["request"])
         product_type = data.get("product_type")
         materials = data.get("materials", [])
@@ -663,7 +677,7 @@ class ProductSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         materials_data = validated_data.pop("materials", [])
-        tenant_id = self.context["request"].user.tenant_id
+        tenant_id = instance.tenant_id
 
         ProductMaterial.objects.filter(
             product=instance, deleted_at__isnull=True

@@ -11,8 +11,12 @@ const productService = {
     });
     return response.data;
   },
-  async getById(id) {
-    const response = await axiosInstance.get(`/inventory/products/${id}/`);
+  async getById(id, tenantId = "") {
+    const response = await axiosInstance.get(`/inventory/products/${id}/`, {
+      headers: tenantId
+        ? { "x-tenant-id": tenantId, "x-tenant-ids": tenantId }
+        : {},
+    });
     return response.data;
   },
   async create(payload, tenantIds) {
@@ -30,8 +34,12 @@ const productService = {
         : response.data?.message || "Product created successfully",
     };
   },
-  async update(id, payload) {
-    const response = await axiosInstance.put(`/inventory/products/${id}/`, payload);
+  async update(id, payload, tenantId = "") {
+    const response = await axiosInstance.put(`/inventory/products/${id}/`, payload, {
+      headers: tenantId
+        ? { "x-tenant-id": tenantId, "x-tenant-ids": tenantId }
+        : {},
+    });
     return response.data;
   },
   async remove(id) {

@@ -9,8 +9,13 @@ export const createMasterService = (resource, options = {}) => {
   const { createAcrossTenants = false, mutateCreatePayloadPerTenant } = options;
 
   return {
-    async list(params) {
-      const response = await axiosInstance.get(`/inventory/${resource}`, { params });
+    async list(params, tenantId = "") {
+      const response = await axiosInstance.get(`/inventory/${resource}`, {
+        params,
+        headers: tenantId
+          ? { "x-tenant-id": tenantId, "x-tenant-ids": tenantId }
+          : {},
+      });
       return response.data;
     },
     async getById(id) {

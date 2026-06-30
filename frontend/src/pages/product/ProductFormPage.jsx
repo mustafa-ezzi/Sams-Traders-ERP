@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import productService from "../../api/services/productService";
@@ -136,11 +136,14 @@ const ProductFormPage = () => {
   const { id } = useParams();
   const isEditing = Boolean(id);
   const navigate = useNavigate();
+  const location = useLocation();
   const toast = useToast();
   const { tenantId, createTenantIds } = useAuth();
+  const routeTenantId = location.state?.tenantId || "";
   const [createDimensionIds, setCreateDimensionIds] = useState(() =>
     createTenantIds?.length ? [...createTenantIds] : tenantId ? [tenantId] : [],
   );
+  const [productTenantId, setProductTenantId] = useState(routeTenantId);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loadingSetupOptions, setLoadingSetupOptions] = useState(false);
@@ -159,16 +162,16 @@ const ProductFormPage = () => {
   const productType = form.watch("productType");
   const useCalculatedCost = form.watch("useCalculatedCost");
   const componentTenantId = isEditing
-    ? tenantId
+    ? productTenantId
     : createDimensionIds.length === 1
       ? createDimensionIds[0]
       : "";
   const accountTenantId = componentTenantId;
 
-  const loadProductSetupOptions = useCallback(async () => {
+  const loadProductSetupOptions = useCallback(async (selectedTenantId = "") => {
     const [brandRes, unitRes] = await Promise.all([
-      brandService.list({ page: 1, limit: 100, search: "" }),
-      unitService.list({ page: 1, limit: 100, search: "" }),
+      brandService.list({ page: 1, limit: 100, search: "" }, selectedTenantId),
+      unitService.list({ page: 1, limit: 100, search: "" }, selectedTenantId),
     ]);
 
     setBrandOptions(brandRes.data || []);
@@ -262,10 +265,16 @@ const ProductFormPage = () => {
       setLoading(true);
       setLoadingSetupOptions(true);
       try {
-        const [, product] = await Promise.all([
-          loadProductSetupOptions(),
-          isEditing ? productService.getById(id) : Promise.resolve(null),
-        ]);
+        const product = isEditing
+          ? await productService.getById(id, productTenantId)
+          : null;
+        const selectedTenantId = product?.tenant_id || productTenantId || "";
+
+        if (selectedTenantId) {
+          setProductTenantId(selectedTenantId);
+        }
+
+        await loadProductSetupOptions(selectedTenantId);
 
         if (product) {
           form.reset(mapProductToForm(product));
@@ -282,7 +291,7 @@ const ProductFormPage = () => {
     };
 
     loadSetup();
-  }, [form, id, isEditing, loadProductSetupOptions, toast]);
+  }, [form, id, isEditing, loadProductSetupOptions, productTenantId, toast]);
 
   useEffect(() => {
     refreshComponentOptions();
@@ -374,7 +383,7 @@ const ProductFormPage = () => {
       };
 
       if (isEditing) {
-        await productService.update(id, payload);
+        await productService.update(id, payload, productTenantId);
         toast.success("Product updated");
       } else {
         if (!createDimensionIds.length) {

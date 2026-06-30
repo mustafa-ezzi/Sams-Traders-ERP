@@ -147,11 +147,14 @@ const ProductPage = () => {
       >
         <Card className="overflow-hidden p-0">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1060px] text-sm">
+            <table className="w-full min-w-[1160px] text-sm">
               <thead className="border-b border-slate-100 bg-slate-50 text-left">
                 <tr>
                   <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">
                     SKU
+                  </th>
+                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Tenant
                   </th>
                   <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">
                     Name
@@ -205,6 +208,9 @@ const ProductPage = () => {
                     >
                       <td className="px-4 py-3 font-semibold text-slate-800">
                         {row.sku || "-"}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {row.tenant_name || row.tenant_id || "-"}
                       </td>
                       <td className="px-4 py-3 font-medium text-slate-800">
                         {row.name}
@@ -289,7 +295,11 @@ const ProductPage = () => {
                           <IconButton
                             icon="edit"
                             label="Edit product"
-                            onClick={() => navigate(`/products/${row.id}/edit`)}
+                            onClick={() =>
+                              navigate(`/products/${row.id}/edit`, {
+                                state: { tenantId: row.tenant_id },
+                              })
+                            }
                           />
                           <IconButton
                             icon="delete"
