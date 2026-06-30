@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import productService from "../../api/services/productService";
 import accountService from "../../api/services/accountService";
@@ -10,9 +10,7 @@ import Button from "../../components/ui/Button";
 import ConfirmModal from "../../components/ui/ConfirmModal";
 import IconButton from "../../components/ui/IconButton";
 import PageSizeSelect from "../../components/ui/PageSizeSelect";
-import SortableHeader, {
-  getSortedRecords,
-} from "../../components/ui/SortableHeader";
+import SortableHeader from "../../components/ui/SortableHeader";
 import { useToast } from "../../context/ToastContext";
 import {
   flattenAccountTree,
@@ -36,6 +34,25 @@ const extractErrorMessage = (error) => {
   }
   return "Delete failed";
 };
+const orderingFields = {
+  sku: "sku",
+  tenant: "tenant_id",
+  name: "name",
+  type: "product_type",
+  unit: "unit__name",
+  quantity: "quantity",
+  materials: "_material_count",
+  accounts: "inventory_account__code",
+  materialCost: "_material_cost",
+  packaging: "packaging_cost",
+  netAmount: "net_amount",
+  avgCost: "_average_cost",
+  stockValue: "_stock_value",
+};
+const getOrdering = (sortConfig) => {
+  const field = orderingFields[sortConfig.key] || "sku";
+  return sortConfig.direction === "desc" ? `-${field}` : field;
+};
 
 const ProductPage = () => {
   const navigate = useNavigate();
@@ -58,45 +75,12 @@ const ProductPage = () => {
   });
   const getTotalMaterialCost = (row) =>
     row.materials?.reduce((sum, m) => sum + (Number(m.amount) || 0), 0) || 0;
-  const getUnitName = (row) =>
-    unitOptions.find((unit) => unit.id === row.unit)?.name || "";
-  const getInventoryCode = (row) =>
-    inventoryAccounts.find((account) => account.id === row.inventory_account)
-      ?.code || "";
-  const sortColumns = useMemo(
-    () => [
-      { key: "sku", getValue: (row) => row.sku },
-      { key: "tenant", getValue: (row) => row.tenant_name || row.tenant_id },
-      { key: "name", getValue: (row) => row.name },
-      { key: "type", getValue: (row) => row.product_type },
-      { key: "unit", getValue: getUnitName },
-      { key: "quantity", getValue: (row) => row.quantity },
-      { key: "materials", getValue: (row) => row.materials?.length || 0 },
-      { key: "accounts", getValue: getInventoryCode },
-      { key: "materialCost", getValue: getTotalMaterialCost },
-      { key: "packaging", getValue: (row) => row.packaging_cost },
-      { key: "netAmount", getValue: (row) => row.net_amount },
-      { key: "avgCost", getValue: (row) => row.average_cost },
-      { key: "stockValue", getValue: (row) => row.stock_value },
-    ],
-    [inventoryAccounts, unitOptions],
-  );
-  const sortedRecords = useMemo(
-    () => getSortedRecords(records, sortConfig, sortColumns),
-    [records, sortColumns, sortConfig],
-  );
-  const handleSort = (key) => {
-    setSortConfig((current) => ({
-      key,
-      direction:
-        current.key === key && current.direction === "asc" ? "desc" : "asc",
-    }));
-  };
 
   const load = async (
     nextPage = page,
     nextSearch = search,
     nextLimit = limit,
+    nextSortConfig = sortConfig,
   ) => {
     setLoading(true);
     setError("");
@@ -105,6 +89,7 @@ const ProductPage = () => {
         page: nextPage,
         limit: nextLimit,
         search: nextSearch,
+        ordering: getOrdering(nextSortConfig),
       });
       setRecords(response.data || []);
       setTotal(response.total || 0);
@@ -151,7 +136,19 @@ const ProductPage = () => {
   const handlePageSizeChange = (value) => {
     setLimit(value);
     setPage(1);
-    load(1, search, value);
+    load(1, search, value, sortConfig);
+  };
+  const handleSort = (key) => {
+    const nextSortConfig = {
+      key,
+      direction:
+        sortConfig.key === key && sortConfig.direction === "asc"
+          ? "desc"
+          : "asc",
+    };
+    setSortConfig(nextSortConfig);
+    setPage(1);
+    load(1, search, limit, nextSortConfig);
   };
 
   return (
@@ -222,7 +219,7 @@ const ProductPage = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {sortedRecords.map((row) => {
+                {records.map((row) => {
                   const totalMaterialCost = getTotalMaterialCost(row);
                   return (
                     <tr

@@ -1,7 +1,8 @@
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Exists, OuterRef, Prefetch
+from django.db.models import DecimalField, Exists, ExpressionWrapper, F, OuterRef, Prefetch, Q, Subquery, Sum, Value
+from django.db.models.functions import Coalesce
 from django.utils.timezone import now
 from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
@@ -52,7 +53,20 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
     serializer_class = SalesInvoiceSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
-    filter_backends = [filters.SearchFilter]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    ordering_fields = [
+        "invoice_number",
+        "order_reference",
+        "date",
+        "customer__business_name",
+        "warehouse__name",
+        "gross_amount",
+        "net_amount",
+        "_cost_total",
+        "_profit",
+        "_balance_amount",
+    ]
+    ordering = ["-date", "-created_at"]
     search_fields = [
         "invoice_number",
         "dc_number",
@@ -64,6 +78,26 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
     ]
 
     def get_queryset(self):
+        returned_amount_subquery = (
+            SalesReturn.objects.filter(
+                tenant_id=OuterRef("tenant_id"),
+                sales_invoice_id=OuterRef("pk"),
+                deleted_at__isnull=True,
+            )
+            .values("sales_invoice_id")
+            .annotate(total=Sum("gross_amount"))
+            .values("total")[:1]
+        )
+        received_amount_subquery = (
+            SalesBankReceipt.objects.filter(
+                tenant_id=OuterRef("tenant_id"),
+                sales_invoice_id=OuterRef("pk"),
+                deleted_at__isnull=True,
+            )
+            .values("sales_invoice_id")
+            .annotate(total=Sum("amount"))
+            .values("total")[:1]
+        )
         return (
             SalesInvoice.objects.filter(
                 **get_shared_tenant_filter(self.request),
@@ -78,7 +112,40 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
                     ).select_related("product"),
                 )
             )
-            .order_by("-date", "-created_at")
+            .annotate(
+                _cost_total=Coalesce(
+                    Sum(
+                        "lines__cost_total",
+                        filter=Q(lines__deleted_at__isnull=True),
+                    ),
+                    Value(0),
+                    output_field=DecimalField(max_digits=14, decimal_places=2),
+                ),
+                _profit=Coalesce(
+                    Sum(
+                        "lines__profit",
+                        filter=Q(lines__deleted_at__isnull=True),
+                    ),
+                    Value(0),
+                    output_field=DecimalField(max_digits=14, decimal_places=2),
+                ),
+                _returned_amount=Coalesce(
+                    Subquery(returned_amount_subquery),
+                    Value(0),
+                    output_field=DecimalField(max_digits=12, decimal_places=2),
+                ),
+                _received_amount=Coalesce(
+                    Subquery(received_amount_subquery),
+                    Value(0),
+                    output_field=DecimalField(max_digits=12, decimal_places=2),
+                ),
+            )
+            .annotate(
+                _balance_amount=ExpressionWrapper(
+                    F("net_amount") - F("_returned_amount") - F("_received_amount"),
+                    output_field=DecimalField(max_digits=12, decimal_places=2),
+                )
+            )
         )
 
     def _get_serializable_invoice(self, invoice_id):
@@ -210,7 +277,17 @@ class SalesOrderViewSet(viewsets.ModelViewSet):
     serializer_class = SalesOrderSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
-    filter_backends = [filters.SearchFilter]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    ordering_fields = [
+        "order_number",
+        "date",
+        "customer__business_name",
+        "warehouse__name",
+        "gross_amount",
+        "net_amount",
+        "_is_invoiced",
+    ]
+    ordering = ["-date", "-created_at"]
     search_fields = [
         "order_number",
         "dc_number",
@@ -240,7 +317,6 @@ class SalesOrderViewSet(viewsets.ModelViewSet):
                 )
             )
             .annotate(_is_invoiced=Exists(invoiced_subquery))
-            .order_by("-date", "-created_at")
         )
 
         invoiced_param = self.request.query_params.get("invoiced", "").strip().lower()

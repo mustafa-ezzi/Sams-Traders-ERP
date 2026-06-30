@@ -21,8 +21,8 @@ const mapOrder = (order) => ({
 });
 
 class SalesOrderService {
-  async list({ page = 1, limit = 20, search = "", invoiced = "" } = {}) {
-    const params = { page, limit, search };
+  async list({ page = 1, limit = 20, search = "", invoiced = "", ordering = "" } = {}) {
+    const params = { page, limit, search, ordering };
     if (invoiced === true || invoiced === false) {
       params.invoiced = invoiced ? "true" : "false";
     }

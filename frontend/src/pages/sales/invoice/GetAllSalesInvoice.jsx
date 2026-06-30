@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Card from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
@@ -6,9 +6,7 @@ import FormInput from "../../../components/ui/FormInput";
 import ConfirmModal from "../../../components/ui/ConfirmModal";
 import StateView from "../../../components/StateView";
 import PageSizeSelect from "../../../components/ui/PageSizeSelect";
-import SortableHeader, {
-  getSortedRecords,
-} from "../../../components/ui/SortableHeader";
+import SortableHeader from "../../../components/ui/SortableHeader";
 import salesInvoiceService from "../../../api/services/salesInvoiceService";
 import { formatDecimal } from "../../../utils/format";
 import { useToast } from "../../../context/ToastContext";
@@ -27,6 +25,22 @@ const extractErrorMessage = (error) => {
   }
   return "Something went wrong";
 };
+const orderingFields = {
+  invoice: "invoice_number",
+  orderRef: "order_reference",
+  date: "date",
+  customer: "customer__business_name",
+  warehouse: "warehouse__name",
+  gross: "gross_amount",
+  net: "net_amount",
+  cogs: "_cost_total",
+  profit: "_profit",
+  balance: "_balance_amount",
+};
+const getOrdering = (sortConfig) => {
+  const field = orderingFields[sortConfig.key] || "date";
+  return sortConfig.direction === "desc" ? `-${field}` : field;
+};
 const GetAllSalesInvoice = () => {
   const navigate = useNavigate();
   const toast = useToast();
@@ -39,39 +53,14 @@ const GetAllSalesInvoice = () => {
   const [deleteId, setDeleteId] = useState("");
   const [limit, setLimit] = useState(10);
   const [sortConfig, setSortConfig] = useState({
-    key: "invoice",
-    direction: "asc",
+    key: "date",
+    direction: "desc",
   });
-  const sortColumns = useMemo(
-    () => [
-      { key: "invoice", getValue: (row) => row.invoice_number },
-      { key: "orderRef", getValue: (row) => row.orderReference },
-      { key: "date", getValue: (row) => row.date },
-      { key: "customer", getValue: (row) => row.customer?.business_name },
-      { key: "warehouse", getValue: (row) => row.warehouse?.name },
-      { key: "gross", getValue: (row) => row.grossAmount },
-      { key: "net", getValue: (row) => row.netAmount },
-      { key: "cogs", getValue: (row) => row.costTotal },
-      { key: "profit", getValue: (row) => row.profit },
-      { key: "balance", getValue: (row) => row.balanceAmount },
-    ],
-    [],
-  );
-  const sortedRecords = useMemo(
-    () => getSortedRecords(records, sortConfig, sortColumns),
-    [records, sortColumns, sortConfig],
-  );
-  const handleSort = (key) => {
-    setSortConfig((current) => ({
-      key,
-      direction:
-        current.key === key && current.direction === "asc" ? "desc" : "asc",
-    }));
-  };
   const loadInvoices = async (
     nextPage = page,
     nextSearch = search,
     nextLimit = limit,
+    nextSortConfig = sortConfig,
   ) => {
     setLoading(true);
     setError("");
@@ -80,6 +69,7 @@ const GetAllSalesInvoice = () => {
         page: nextPage,
         limit: nextLimit,
         search: nextSearch,
+        ordering: getOrdering(nextSortConfig),
       });
       setRecords(response.data || []);
       setTotal(response.total || 0);
@@ -110,7 +100,19 @@ const GetAllSalesInvoice = () => {
   const handlePageSizeChange = (value) => {
     setLimit(value);
     setPage(1);
-    loadInvoices(1, search, value);
+    loadInvoices(1, search, value, sortConfig);
+  };
+  const handleSort = (key) => {
+    const nextSortConfig = {
+      key,
+      direction:
+        sortConfig.key === key && sortConfig.direction === "asc"
+          ? "desc"
+          : "asc",
+    };
+    setSortConfig(nextSortConfig);
+    setPage(1);
+    loadInvoices(1, search, limit, nextSortConfig);
   };
   return (
     <div className="space-y-6">
@@ -184,7 +186,7 @@ const GetAllSalesInvoice = () => {
                 </thead>{" "}
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800">
                   {" "}
-                  {sortedRecords.map((record) => (
+                  {records.map((record) => (
                     <tr key={record.id}>
                       {" "}
                       <td className="px-4 py-3 font-semibold text-slate-900 dark:text-slate-100">

@@ -1,7 +1,8 @@
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Prefetch
+from django.db.models import DecimalField, ExpressionWrapper, F, OuterRef, Prefetch, Subquery, Sum, Value
+from django.db.models.functions import Coalesce
 from django.utils.timezone import now
 from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
@@ -49,10 +50,39 @@ class PurchaseInvoiceViewSet(viewsets.ModelViewSet):
     serializer_class = PurchaseInvoiceSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
-    filter_backends = [filters.SearchFilter]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    ordering_fields = [
+        "invoice_number",
+        "date",
+        "due_date",
+        "supplier__business_name",
+        "warehouse__name",
+        "_balance_amount",
+    ]
+    ordering = ["-date", "-created_at"]
     search_fields = ["invoice_number", "supplier__business_name", "remarks", "warehouse__name"]
 
     def get_queryset(self):
+        returned_amount_subquery = (
+            PurchaseReturn.objects.filter(
+                tenant_id=OuterRef("tenant_id"),
+                purchase_invoice_id=OuterRef("pk"),
+                deleted_at__isnull=True,
+            )
+            .values("purchase_invoice_id")
+            .annotate(total=Sum("gross_amount"))
+            .values("total")[:1]
+        )
+        paid_amount_subquery = (
+            PurchaseBankPayment.objects.filter(
+                tenant_id=OuterRef("tenant_id"),
+                purchase_invoice_id=OuterRef("pk"),
+                deleted_at__isnull=True,
+            )
+            .values("purchase_invoice_id")
+            .annotate(total=Sum("amount"))
+            .values("total")[:1]
+        )
         return (
             PurchaseInvoice.objects.filter(
                 **get_request_tenant_filter(self.request),
@@ -67,7 +97,24 @@ class PurchaseInvoiceViewSet(viewsets.ModelViewSet):
                     ).select_related("product", "product__unit", "raw_material", "raw_material__purchase_unit", "uom"),
                 )
             )
-            .order_by("-date", "-created_at")
+            .annotate(
+                _returned_amount=Coalesce(
+                    Subquery(returned_amount_subquery),
+                    Value(0),
+                    output_field=DecimalField(max_digits=12, decimal_places=2),
+                ),
+                _paid_amount=Coalesce(
+                    Subquery(paid_amount_subquery),
+                    Value(0),
+                    output_field=DecimalField(max_digits=12, decimal_places=2),
+                ),
+            )
+            .annotate(
+                _balance_amount=ExpressionWrapper(
+                    F("net_amount") - F("_returned_amount") - F("_paid_amount"),
+                    output_field=DecimalField(max_digits=12, decimal_places=2),
+                )
+            )
         )
 
     def _get_serializable_invoice(self, invoice_id):

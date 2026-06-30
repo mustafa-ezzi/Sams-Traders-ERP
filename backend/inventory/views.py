@@ -4,7 +4,7 @@ from rest_framework.viewsets import ModelViewSet
 from rest_framework.permissions import IsAuthenticated
 from django.utils.timezone import now
 from decimal import Decimal
-from django.db.models import DecimalField, ExpressionWrapper, F, Prefetch, Q, Sum, Value
+from django.db.models import Count, DecimalField, IntegerField, OuterRef, Prefetch, Q, Subquery, Sum, Value
 from django.db.models.functions import Coalesce
 from rest_framework.decorators import action
 from accounts.journal import delete_journal_entry
@@ -26,6 +26,7 @@ from .models import (
     Supplier,
     Unit,
     Warehouse,
+    ProductCostState,
 )
 from .serializers import (
     BrandSerializer,
@@ -249,7 +250,22 @@ class ProductViewSet(viewsets.ModelViewSet):
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter, OrderingFilter]
     search_fields = ["name", "sku"]
-    ordering_fields = ["name", "sku", "created_at"]
+    ordering_fields = [
+        "sku",
+        "tenant_id",
+        "name",
+        "product_type",
+        "unit__name",
+        "quantity",
+        "_material_count",
+        "inventory_account__code",
+        "_material_cost",
+        "packaging_cost",
+        "net_amount",
+        "_average_cost",
+        "_stock_value",
+        "created_at",
+    ]
     ordering = ["-created_at"]
 
     def get_queryset(self):
@@ -257,6 +273,44 @@ class ProductViewSet(viewsets.ModelViewSet):
             deleted_at__isnull=True
         ).select_related("raw_material", "component_product", "uom")
         tenant_ids = get_request_tenant_ids(self.request)
+        quantity_subquery = (
+            ProductStock.objects.filter(
+                tenant_id__in=tenant_ids,
+                product_id=OuterRef("pk"),
+                deleted_at__isnull=True,
+            )
+            .values("product_id")
+            .annotate(total=Sum("quantity"))
+            .values("total")[:1]
+        )
+        material_count_subquery = (
+            ProductMaterial.objects.filter(
+                product_id=OuterRef("pk"),
+                deleted_at__isnull=True,
+            )
+            .values("product_id")
+            .annotate(total=Count("id"))
+            .values("total")[:1]
+        )
+        material_cost_subquery = (
+            ProductMaterial.objects.filter(
+                product_id=OuterRef("pk"),
+                deleted_at__isnull=True,
+            )
+            .values("product_id")
+            .annotate(total=Sum("amount"))
+            .values("total")[:1]
+        )
+        average_cost_subquery = ProductCostState.objects.filter(
+            tenant_id=OuterRef("tenant_id"),
+            product_id=OuterRef("pk"),
+            deleted_at__isnull=True,
+        ).values("average_cost")[:1]
+        stock_value_subquery = ProductCostState.objects.filter(
+            tenant_id=OuterRef("tenant_id"),
+            product_id=OuterRef("pk"),
+            deleted_at__isnull=True,
+        ).values("total_value")[:1]
         qs = Product.objects.filter(
             tenant_id__in=tenant_ids, deleted_at__isnull=True
         ).select_related("brand", "unit").prefetch_related(
@@ -271,16 +325,30 @@ class ProductViewSet(viewsets.ModelViewSet):
             qs = qs.filter(product_type__in=["FINISHED_GOOD", "READY_MADE"])
         qs = qs.annotate(
             quantity=Coalesce(
-                Sum(
-                    "productstock__quantity",
-                    filter=Q(
-                        productstock__tenant_id__in=tenant_ids,
-                        productstock__deleted_at__isnull=True,
-                    ),
-                ),
+                Subquery(quantity_subquery),
                 Value(0),
                 output_field=DecimalField(max_digits=12, decimal_places=2),
-            )
+            ),
+            _material_count=Coalesce(
+                Subquery(material_count_subquery),
+                Value(0),
+                output_field=IntegerField(),
+            ),
+            _material_cost=Coalesce(
+                Subquery(material_cost_subquery),
+                Value(0),
+                output_field=DecimalField(max_digits=12, decimal_places=2),
+            ),
+            _average_cost=Coalesce(
+                Subquery(average_cost_subquery),
+                Value(0),
+                output_field=DecimalField(max_digits=14, decimal_places=4),
+            ),
+            _stock_value=Coalesce(
+                Subquery(stock_value_subquery),
+                Value(0),
+                output_field=DecimalField(max_digits=14, decimal_places=2),
+            ),
         )
         return qs
 

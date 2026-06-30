@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Card from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
@@ -6,9 +6,7 @@ import FormInput from "../../../components/ui/FormInput";
 import ConfirmModal from "../../../components/ui/ConfirmModal";
 import StateView from "../../../components/StateView";
 import PageSizeSelect from "../../../components/ui/PageSizeSelect";
-import SortableHeader, {
-  getSortedRecords,
-} from "../../../components/ui/SortableHeader";
+import SortableHeader from "../../../components/ui/SortableHeader";
 import salesOrderService from "../../../api/services/salesOrderService";
 import { formatDecimal } from "../../../utils/format";
 import { useToast } from "../../../context/ToastContext";
@@ -28,6 +26,19 @@ const extractErrorMessage = (error) => {
   }
   return "Something went wrong";
 };
+const orderingFields = {
+  order: "order_number",
+  date: "date",
+  customer: "customer__business_name",
+  warehouse: "warehouse__name",
+  gross: "gross_amount",
+  net: "net_amount",
+  status: "_is_invoiced",
+};
+const getOrdering = (sortConfig) => {
+  const field = orderingFields[sortConfig.key] || "date";
+  return sortConfig.direction === "desc" ? `-${field}` : field;
+};
 
 const GetAllSalesOrder = () => {
   const navigate = useNavigate();
@@ -41,37 +52,15 @@ const GetAllSalesOrder = () => {
   const [deleteId, setDeleteId] = useState("");
   const [limit, setLimit] = useState(10);
   const [sortConfig, setSortConfig] = useState({
-    key: "order",
-    direction: "asc",
+    key: "date",
+    direction: "desc",
   });
-  const sortColumns = useMemo(
-    () => [
-      { key: "order", getValue: (row) => row.order_number },
-      { key: "date", getValue: (row) => row.date },
-      { key: "customer", getValue: (row) => row.customer?.business_name },
-      { key: "warehouse", getValue: (row) => row.warehouse?.name },
-      { key: "gross", getValue: (row) => row.grossAmount },
-      { key: "net", getValue: (row) => row.netAmount },
-      { key: "status", getValue: (row) => (row.isInvoiced ? "Invoiced" : "Pending") },
-    ],
-    [],
-  );
-  const sortedRecords = useMemo(
-    () => getSortedRecords(records, sortConfig, sortColumns),
-    [records, sortColumns, sortConfig],
-  );
-  const handleSort = (key) => {
-    setSortConfig((current) => ({
-      key,
-      direction:
-        current.key === key && current.direction === "asc" ? "desc" : "asc",
-    }));
-  };
 
   const loadOrders = async (
     nextPage = page,
     nextSearch = search,
     nextLimit = limit,
+    nextSortConfig = sortConfig,
   ) => {
     setLoading(true);
     setError("");
@@ -80,6 +69,7 @@ const GetAllSalesOrder = () => {
         page: nextPage,
         limit: nextLimit,
         search: nextSearch,
+        ordering: getOrdering(nextSortConfig),
       });
       setRecords(response.data || []);
       setTotal(response.total || 0);
@@ -108,7 +98,19 @@ const GetAllSalesOrder = () => {
   const handlePageSizeChange = (value) => {
     setLimit(value);
     setPage(1);
-    loadOrders(1, search, value);
+    loadOrders(1, search, value, sortConfig);
+  };
+  const handleSort = (key) => {
+    const nextSortConfig = {
+      key,
+      direction:
+        sortConfig.key === key && sortConfig.direction === "asc"
+          ? "desc"
+          : "asc",
+    };
+    setSortConfig(nextSortConfig);
+    setPage(1);
+    loadOrders(1, search, limit, nextSortConfig);
   };
 
   return (
@@ -165,7 +167,7 @@ const GetAllSalesOrder = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white dark:divide-slate-700 dark:bg-slate-800">
-                  {sortedRecords.map((record) => (
+                  {records.map((record) => (
                     <tr
                       key={record.id}
                       className={!record.isInvoiced ? "order-pending-blink" : ""}
