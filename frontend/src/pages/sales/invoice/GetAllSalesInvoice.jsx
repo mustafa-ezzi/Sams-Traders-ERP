@@ -1,10 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Card from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
 import FormInput from "../../../components/ui/FormInput";
 import ConfirmModal from "../../../components/ui/ConfirmModal";
 import StateView from "../../../components/StateView";
+import SortableHeader, {
+  getSortedRecords,
+} from "../../../components/ui/SortableHeader";
 import salesInvoiceService from "../../../api/services/salesInvoiceService";
 import { formatDecimal } from "../../../utils/format";
 import { useToast } from "../../../context/ToastContext";
@@ -33,7 +36,37 @@ const GetAllSalesInvoice = () => {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [deleteId, setDeleteId] = useState("");
+  const [sortConfig, setSortConfig] = useState({
+    key: "invoice",
+    direction: "asc",
+  });
   const limit = 10;
+  const sortColumns = useMemo(
+    () => [
+      { key: "invoice", getValue: (row) => row.invoice_number },
+      { key: "orderRef", getValue: (row) => row.orderReference },
+      { key: "date", getValue: (row) => row.date },
+      { key: "customer", getValue: (row) => row.customer?.business_name },
+      { key: "warehouse", getValue: (row) => row.warehouse?.name },
+      { key: "gross", getValue: (row) => row.grossAmount },
+      { key: "net", getValue: (row) => row.netAmount },
+      { key: "cogs", getValue: (row) => row.costTotal },
+      { key: "profit", getValue: (row) => row.profit },
+      { key: "balance", getValue: (row) => row.balanceAmount },
+    ],
+    [],
+  );
+  const sortedRecords = useMemo(
+    () => getSortedRecords(records, sortConfig, sortColumns),
+    [records, sortColumns, sortConfig],
+  );
+  const handleSort = (key) => {
+    setSortConfig((current) => ({
+      key,
+      direction:
+        current.key === key && current.direction === "asc" ? "desc" : "asc",
+    }));
+  };
   const loadInvoices = async (nextPage = page, nextSearch = search) => {
     setLoading(true);
     setError("");
@@ -126,22 +159,22 @@ const GetAllSalesInvoice = () => {
                   {" "}
                   <tr>
                     {" "}
-                    <th className="px-4 py-3">Invoice</th>
-                    <th className="px-4 py-3">Order Ref</th>
-                    <th className="px-4 py-3">Date</th>
-                    <th className="px-4 py-3">Customer</th>{" "}
-                    <th className="px-4 py-3">Warehouse</th>{" "}
-                    <th className="px-4 py-3">Gross</th>{" "}
-                    <th className="px-4 py-3">Net</th>{" "}
-                    <th className="px-4 py-3">COGS</th>{" "}
-                    <th className="px-4 py-3">Profit</th>{" "}
-                    <th className="px-4 py-3">Balance</th>{" "}
+                    <SortableHeader className="px-4 py-3" label="Invoice" sortKey="invoice" sortConfig={sortConfig} onSort={handleSort} />
+                    <SortableHeader className="px-4 py-3" label="Order Ref" sortKey="orderRef" sortConfig={sortConfig} onSort={handleSort} />
+                    <SortableHeader className="px-4 py-3" label="Date" sortKey="date" sortConfig={sortConfig} onSort={handleSort} />
+                    <SortableHeader className="px-4 py-3" label="Customer" sortKey="customer" sortConfig={sortConfig} onSort={handleSort} />{" "}
+                    <SortableHeader className="px-4 py-3" label="Warehouse" sortKey="warehouse" sortConfig={sortConfig} onSort={handleSort} />{" "}
+                    <SortableHeader className="px-4 py-3" label="Gross" sortKey="gross" sortConfig={sortConfig} onSort={handleSort} />{" "}
+                    <SortableHeader className="px-4 py-3" label="Net" sortKey="net" sortConfig={sortConfig} onSort={handleSort} />{" "}
+                    <SortableHeader className="px-4 py-3" label="COGS" sortKey="cogs" sortConfig={sortConfig} onSort={handleSort} />{" "}
+                    <SortableHeader className="px-4 py-3" label="Profit" sortKey="profit" sortConfig={sortConfig} onSort={handleSort} />{" "}
+                    <SortableHeader className="px-4 py-3" label="Balance" sortKey="balance" sortConfig={sortConfig} onSort={handleSort} />{" "}
                     <th className="px-4 py-3">Actions</th>{" "}
                   </tr>{" "}
                 </thead>{" "}
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800">
                   {" "}
-                  {records.map((record) => (
+                  {sortedRecords.map((record) => (
                     <tr key={record.id}>
                       {" "}
                       <td className="px-4 py-3 font-semibold text-slate-900 dark:text-slate-100">

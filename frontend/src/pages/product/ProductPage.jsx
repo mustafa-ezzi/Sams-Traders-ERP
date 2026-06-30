@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import productService from "../../api/services/productService";
 import accountService from "../../api/services/accountService";
@@ -9,6 +9,9 @@ import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import ConfirmModal from "../../components/ui/ConfirmModal";
 import IconButton from "../../components/ui/IconButton";
+import SortableHeader, {
+  getSortedRecords,
+} from "../../components/ui/SortableHeader";
 import { useToast } from "../../context/ToastContext";
 import {
   flattenAccountTree,
@@ -47,7 +50,47 @@ const ProductPage = () => {
   const [cogsAccounts, setCogsAccounts] = useState([]);
   const [revenueAccounts, setRevenueAccounts] = useState([]);
   const [deleteId, setDeleteId] = useState("");
+  const [sortConfig, setSortConfig] = useState({
+    key: "sku",
+    direction: "asc",
+  });
   const limit = 10;
+  const getTotalMaterialCost = (row) =>
+    row.materials?.reduce((sum, m) => sum + (Number(m.amount) || 0), 0) || 0;
+  const getUnitName = (row) =>
+    unitOptions.find((unit) => unit.id === row.unit)?.name || "";
+  const getInventoryCode = (row) =>
+    inventoryAccounts.find((account) => account.id === row.inventory_account)
+      ?.code || "";
+  const sortColumns = useMemo(
+    () => [
+      { key: "sku", getValue: (row) => row.sku },
+      { key: "tenant", getValue: (row) => row.tenant_name || row.tenant_id },
+      { key: "name", getValue: (row) => row.name },
+      { key: "type", getValue: (row) => row.product_type },
+      { key: "unit", getValue: getUnitName },
+      { key: "quantity", getValue: (row) => row.quantity },
+      { key: "materials", getValue: (row) => row.materials?.length || 0 },
+      { key: "accounts", getValue: getInventoryCode },
+      { key: "materialCost", getValue: getTotalMaterialCost },
+      { key: "packaging", getValue: (row) => row.packaging_cost },
+      { key: "netAmount", getValue: (row) => row.net_amount },
+      { key: "avgCost", getValue: (row) => row.average_cost },
+      { key: "stockValue", getValue: (row) => row.stock_value },
+    ],
+    [inventoryAccounts, unitOptions],
+  );
+  const sortedRecords = useMemo(
+    () => getSortedRecords(records, sortConfig, sortColumns),
+    [records, sortColumns, sortConfig],
+  );
+  const handleSort = (key) => {
+    setSortConfig((current) => ({
+      key,
+      direction:
+        current.key === key && current.direction === "asc" ? "desc" : "asc",
+    }));
+  };
 
   const load = async (nextPage = page, nextSearch = search) => {
     setLoading(true);
@@ -150,57 +193,27 @@ const ProductPage = () => {
             <table className="w-full min-w-[1160px] text-sm">
               <thead className="border-b border-slate-100 bg-slate-50 text-left">
                 <tr>
-                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">
-                    SKU
-                  </th>
-                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Tenant
-                  </th>
-                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Name
-                  </th>
-                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Type
-                  </th>
-                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Unit
-                  </th>
-                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Qty
-                  </th>
-                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Materials
-                  </th>
-                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Accounts
-                  </th>
-                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Material Cost
-                  </th>
-                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Packaging
-                  </th>
-                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Net Amount
-                  </th>
-                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Avg Cost
-                  </th>
-                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Stock Value
-                  </th>
+                  <SortableHeader className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500" label="SKU" sortKey="sku" sortConfig={sortConfig} onSort={handleSort} />
+                  <SortableHeader className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500" label="Tenant" sortKey="tenant" sortConfig={sortConfig} onSort={handleSort} />
+                  <SortableHeader className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500" label="Name" sortKey="name" sortConfig={sortConfig} onSort={handleSort} />
+                  <SortableHeader className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500" label="Type" sortKey="type" sortConfig={sortConfig} onSort={handleSort} />
+                  <SortableHeader className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500" label="Unit" sortKey="unit" sortConfig={sortConfig} onSort={handleSort} />
+                  <SortableHeader className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500" label="Qty" sortKey="quantity" sortConfig={sortConfig} onSort={handleSort} />
+                  <SortableHeader className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500" label="Materials" sortKey="materials" sortConfig={sortConfig} onSort={handleSort} />
+                  <SortableHeader className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500" label="Accounts" sortKey="accounts" sortConfig={sortConfig} onSort={handleSort} />
+                  <SortableHeader className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500" label="Material Cost" sortKey="materialCost" sortConfig={sortConfig} onSort={handleSort} />
+                  <SortableHeader className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500" label="Packaging" sortKey="packaging" sortConfig={sortConfig} onSort={handleSort} />
+                  <SortableHeader className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500" label="Net Amount" sortKey="netAmount" sortConfig={sortConfig} onSort={handleSort} />
+                  <SortableHeader className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500" label="Avg Cost" sortKey="avgCost" sortConfig={sortConfig} onSort={handleSort} />
+                  <SortableHeader className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500" label="Stock Value" sortKey="stockValue" sortConfig={sortConfig} onSort={handleSort} />
                   <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-slate-500">
                     Actions
                   </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {records.map((row) => {
-                  const totalMaterialCost =
-                    row.materials?.reduce(
-                      (sum, m) => sum + (Number(m.amount) || 0),
-                      0,
-                    ) || 0;
+                {sortedRecords.map((row) => {
+                  const totalMaterialCost = getTotalMaterialCost(row);
                   return (
                     <tr
                       key={row.id}

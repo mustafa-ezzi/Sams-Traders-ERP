@@ -8,6 +8,7 @@ import Button from "./ui/Button";
 import FormInput from "./ui/FormInput";
 import ConfirmModal from "./ui/ConfirmModal";
 import IconButton from "./ui/IconButton";
+import PageSizeSelect from "./ui/PageSizeSelect";
 import { useToast } from "../context/ToastContext";
 
 const schema = z.object({
@@ -22,7 +23,7 @@ const MasterCrudPage = ({ title, service }) => {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
-  const [limit] = useState(10);
+  const [limit, setLimit] = useState(10);
   const [deleteId, setDeleteId] = useState("");
   const toast = useToast();
 
@@ -33,13 +34,13 @@ const MasterCrudPage = ({ title, service }) => {
 
   const singularTitle = title.endsWith("s") ? title.slice(0, -1) : title;
 
-  const loadRecords = async (nextPage = page, nextSearch = search) => {
+  const loadRecords = async (nextPage = page, nextSearch = search, nextLimit = limit) => {
     setLoading(true);
     setError("");
     try {
       const response = await service.list({
         page: nextPage,
-        limit,
+        limit: nextLimit,
         search: nextSearch,
       });
       setRecords(response.data || []);
@@ -214,6 +215,14 @@ const MasterCrudPage = ({ title, service }) => {
               {total} total records
             </span>
             <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-end">
+              <PageSizeSelect
+                value={limit}
+                onChange={(nextLimit) => {
+                  setLimit(nextLimit);
+                  loadRecords(1, search, nextLimit);
+                }}
+                disabled={loading}
+              />
               <Button
                 variant="secondary"
                 type="button"

@@ -5,6 +5,9 @@ import Button from "../../../components/ui/Button";
 import FormInput from "../../../components/ui/FormInput";
 import ConfirmModal from "../../../components/ui/ConfirmModal";
 import StateView from "../../../components/StateView";
+import SortableHeader, {
+  getSortedRecords,
+} from "../../../components/ui/SortableHeader";
 import purchaseInvoiceService from "../../../api/services/purchaseInvoiceService";
 import { formatDecimal } from "../../../utils/format";
 import { useToast } from "../../../context/ToastContext";
@@ -39,8 +42,34 @@ const GetAllPurchaseInvoice = () => {
   const [deleteId, setDeleteId] = useState("");
   const [printModal, setPrintModal] = useState(null);
   const [printLoadingId, setPrintLoadingId] = useState("");
+  const [sortConfig, setSortConfig] = useState({
+    key: "invoice",
+    direction: "asc",
+  });
   const printCancelledRef = useRef(false);
   const limit = 10;
+  const sortColumns = useMemo(
+    () => [
+      { key: "invoice", getValue: (row) => row.invoice_number },
+      { key: "date", getValue: (row) => row.date },
+      { key: "due", getValue: (row) => row.dueDate },
+      { key: "supplier", getValue: (row) => row.supplier?.business_name },
+      { key: "warehouse", getValue: (row) => row.warehouse?.name },
+      { key: "status", getValue: (row) => getPaymentStatus(row) },
+    ],
+    [],
+  );
+  const sortedRecords = useMemo(
+    () => getSortedRecords(records, sortConfig, sortColumns),
+    [records, sortColumns, sortConfig],
+  );
+  const handleSort = (key) => {
+    setSortConfig((current) => ({
+      key,
+      direction:
+        current.key === key && current.direction === "asc" ? "desc" : "asc",
+    }));
+  };
   const unpaidPageTotal = useMemo(
     () =>
       records.reduce(
@@ -186,18 +215,18 @@ const GetAllPurchaseInvoice = () => {
                   {" "}
                   <tr>
                     {" "}
-                    <th className="px-4 py-3">Invoice</th>{" "}
-                    <th className="px-4 py-3">Date</th>{" "}
-                    <th className="px-4 py-3">Due</th>{" "}
-                    <th className="px-4 py-3">Supplier</th>{" "}
-                    <th className="px-4 py-3">Warehouse</th>{" "}
-                    <th className="px-4 py-3">Status</th>{" "}
+                    <SortableHeader className="px-4 py-3" label="Invoice" sortKey="invoice" sortConfig={sortConfig} onSort={handleSort} />{" "}
+                    <SortableHeader className="px-4 py-3" label="Date" sortKey="date" sortConfig={sortConfig} onSort={handleSort} />{" "}
+                    <SortableHeader className="px-4 py-3" label="Due" sortKey="due" sortConfig={sortConfig} onSort={handleSort} />{" "}
+                    <SortableHeader className="px-4 py-3" label="Supplier" sortKey="supplier" sortConfig={sortConfig} onSort={handleSort} />{" "}
+                    <SortableHeader className="px-4 py-3" label="Warehouse" sortKey="warehouse" sortConfig={sortConfig} onSort={handleSort} />{" "}
+                    <SortableHeader className="px-4 py-3" label="Status" sortKey="status" sortConfig={sortConfig} onSort={handleSort} />{" "}
                     <th className="px-4 py-3 text-right">Actions</th>{" "}
                   </tr>{" "}
                 </thead>{" "}
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800">
                   {" "}
-                  {records.map((record) => {
+                  {sortedRecords.map((record) => {
                     const status = getPaymentStatus(record);
                     const meta = statusMeta[status];
                     const alertRow = isDuePaymentAlertRow(record);

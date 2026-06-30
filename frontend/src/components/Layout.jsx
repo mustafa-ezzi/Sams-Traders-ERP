@@ -697,6 +697,12 @@ const Layout = () => {
       ),
     ];
     if (!nextSelected.length) nextSelected.push(availableCodes[0]);
+    if (
+      nextSelected.length > 1 &&
+      !availableCodes.every((code) => nextSelected.includes(code))
+    ) {
+      nextSelected.splice(1);
+    }
     if (nextSelected.join("|") !== createTenantIds.join("|"))
       setCreateTenants(nextSelected);
   }, [
@@ -736,12 +742,9 @@ const Layout = () => {
       : selectedDimensionNames.join(", ") || activeDimension?.name || tenantId;
   const outletKey = selectedCreateTenantIds.join("|") || tenantId;
 
-  const setCreateDimensionChecked = (code, checked) => {
-    const next = checked
-      ? [...new Set([...selectedCreateTenantIds, code])]
-      : selectedCreateTenantIds.filter((c) => c !== code);
-    if (!next.length) return;
-    setCreateTenants(next.filter((c) => creationCodes.includes(c)));
+  const setCreateDimensionChecked = (code) => {
+    if (!creationCodes.includes(code)) return;
+    setCreateTenants([code]);
   };
   const setAllCreateDimensions = (checked) =>
     setCreateTenants(checked ? creationCodes : [selectedCreateTenantIds[0] || tenantId]);
@@ -995,12 +998,7 @@ const Layout = () => {
                       key={dimension.code}
                       label={dimension.name || dimension.code}
                       checked={checked}
-                      onChange={(e) =>
-                        setCreateDimensionChecked(
-                          dimension.code,
-                          e.target.checked,
-                        )
-                      }
+                      onChange={() => setCreateDimensionChecked(dimension.code)}
                     />
                   );
                 })}
