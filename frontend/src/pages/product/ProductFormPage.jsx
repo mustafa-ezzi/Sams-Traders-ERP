@@ -73,6 +73,15 @@ const getRawMaterialOptionLabel = (option) => {
   return brandName ? `${option.name} - ${brandName}` : option.name;
 };
 
+const emptyMaterialRow = {
+  component_type: "RAW_MATERIAL",
+  raw_material_id: "",
+  component_product_id: "",
+  uom_id: "",
+  quantity: 1,
+  rate: 0,
+};
+
 const mapProductToForm = (product) => ({
   name: product.name,
   sku: product.sku || "",
@@ -106,14 +115,7 @@ const mapProductMaterials = (product) =>
         rate: Number(material.rate),
       }))
     : [
-        {
-          component_type: "RAW_MATERIAL",
-          raw_material_id: "",
-          component_product_id: "",
-          uom_id: "",
-          quantity: 1,
-          rate: 0,
-        },
+        emptyMaterialRow,
       ];
 
 const extractSubmitErrorMessage = (error) => {
@@ -141,6 +143,9 @@ const ProductFormPage = () => {
   );
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [loadingSetupOptions, setLoadingSetupOptions] = useState(false);
+  const [loadingAccountOptions, setLoadingAccountOptions] = useState(false);
+  const [loadingComponentOptions, setLoadingComponentOptions] = useState(false);
   const [rawMaterialOptions, setRawMaterialOptions] = useState([]);
   const [brandOptions, setBrandOptions] = useState([]);
   const [unitOptions, setUnitOptions] = useState([]);
@@ -148,31 +153,39 @@ const ProductFormPage = () => {
   const [cogsAccounts, setCogsAccounts] = useState([]);
   const [revenueAccounts, setRevenueAccounts] = useState([]);
   const [componentProductOptions, setComponentProductOptions] = useState([]);
-  const [materialRows, setMaterialRows] = useState([
-    {
-      component_type: "RAW_MATERIAL",
-      raw_material_id: "",
-      component_product_id: "",
-      uom_id: "",
-      quantity: 1,
-      rate: 0,
-    },
-  ]);
+  const [materialRows, setMaterialRows] = useState([emptyMaterialRow]);
 
   const form = useForm({ resolver: zodResolver(schema), defaultValues });
   const productType = form.watch("productType");
   const useCalculatedCost = form.watch("useCalculatedCost");
+  const componentTenantId = isEditing
+    ? tenantId
+    : createDimensionIds.length === 1
+      ? createDimensionIds[0]
+      : "";
+  const accountTenantId = componentTenantId;
 
   const loadProductSetupOptions = useCallback(async () => {
-    const [brandRes, unitRes, accountRes] = await Promise.all([
+    const [brandRes, unitRes] = await Promise.all([
       brandService.list({ page: 1, limit: 100, search: "" }),
       unitService.list({ page: 1, limit: 100, search: "" }),
-      accountService.list(),
     ]);
-    const flatAccounts = flattenAccountTree(accountRes || []);
 
     setBrandOptions(brandRes.data || []);
     setUnitOptions(unitRes.data || []);
+  }, []);
+
+  const loadAccountOptions = useCallback(async (selectedTenantId) => {
+    if (!selectedTenantId) {
+      setInventoryAccounts([]);
+      setCogsAccounts([]);
+      setRevenueAccounts([]);
+      return;
+    }
+
+    const accountRes = await accountService.list(undefined, selectedTenantId);
+    const flatAccounts = flattenAccountTree(accountRes || []);
+
     setInventoryAccounts(getPostableInventoryAccounts(flatAccounts));
     setCogsAccounts(
       getSelectablePostingAccounts(flatAccounts, "COGS"),
@@ -182,44 +195,77 @@ const ProductFormPage = () => {
     );
   }, []);
 
-  const refreshProductSetupOptions = useCallback(async () => {
+  const loadComponentOptions = useCallback(
+    async (selectedTenantId) => {
+      if (!selectedTenantId) {
+        setRawMaterialOptions([]);
+        setComponentProductOptions([]);
+        return;
+      }
+
+      const [rawMaterialRes, productOptionsRes] = await Promise.all([
+        rawMaterialService.list(
+          { page: 1, limit: 100, search: "" },
+          selectedTenantId,
+        ),
+        productService.list(
+          { page: 1, limit: 100, search: "" },
+          selectedTenantId,
+        ),
+      ]);
+
+      setRawMaterialOptions(rawMaterialRes.data || []);
+      setComponentProductOptions(
+        (productOptionsRes.data || []).filter(
+          (item) =>
+            (item.product_type === "FINISHED_GOOD" ||
+              item.product_type === "READY_MADE" ||
+              item.product_type === "ASSEMBLY_PRODUCT" ||
+              item.product_type === "MANUFACTURED") &&
+            String(item.id) !== String(id),
+        ),
+      );
+    },
+    [id],
+  );
+
+  const refreshAccountOptions = useCallback(async () => {
+    setLoadingAccountOptions(true);
     try {
-      await loadProductSetupOptions();
+      await loadAccountOptions(accountTenantId);
     } catch (refreshError) {
       toast.error(
         refreshError?.response?.data?.message ||
-          "Failed to refresh product setup options",
+          "Failed to load account options for selected dimension",
       );
+    } finally {
+      setLoadingAccountOptions(false);
     }
-  }, [loadProductSetupOptions, toast]);
+  }, [accountTenantId, loadAccountOptions, toast]);
+
+  const refreshComponentOptions = useCallback(async () => {
+    setLoadingComponentOptions(true);
+    try {
+      await loadComponentOptions(componentTenantId);
+    } catch (loadError) {
+      toast.error(
+        loadError?.response?.data?.message ||
+          "Failed to load component options for selected dimension",
+      );
+    } finally {
+      setLoadingComponentOptions(false);
+    }
+  }, [componentTenantId, loadComponentOptions, toast]);
 
   useEffect(() => {
     const loadSetup = async () => {
       setLoading(true);
+      setLoadingSetupOptions(true);
       try {
-        const [
-          rawMaterialRes,
-          ,
-          productOptionsRes,
-          product,
-        ] = await Promise.all([
-          rawMaterialService.list({ page: 1, limit: 100, search: "" }),
+        const [, product] = await Promise.all([
           loadProductSetupOptions(),
-          productService.list({ page: 1, limit: 100, search: "" }),
           isEditing ? productService.getById(id) : Promise.resolve(null),
         ]);
-
-        setRawMaterialOptions(rawMaterialRes.data || []);
-        setComponentProductOptions(
-          (productOptionsRes.data || []).filter(
-            (item) =>
-              (item.product_type === "FINISHED_GOOD" ||
-                item.product_type === "READY_MADE" ||
-                item.product_type === "ASSEMBLY_PRODUCT" ||
-                item.product_type === "MANUFACTURED") &&
-              String(item.id) !== String(id),
-          ),
-        );
 
         if (product) {
           form.reset(mapProductToForm(product));
@@ -230,6 +276,7 @@ const ProductFormPage = () => {
           loadError?.response?.data?.message || "Failed to load product form",
         );
       } finally {
+        setLoadingSetupOptions(false);
         setLoading(false);
       }
     };
@@ -238,25 +285,16 @@ const ProductFormPage = () => {
   }, [form, id, isEditing, loadProductSetupOptions, toast]);
 
   useEffect(() => {
-    const handleWindowFocus = () => refreshProductSetupOptions();
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        refreshProductSetupOptions();
-      }
-    };
+    refreshComponentOptions();
+  }, [refreshComponentOptions]);
 
-    window.addEventListener("focus", handleWindowFocus);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => {
-      window.removeEventListener("focus", handleWindowFocus);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [refreshProductSetupOptions]);
+  useEffect(() => {
+    refreshAccountOptions();
+  }, [refreshAccountOptions]);
 
-  const refreshSelectOptionsProps = {
-    onFocus: refreshProductSetupOptions,
-    onMouseDown: refreshProductSetupOptions,
-  };
+  const refreshSelectOptionsProps = {};
+  const refreshAccountOptionsProps = {};
+  const refreshComponentOptionsProps = {};
 
   const selectedComponentKeys = materialRows
     .map((row) =>
@@ -301,6 +339,17 @@ const ProductFormPage = () => {
       ) {
         toast.error(
           "Assembly product must include at least one component line.",
+        );
+        return;
+      }
+
+      if (
+        !isEditing &&
+        values.productType === "ASSEMBLY_PRODUCT" &&
+        createDimensionIds.length !== 1
+      ) {
+        toast.error(
+          "Select one dimension for assembly products so component materials match the product dimension.",
         );
         return;
       }
@@ -372,7 +421,22 @@ const ProductFormPage = () => {
             {!isEditing && (
               <DimensionCreateSelector
                 selectedIds={createDimensionIds}
-                onChange={setCreateDimensionIds}
+                onChange={(nextIds) => {
+                  setCreateDimensionIds(nextIds);
+                  setMaterialRows([emptyMaterialRow]);
+                  form.setValue("inventory_account", "", {
+                    shouldDirty: true,
+                    shouldValidate: true,
+                  });
+                  form.setValue("cogs_account", "", {
+                    shouldDirty: true,
+                    shouldValidate: true,
+                  });
+                  form.setValue("revenue_account", "", {
+                    shouldDirty: true,
+                    shouldValidate: true,
+                  });
+                }}
               />
             )}
             <FormInput
@@ -421,8 +485,11 @@ const ProductFormPage = () => {
                 className={selectClassName}
                 {...form.register("brand")}
                 {...refreshSelectOptionsProps}
+                disabled={loadingSetupOptions}
               >
-                <option value="">Select brand</option>
+                <option value="">
+                  {loadingSetupOptions ? "Loading brands..." : "Select brand"}
+                </option>
                 {brandOptions.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.name}
@@ -444,8 +511,11 @@ const ProductFormPage = () => {
                 className={selectClassName}
                 {...form.register("unit")}
                 {...refreshSelectOptionsProps}
+                disabled={loadingSetupOptions}
               >
-                <option value="">Select unit</option>
+                <option value="">
+                  {loadingSetupOptions ? "Loading units..." : "Select unit"}
+                </option>
                 {unitOptions.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.name}
@@ -466,9 +536,14 @@ const ProductFormPage = () => {
               <select
                 className={selectClassName}
                 {...form.register("inventory_account")}
-                {...refreshSelectOptionsProps}
+                {...refreshAccountOptionsProps}
+                disabled={loadingAccountOptions}
               >
-                <option value="">Select inventory account</option>
+                <option value="">
+                  {loadingAccountOptions
+                    ? "Loading inventory accounts..."
+                    : "Select inventory account"}
+                </option>
                 {inventoryAccounts.map((item) => (
                   <option key={item.id} value={item.id}>
                     {formatAccountLabel(item)}
@@ -484,9 +559,14 @@ const ProductFormPage = () => {
               <select
                 className={selectClassName}
                 {...form.register("cogs_account")}
-                {...refreshSelectOptionsProps}
+                {...refreshAccountOptionsProps}
+                disabled={loadingAccountOptions}
               >
-                <option value="">Select COGS account</option>
+                <option value="">
+                  {loadingAccountOptions
+                    ? "Loading COGS accounts..."
+                    : "Select COGS account"}
+                </option>
                 {cogsAccounts.map((item) => (
                   <option key={item.id} value={item.id}>
                     {formatAccountLabel(item)}
@@ -502,9 +582,14 @@ const ProductFormPage = () => {
               <select
                 className={selectClassName}
                 {...form.register("revenue_account")}
-                {...refreshSelectOptionsProps}
+                {...refreshAccountOptionsProps}
+                disabled={loadingAccountOptions}
               >
-                <option value="">Select revenue account</option>
+                <option value="">
+                  {loadingAccountOptions
+                    ? "Loading revenue accounts..."
+                    : "Select revenue account"}
+                </option>
                 {revenueAccounts.map((item) => (
                   <option key={item.id} value={item.id}>
                     {formatAccountLabel(item)}
@@ -620,6 +705,8 @@ const ProductFormPage = () => {
                                 ? row.raw_material_id
                                 : row.component_product_id
                             }
+                            {...refreshComponentOptionsProps}
+                            disabled={loadingComponentOptions}
                             onChange={(event) => {
                               const itemId = event.target.value;
                               const selected =
@@ -663,10 +750,13 @@ const ProductFormPage = () => {
                             }}
                           >
                             <option value="">
-                              Select{" "}
-                              {row.component_type === "RAW_MATERIAL"
-                                ? "raw material"
-                                : componentProductLabel.toLowerCase()}
+                              {loadingComponentOptions
+                                ? "Loading options..."
+                                : `Select ${
+                                    row.component_type === "RAW_MATERIAL"
+                                      ? "raw material"
+                                      : componentProductLabel.toLowerCase()
+                                  }`}
                             </option>
                             {(row.component_type === "RAW_MATERIAL"
                               ? rawMaterialOptions
@@ -705,6 +795,7 @@ const ProductFormPage = () => {
                             className={selectClassName}
                             value={row.uom_id}
                             {...refreshSelectOptionsProps}
+                            disabled={loadingSetupOptions}
                             onChange={(event) =>
                               setMaterialRows((prev) =>
                                 prev.map((item, i) =>
@@ -715,7 +806,9 @@ const ProductFormPage = () => {
                               )
                             }
                           >
-                            <option value="">Select UOM</option>
+                            <option value="">
+                              {loadingSetupOptions ? "Loading UOM..." : "Select UOM"}
+                            </option>
                             {unitOptions.map((unit) => (
                               <option key={unit.id} value={unit.id}>
                                 {unit.name}

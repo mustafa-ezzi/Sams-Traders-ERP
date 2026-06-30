@@ -2,8 +2,13 @@ import axiosInstance from "../axiosInstance";
 import { createAcrossDimensions } from "../createAcrossDimensions";
 
 const rawMaterialService = {
-  async list(params) {
-    const response = await axiosInstance.get("/inventory/raw-materials", { params });
+  async list(params, tenantId = "") {
+    const response = await axiosInstance.get("/inventory/raw-materials", {
+      params,
+      headers: tenantId
+        ? { "x-tenant-id": tenantId, "x-tenant-ids": tenantId }
+        : {},
+    });
     return response.data;
   },
   async getById(id) {

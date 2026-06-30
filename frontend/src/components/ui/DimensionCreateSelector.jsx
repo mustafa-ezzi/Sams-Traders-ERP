@@ -2,47 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import dimensionService from "../../api/services/dimensionService";
 
-const CheckPill = ({ label, checked, onChange, isAll = false }) => (
-  <label
-    className={`inline-flex cursor-pointer select-none items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold tracking-wide transition-all duration-150 ${
-      isAll && checked
-        ? "border-emerald-200 bg-emerald-50 text-emerald-700 shadow-sm dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
-        : checked
-          ? "border-blue-200 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300"
-          : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400 dark:hover:border-slate-500 dark:hover:bg-slate-700 dark:hover:text-slate-200"
-    }`}
-    title={`Create in ${label}`}
-  >
-    <span
-      className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border transition-all duration-150 ${
-        isAll && checked
-          ? "border-emerald-500 bg-emerald-500"
-          : checked
-            ? "border-blue-500 bg-blue-500"
-            : "border-slate-300 bg-white dark:border-slate-600 dark:bg-slate-800"
-      }`}
-    >
-      {checked && (
-        <svg viewBox="0 0 12 12" className="h-2.5 w-2.5 text-white" fill="none">
-          <path
-            d="M2.5 6.5L5 9l4.5-5"
-            stroke="currentColor"
-            strokeWidth="1.75"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      )}
-    </span>
-    <input
-      type="checkbox"
-      className="sr-only"
-      checked={checked}
-      onChange={onChange}
-    />
-    {label}
-  </label>
-);
+const ALL_DIMENSIONS = "__ALL_DIMENSIONS__";
+
+const selectClassName =
+  "w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-800/90 dark:text-slate-100 dark:focus:ring-blue-900/40";
 
 const DimensionCreateSelector = ({
   selectedIds,
@@ -65,20 +28,30 @@ const DimensionCreateSelector = ({
     () => (dimensions.length ? dimensions : allowedDimensions || []),
     [allowedDimensions, dimensions],
   );
-  const codes = options.map((item) => item.code);
-  const selected = [...new Set((selectedIds || []).filter((code) => codes.includes(code)))];
+  const codes = useMemo(() => options.map((item) => item.code), [options]);
+  const selected = useMemo(
+    () => [
+      ...new Set((selectedIds || []).filter((code) => codes.includes(code))),
+    ],
+    [codes, selectedIds],
+  );
   const allSelected = codes.length > 0 && codes.every((code) => selected.includes(code));
+  const selectedValue = allSelected ? ALL_DIMENSIONS : selected[0] || tenantId || codes[0] || "";
 
-  const toggleCode = (code, checked) => {
-    const next = checked
-      ? [...new Set([...selected, code])]
-      : selected.filter((item) => item !== code);
-    if (!next.length) return;
-    onChange(next);
-  };
+  useEffect(() => {
+    if (!codes.length) return;
+    if (!selected.length) {
+      onChange([tenantId || codes[0]].filter(Boolean));
+      return;
+    }
+    if (selected.length > 1 && !allSelected) {
+      onChange(codes);
+    }
+  }, [allSelected, codes, onChange, selected.length, tenantId]);
 
-  const toggleAll = (checked) => {
-    onChange(checked ? codes : [selected[0] || tenantId || codes[0]].filter(Boolean));
+  const handleChange = (event) => {
+    const value = event.target.value;
+    onChange(value === ALL_DIMENSIONS ? codes : [value].filter(Boolean));
   };
 
   if (options.length <= 1) {
@@ -89,19 +62,22 @@ const DimensionCreateSelector = ({
     <div
       className={`col-span-full rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/40 ${className}`}
     >
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">
+      <div className="grid gap-2 sm:max-w-sm">
+        <label className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">
           Create in dimensions
-        </span>
-        <CheckPill label="All" checked={allSelected} onChange={(e) => toggleAll(e.target.checked)} isAll />
-        {options.map((dimension) => (
-          <CheckPill
-            key={dimension.code}
-            label={dimension.name || dimension.code}
-            checked={selected.includes(dimension.code)}
-            onChange={(e) => toggleCode(dimension.code, e.target.checked)}
-          />
-        ))}
+        </label>
+        <select
+          className={selectClassName}
+          value={selectedValue}
+          onChange={handleChange}
+        >
+          <option value={ALL_DIMENSIONS}>All</option>
+          {options.map((dimension) => (
+            <option key={dimension.code} value={dimension.code}>
+              {dimension.name || dimension.code}
+            </option>
+          ))}
+        </select>
       </div>
       <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{hint}</p>
     </div>

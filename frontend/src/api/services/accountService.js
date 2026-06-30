@@ -1,11 +1,16 @@
 import axiosInstance from "../axiosInstance";
 
 const tenantHeader = (selectedTenant = "") =>
-  selectedTenant ? { "x-tenant-id": selectedTenant } : {};
+  selectedTenant
+    ? { "x-tenant-id": selectedTenant, "x-tenant-ids": selectedTenant }
+    : {};
 
 const accountService = {
-  async list(params) {
-    const response = await axiosInstance.get("/accounts/accounts/", { params });
+  async list(params, selectedTenant = "") {
+    const response = await axiosInstance.get("/accounts/accounts/", {
+      params,
+      headers: tenantHeader(selectedTenant),
+    });
     return response.data;
   },
   async getById(id) {

@@ -25,12 +25,16 @@ axiosInstance.interceptors.request.use((config) => {
     Boolean(config.headers?.["x-tenant-id"]) ||
     Boolean(config.headers?.["X-Tenant-Id"]) ||
     Boolean(config.headers?.get?.("x-tenant-id"));
+  const hasRequestTenants =
+    Boolean(config.headers?.["x-tenant-ids"]) ||
+    Boolean(config.headers?.["X-Tenant-Ids"]) ||
+    Boolean(config.headers?.get?.("x-tenant-ids"));
 
   if (tenantId && !hasRequestTenant) {
     config.headers["x-tenant-id"] = tenantId;
   }
 
-  if (selectedTenantIds.length) {
+  if (selectedTenantIds.length && !hasRequestTenants) {
     config.headers["x-tenant-ids"] = [...new Set(selectedTenantIds)].join(",");
   }
 
