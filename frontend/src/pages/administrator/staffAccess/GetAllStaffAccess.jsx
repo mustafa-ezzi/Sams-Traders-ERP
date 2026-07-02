@@ -40,6 +40,10 @@ const GetAllStaffAccess = () => {
       toast.error(e?.response?.data?.detail || "Delete failed");
     }
   };
+  const getSalesmanAccessLabel = (row) => {
+    const count = row.data_access?.salesman_ids?.length || 0;
+    return count ? `${count} selected` : "All salesmen";
+  };
   return (
     <section className="space-y-6">
       {" "}
@@ -90,6 +94,7 @@ const GetAllStaffAccess = () => {
                   <th className="px-4 py-3">Email</th>{" "}
                   <th className="px-4 py-3">Role</th>{" "}
                   <th className="px-4 py-3">Modules</th>{" "}
+                  <th className="px-4 py-3">Salesmen</th>{" "}
                   <th className="px-4 py-3 text-right">Actions</th>{" "}
                 </tr>{" "}
               </thead>{" "}
@@ -109,6 +114,9 @@ const GetAllStaffAccess = () => {
                     </td>{" "}
                     <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
                       {(row.ui_permissions || []).length} selected
+                    </td>{" "}
+                    <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
+                      {getSalesmanAccessLabel(row)}
                     </td>{" "}
                     <td className="px-4 py-3 text-right">
                       {" "}

@@ -1,7 +1,8 @@
+from collections import defaultdict
 from decimal import Decimal
 from datetime import date
 
-from django.db.models import Sum
+from django.db.models import Prefetch, Q, Sum
 from django.db.models.functions import Coalesce
 
 from accounts.models import Account, Dimension, JournalLine
@@ -550,7 +551,428 @@ def build_payable_aging_report(tenant_ids, as_of_date):
     )
 
 
-def build_salesman_performance_report(tenant_ids, from_date, to_date, salesman_id=None):
+def build_sales_report(
+    tenant_ids,
+    from_date,
+    to_date,
+    customer_id=None,
+    product_id=None,
+    salesman_id=None,
+    salesman_ids=None,
+    warehouse_id=None,
+):
+    from sales.models import SalesBankReceipt, SalesInvoice, SalesInvoiceLine, SalesReturn
+    from sales.services import get_sales_invoice_financials
+
+    dimension_names = _dimension_name_map(tenant_ids)
+    line_queryset = SalesInvoiceLine.objects.filter(
+        deleted_at__isnull=True,
+    ).select_related("product", "product__unit")
+
+    invoices = (
+        SalesInvoice.objects.filter(
+            tenant_id__in=tenant_ids,
+            deleted_at__isnull=True,
+            date__gte=from_date,
+            date__lte=to_date,
+        )
+        .select_related("customer", "warehouse", "salesman", "sales_order")
+        .prefetch_related(Prefetch("lines", queryset=line_queryset))
+        .order_by("date", "invoice_number")
+    )
+
+    if customer_id:
+        invoices = invoices.filter(customer_id=customer_id)
+    if salesman_id:
+        invoices = invoices.filter(salesman_id=salesman_id)
+    elif salesman_ids:
+        invoices = invoices.filter(salesman_id__in=salesman_ids)
+    if warehouse_id:
+        invoices = invoices.filter(warehouse_id=warehouse_id)
+    if product_id:
+        invoices = invoices.filter(lines__product_id=product_id, lines__deleted_at__isnull=True).distinct()
+
+    invoice_rows = []
+    product_rows_map = {}
+    customer_rows_map = {}
+    salesman_rows_map = {}
+    warehouse_rows_map = {}
+    dimension_rows_map = {}
+    monthly_rows_map = defaultdict(
+        lambda: {
+            "invoice_count": 0,
+            "quantity": Decimal("0.00"),
+            "gross_amount": Decimal("0.00"),
+            "line_discount": Decimal("0.00"),
+            "line_net_sales": Decimal("0.00"),
+            "invoice_discount": Decimal("0.00"),
+            "invoice_net_sales": Decimal("0.00"),
+            "returned_amount": Decimal("0.00"),
+            "received_amount": Decimal("0.00"),
+            "balance_amount": Decimal("0.00"),
+            "cost_total": Decimal("0.00"),
+            "profit": Decimal("0.00"),
+        }
+    )
+
+    summary = {
+        "invoice_count": 0,
+        "customer_count": set(),
+        "product_count": set(),
+        "quantity": Decimal("0.00"),
+        "gross_amount": Decimal("0.00"),
+        "line_discount": Decimal("0.00"),
+        "line_net_sales": Decimal("0.00"),
+        "invoice_discount": Decimal("0.00"),
+        "invoice_net_sales": Decimal("0.00"),
+        "returned_amount": Decimal("0.00"),
+        "received_amount": Decimal("0.00"),
+        "balance_amount": Decimal("0.00"),
+        "cost_total": Decimal("0.00"),
+        "profit": Decimal("0.00"),
+        "salesman_commission": Decimal("0.00"),
+    }
+
+    def add_group_row(map_obj, key, base):
+        if key not in map_obj:
+            map_obj[key] = {
+                **base,
+                "invoice_count": 0,
+                "quantity": Decimal("0.00"),
+                "gross_amount": Decimal("0.00"),
+                "line_discount": Decimal("0.00"),
+                "line_net_sales": Decimal("0.00"),
+                "invoice_net_sales": Decimal("0.00"),
+                "returned_amount": Decimal("0.00"),
+                "received_amount": Decimal("0.00"),
+                "balance_amount": Decimal("0.00"),
+                "cost_total": Decimal("0.00"),
+                "profit": Decimal("0.00"),
+            }
+        return map_obj[key]
+
+    def add_amounts(row, invoice, lines, financials):
+        line_quantity = sum((line.quantity for line in lines), Decimal("0.00"))
+        gross = sum((line.amount for line in lines), Decimal("0.00"))
+        line_discount = sum((line.discount for line in lines), Decimal("0.00"))
+        line_net = sum((line.total_amount for line in lines), Decimal("0.00"))
+        cost_total = sum((line.cost_total for line in lines), Decimal("0.00"))
+        profit = sum((line.profit for line in lines), Decimal("0.00"))
+
+        row["invoice_count"] += 1
+        row["quantity"] += line_quantity
+        row["gross_amount"] += gross
+        row["line_discount"] += line_discount
+        row["line_net_sales"] += line_net
+        row["invoice_net_sales"] += invoice.net_amount
+        row["returned_amount"] += financials["returned_amount"]
+        row["received_amount"] += financials["received_amount"]
+        row["balance_amount"] += financials["balance_amount"]
+        row["cost_total"] += cost_total
+        row["profit"] += profit
+
+        return {
+            "quantity": line_quantity,
+            "gross": gross,
+            "line_discount": line_discount,
+            "line_net": line_net,
+            "cost_total": cost_total,
+            "profit": profit,
+        }
+
+    invoices = list(invoices)
+    invoice_ids = [invoice.id for invoice in invoices]
+    return_rows = []
+    receipt_rows = []
+
+    for invoice in invoices:
+        scoped_lines = [
+            line
+            for line in invoice.lines.all()
+            if not product_id or str(line.product_id) == str(product_id)
+        ]
+        if not scoped_lines:
+            continue
+
+        financials = get_sales_invoice_financials(invoice)
+        line_totals = add_amounts(
+            {
+                "invoice_count": 0,
+                "quantity": Decimal("0.00"),
+                "gross_amount": Decimal("0.00"),
+                "line_discount": Decimal("0.00"),
+                "line_net_sales": Decimal("0.00"),
+                "invoice_net_sales": Decimal("0.00"),
+                "returned_amount": Decimal("0.00"),
+                "received_amount": Decimal("0.00"),
+                "balance_amount": Decimal("0.00"),
+                "cost_total": Decimal("0.00"),
+                "profit": Decimal("0.00"),
+            },
+            invoice,
+            scoped_lines,
+            financials,
+        )
+
+        summary["invoice_count"] += 1
+        summary["customer_count"].add(str(invoice.customer_id))
+        summary["quantity"] += line_totals["quantity"]
+        summary["gross_amount"] += line_totals["gross"]
+        summary["line_discount"] += line_totals["line_discount"]
+        summary["line_net_sales"] += line_totals["line_net"]
+        summary["invoice_discount"] += invoice.invoice_discount
+        summary["invoice_net_sales"] += invoice.net_amount
+        summary["returned_amount"] += financials["returned_amount"]
+        summary["received_amount"] += financials["received_amount"]
+        summary["balance_amount"] += financials["balance_amount"]
+        summary["cost_total"] += line_totals["cost_total"]
+        summary["profit"] += line_totals["profit"]
+        summary["salesman_commission"] += invoice.salesman_commission_amount
+
+        for line in scoped_lines:
+            summary["product_count"].add(str(line.product_id))
+            product = line.product
+            row = add_group_row(
+                product_rows_map,
+                str(product.id),
+                {
+                    "product_id": str(product.id),
+                    "sku": product.sku,
+                    "product_name": product.name,
+                    "unit": product.unit.name if product.unit else "",
+                },
+            )
+            row["invoice_count"] += 1
+            row["quantity"] += line.quantity
+            row["gross_amount"] += line.amount
+            row["line_discount"] += line.discount
+            row["line_net_sales"] += line.total_amount
+            row["invoice_net_sales"] += line.total_amount
+            row["cost_total"] += line.cost_total
+            row["profit"] += line.profit
+
+        customer = invoice.customer
+        customer_row = add_group_row(
+            customer_rows_map,
+            str(customer.id),
+            {"customer_id": str(customer.id), "customer_name": customer.business_name or customer.name},
+        )
+        add_amounts(customer_row, invoice, scoped_lines, financials)
+
+        salesman_key = str(invoice.salesman_id) if invoice.salesman_id else "none"
+        salesman_row = add_group_row(
+            salesman_rows_map,
+            salesman_key,
+            {
+                "salesman_id": str(invoice.salesman_id) if invoice.salesman_id else "",
+                "salesman_code": invoice.salesman.code if invoice.salesman else "",
+                "salesman_name": invoice.salesman.name if invoice.salesman else "No salesman",
+            },
+        )
+        add_amounts(salesman_row, invoice, scoped_lines, financials)
+
+        warehouse = invoice.warehouse
+        warehouse_row = add_group_row(
+            warehouse_rows_map,
+            str(warehouse.id),
+            {"warehouse_id": str(warehouse.id), "warehouse_name": warehouse.name},
+        )
+        add_amounts(warehouse_row, invoice, scoped_lines, financials)
+
+        dimension_row = add_group_row(
+            dimension_rows_map,
+            invoice.tenant_id,
+            {
+                "tenant_id": invoice.tenant_id,
+                "dimension_name": dimension_names.get(invoice.tenant_id, invoice.tenant_id),
+            },
+        )
+        add_amounts(dimension_row, invoice, scoped_lines, financials)
+
+        month_key = invoice.date.replace(day=1).isoformat()
+        month_row = monthly_rows_map[month_key]
+        add_amounts(month_row, invoice, scoped_lines, financials)
+
+        margin = (line_totals["profit"] / line_totals["line_net"] * Decimal("100")) if line_totals["line_net"] else Decimal("0.00")
+        invoice_rows.append(
+            {
+                "invoice_id": str(invoice.id),
+                "invoice_number": invoice.invoice_number,
+                "order_reference": invoice.order_reference,
+                "date": invoice.date.isoformat(),
+                "due_date": invoice.due_date.isoformat() if invoice.due_date else "",
+                "tenant_id": invoice.tenant_id,
+                "dimension_name": dimension_names.get(invoice.tenant_id, invoice.tenant_id),
+                "customer_id": str(invoice.customer_id),
+                "customer_name": customer.business_name or customer.name,
+                "warehouse_name": warehouse.name,
+                "salesman_id": str(invoice.salesman_id) if invoice.salesman_id else "",
+                "salesman_name": invoice.salesman.name if invoice.salesman else "",
+                "line_count": len(scoped_lines),
+                "quantity": str(_money(line_totals["quantity"])),
+                "gross_amount": str(_money(line_totals["gross"])),
+                "line_discount": str(_money(line_totals["line_discount"])),
+                "line_net_sales": str(_money(line_totals["line_net"])),
+                "invoice_discount": str(_money(invoice.invoice_discount)),
+                "invoice_net_sales": str(_money(invoice.net_amount)),
+                "returned_amount": str(_money(financials["returned_amount"])),
+                "received_amount": str(_money(financials["received_amount"])),
+                "balance_amount": str(_money(financials["balance_amount"])),
+                "cost_total": str(_money(line_totals["cost_total"])),
+                "profit": str(_money(line_totals["profit"])),
+                "margin_percent": str(_money(margin)),
+                "salesman_commission": str(_money(invoice.salesman_commission_amount)),
+            }
+        )
+
+    if invoice_ids:
+        returns = (
+            SalesReturn.objects.filter(
+                tenant_id__in=tenant_ids,
+                sales_invoice_id__in=invoice_ids,
+                deleted_at__isnull=True,
+            )
+            .select_related("customer", "sales_invoice")
+            .order_by("date", "return_number")
+        )
+        receipts = (
+            SalesBankReceipt.objects.filter(
+                tenant_id__in=tenant_ids,
+                sales_invoice_id__in=invoice_ids,
+                deleted_at__isnull=True,
+            )
+            .select_related("customer", "sales_invoice", "bank_account", "salesman")
+            .order_by("date", "receipt_number")
+        )
+        for item in returns:
+            return_rows.append(
+                {
+                    "return_id": str(item.id),
+                    "return_number": item.return_number,
+                    "date": item.date.isoformat(),
+                    "invoice_number": item.sales_invoice.invoice_number,
+                    "customer_name": item.customer.business_name or item.customer.name,
+                    "amount": str(_money(item.gross_amount)),
+                    "remarks": item.remarks,
+                }
+            )
+        for item in receipts:
+            receipt_rows.append(
+                {
+                    "receipt_id": str(item.id),
+                    "receipt_number": item.receipt_number,
+                    "date": item.date.isoformat(),
+                    "invoice_number": item.sales_invoice.invoice_number,
+                    "customer_name": item.customer.business_name or item.customer.name,
+                    "tenant_id": item.tenant_id,
+                    "dimension_name": dimension_names.get(item.tenant_id, item.tenant_id),
+                    "salesman_name": item.salesman.name if item.salesman else "",
+                    "bank_account": item.bank_account.name if item.bank_account else "",
+                    "amount": str(_money(item.amount)),
+                    "recovery_commission_rate": str(_money(item.recovery_commission_rate)),
+                    "recovery_commission_amount": str(_money(item.recovery_commission_amount)),
+                    "remarks": item.remarks,
+                }
+            )
+
+    def serialize_group_rows(rows, sort_key="line_net_sales"):
+        serialized = []
+        for row in rows:
+            margin = (row["profit"] / row["line_net_sales"] * Decimal("100")) if row["line_net_sales"] else Decimal("0.00")
+            serialized.append(
+                {
+                    **{
+                        key: value
+                        for key, value in row.items()
+                        if key
+                        not in {
+                            "quantity",
+                            "gross_amount",
+                            "line_discount",
+                            "line_net_sales",
+                            "invoice_net_sales",
+                            "returned_amount",
+                            "received_amount",
+                            "balance_amount",
+                            "cost_total",
+                            "profit",
+                        }
+                    },
+                    "quantity": str(_money(row["quantity"])),
+                    "gross_amount": str(_money(row["gross_amount"])),
+                    "line_discount": str(_money(row["line_discount"])),
+                    "line_net_sales": str(_money(row["line_net_sales"])),
+                    "invoice_net_sales": str(_money(row["invoice_net_sales"])),
+                    "returned_amount": str(_money(row["returned_amount"])),
+                    "received_amount": str(_money(row["received_amount"])),
+                    "balance_amount": str(_money(row["balance_amount"])),
+                    "cost_total": str(_money(row["cost_total"])),
+                    "profit": str(_money(row["profit"])),
+                    "margin_percent": str(_money(margin)),
+                }
+            )
+        if not sort_key:
+            return serialized
+        return sorted(serialized, key=lambda item: Decimal(item.get(sort_key) or "0"), reverse=True)
+
+    net_after_returns = summary["invoice_net_sales"] - summary["returned_amount"]
+    margin = (summary["profit"] / summary["line_net_sales"] * Decimal("100")) if summary["line_net_sales"] else Decimal("0.00")
+
+    return {
+        "from_date": from_date.isoformat(),
+        "to_date": to_date.isoformat(),
+        "filters": {
+            "customer_id": str(customer_id or ""),
+            "product_id": str(product_id or ""),
+            "salesman_id": str(salesman_id or ""),
+            "warehouse_id": str(warehouse_id or ""),
+        },
+        "summary": {
+            "invoice_count": summary["invoice_count"],
+            "customer_count": len(summary["customer_count"]),
+            "product_count": len(summary["product_count"]),
+            "return_count": len(return_rows),
+            "receipt_count": len(receipt_rows),
+            "quantity": str(_money(summary["quantity"])),
+            "gross_amount": str(_money(summary["gross_amount"])),
+            "line_discount": str(_money(summary["line_discount"])),
+            "line_net_sales": str(_money(summary["line_net_sales"])),
+            "invoice_discount": str(_money(summary["invoice_discount"])),
+            "invoice_net_sales": str(_money(summary["invoice_net_sales"])),
+            "returned_amount": str(_money(summary["returned_amount"])),
+            "net_after_returns": str(_money(net_after_returns)),
+            "received_amount": str(_money(summary["received_amount"])),
+            "balance_amount": str(_money(summary["balance_amount"])),
+            "cost_total": str(_money(summary["cost_total"])),
+            "profit": str(_money(summary["profit"])),
+            "margin_percent": str(_money(margin)),
+            "salesman_commission": str(_money(summary["salesman_commission"])),
+        },
+        "invoice_rows": invoice_rows,
+        "product_rows": serialize_group_rows(product_rows_map.values()),
+        "customer_rows": serialize_group_rows(customer_rows_map.values()),
+        "salesman_rows": serialize_group_rows(salesman_rows_map.values()),
+        "warehouse_rows": serialize_group_rows(warehouse_rows_map.values()),
+        "dimension_rows": serialize_group_rows(dimension_rows_map.values()),
+        "monthly_rows": serialize_group_rows(
+            [
+                {"month": month, **values}
+                for month, values in sorted(monthly_rows_map.items())
+            ],
+            sort_key=None,
+        ),
+        "return_rows": return_rows,
+        "receipt_rows": receipt_rows,
+    }
+
+
+def build_salesman_performance_report(
+    tenant_ids,
+    from_date,
+    to_date,
+    salesman_id=None,
+    salesman_ids=None,
+):
     """
     Salesman performance for a date range:
     - Sales commission from invoices dated in the period (with a salesman assigned).
@@ -574,6 +996,8 @@ def build_salesman_performance_report(tenant_ids, from_date, to_date, salesman_i
     )
     if salesman_id:
         invoices = invoices.filter(salesman_id=salesman_id)
+    elif salesman_ids:
+        invoices = invoices.filter(salesman_id__in=salesman_ids)
 
     receipts = (
         SalesBankReceipt.objects.filter(
@@ -582,13 +1006,21 @@ def build_salesman_performance_report(tenant_ids, from_date, to_date, salesman_i
             date__gte=from_date,
             date__lte=to_date,
             sales_invoice__deleted_at__isnull=True,
-            sales_invoice__salesman_id__isnull=False,
         )
-        .select_related("sales_invoice", "sales_invoice__salesman", "customer")
+        .filter(Q(salesman_id__isnull=False) | Q(sales_invoice__salesman_id__isnull=False))
+        .select_related("salesman", "sales_invoice", "sales_invoice__salesman", "customer")
         .order_by("date", "receipt_number")
     )
     if salesman_id:
-        receipts = receipts.filter(sales_invoice__salesman_id=salesman_id)
+        receipts = receipts.filter(
+            Q(salesman_id=salesman_id)
+            | Q(salesman_id__isnull=True, sales_invoice__salesman_id=salesman_id)
+        )
+    elif salesman_ids:
+        receipts = receipts.filter(
+            Q(salesman_id__in=salesman_ids)
+            | Q(salesman_id__isnull=True, sales_invoice__salesman_id__in=salesman_ids)
+        )
 
     def _ensure_salesman_row(salesman, tenant_id):
         key = (tenant_id, str(salesman.id))
@@ -656,15 +1088,21 @@ def build_salesman_performance_report(tenant_ids, from_date, to_date, salesman_i
 
     for receipt in receipts:
         invoice = receipt.sales_invoice
-        salesman = invoice.salesman
+        salesman = receipt.salesman or invoice.salesman
+        if not salesman:
+            continue
         row = _ensure_salesman_row(salesman, receipt.tenant_id)
         receipt_amount = _money(receipt.amount)
-        recovery_rate = _money(salesman.commission_on_recovery)
-        recovery_commission = (
-            _money((receipt_amount * recovery_rate) / Decimal("100"))
-            if recovery_rate > 0
-            else Decimal("0.00")
-        )
+        if receipt.salesman_id:
+            recovery_rate = _money(receipt.recovery_commission_rate)
+            recovery_commission = _money(receipt.recovery_commission_amount)
+        else:
+            recovery_rate = _money(salesman.commission_on_recovery)
+            recovery_commission = (
+                _money((receipt_amount * recovery_rate) / Decimal("100"))
+                if recovery_rate > 0
+                else Decimal("0.00")
+            )
 
         row["receipt_count"] += 1
         row["collected_amount"] = _money(row["collected_amount"] + receipt_amount)

@@ -3,6 +3,7 @@ from rest_framework import serializers
 from accounts.dimensions import build_dimension_code, get_user_active_dimension_codes
 from accounts.models import Account, Dimension, Expense, Inquiry, User, BankTransfer
 from common.tenancy import get_request_tenant_ids
+from inventory.models import Salesman
 
 
 class LoginSerializer(serializers.Serializer):
@@ -162,6 +163,7 @@ class TenantStaffSerializer(serializers.ModelSerializer):
     """Child users under a tenant org admin (not God panel)."""
 
     password = serializers.CharField(write_only=True, min_length=6, required=False)
+    data_access = serializers.JSONField(required=False)
 
     class Meta:
         model = User
@@ -172,6 +174,7 @@ class TenantStaffSerializer(serializers.ModelSerializer):
             "password",
             "tenant_role",
             "ui_permissions",
+            "data_access",
             "is_active",
             "date_joined",
         ]
@@ -190,12 +193,39 @@ class TenantStaffSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Select at least one allowed module.")
         return normalized
 
+    def validate_data_access(self, value):
+        if value in (None, ""):
+            value = {}
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("Data access must be an object.")
+
+        salesman_ids = value.get("salesman_ids") or []
+        if not isinstance(salesman_ids, list):
+            raise serializers.ValidationError({"salesman_ids": "Salesman access must be a list."})
+
+        normalized_salesman_ids = [str(item) for item in salesman_ids if item]
+        if normalized_salesman_ids:
+            parent = self.context["parent_user"]
+            tenant_ids = get_user_active_dimension_codes(parent) or [parent.tenant_id]
+            found_count = Salesman.objects.filter(
+                id__in=normalized_salesman_ids,
+                tenant_id__in=tenant_ids,
+                deleted_at__isnull=True,
+            ).count()
+            if found_count != len(set(normalized_salesman_ids)):
+                raise serializers.ValidationError(
+                    {"salesman_ids": "One or more selected salesmen were not found."}
+                )
+
+        return {"salesman_ids": normalized_salesman_ids}
+
     def create(self, validated_data):
         from accounts.tenant_ui_permissions import normalize_ui_permissions
 
         parent = self.context["parent_user"]
         password = validated_data.pop("password")
         perms = normalize_ui_permissions(validated_data.pop("ui_permissions", []))
+        data_access = validated_data.pop("data_access", {})
         if not perms:
             raise serializers.ValidationError({"ui_permissions": "Select at least one allowed module."})
         child = User.objects.create_user(
@@ -209,6 +239,7 @@ class TenantStaffSerializer(serializers.ModelSerializer):
             parent_user=parent,
             tenant_role=(validated_data.get("tenant_role") or "").strip(),
             ui_permissions=perms,
+            data_access=data_access,
             is_active=validated_data.get("is_active", True),
         )
         child.allowed_dimensions.set(parent.allowed_dimensions.all())
@@ -223,6 +254,8 @@ class TenantStaffSerializer(serializers.ModelSerializer):
             if not perms:
                 raise serializers.ValidationError({"ui_permissions": "Select at least one allowed module."})
             instance.ui_permissions = perms
+        if "data_access" in validated_data:
+            instance.data_access = validated_data.pop("data_access") or {}
         for field in ["username", "email", "tenant_role", "is_active"]:
             if field in validated_data:
                 setattr(instance, field, validated_data[field])

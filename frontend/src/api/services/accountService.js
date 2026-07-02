@@ -133,6 +133,16 @@ const accountService = {
     );
     return response.data.data || {};
   },
+  async getSalesReport(params, selectedTenant = "") {
+    const response = await axiosInstance.get(
+      "/accounts/accounts/sales-report/",
+      {
+        params,
+        headers: tenantHeader(selectedTenant),
+      },
+    );
+    return response.data.data || {};
+  },
   async getDashboardOverview(selectedTenant = "", period = "all") {
     const response = await axiosInstance.get("/accounts/accounts/dashboard-overview/", {
       params: { period },

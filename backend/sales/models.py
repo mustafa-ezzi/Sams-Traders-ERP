@@ -225,7 +225,16 @@ class SalesBankReceipt(BaseModel):
         on_delete=models.PROTECT,
         related_name="sales_bank_receipts",
     )
+    salesman = models.ForeignKey(
+        Salesman,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="recovery_bank_receipts",
+    )
     amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    recovery_commission_rate = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    recovery_commission_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     remarks = models.TextField(blank=True, default="")
 
     class Meta:

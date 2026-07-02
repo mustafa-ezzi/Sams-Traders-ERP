@@ -17,6 +17,7 @@ from accounts.journal import (
     sync_sales_return_journal,
     sync_salesman_commission_payment_journal,
 )
+from accounts.access_control import filter_queryset_by_allowed_salesmen, user_can_access_salesman
 from accounts.models import JournalEntry
 from inventory.models import Product, ProductStock
 from inventory.pagination import StandardResultsSetPagination
@@ -102,7 +103,7 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
             .annotate(total=Sum("amount"))
             .values("total")[:1]
         )
-        return (
+        queryset = (
             SalesInvoice.objects.filter(
                 **get_shared_tenant_filter(self.request),
                 deleted_at__isnull=True,
@@ -151,6 +152,7 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
                 )
             )
         )
+        return filter_queryset_by_allowed_salesmen(queryset, self.request.user)
 
     def _get_serializable_invoice(self, invoice_id):
         return self.get_queryset().get(id=invoice_id)
@@ -322,6 +324,7 @@ class SalesOrderViewSet(viewsets.ModelViewSet):
             )
             .annotate(_is_invoiced=Exists(invoiced_subquery))
         )
+        queryset = filter_queryset_by_allowed_salesmen(queryset, self.request.user)
 
         invoiced_param = self.request.query_params.get("invoiced", "").strip().lower()
         if invoiced_param == "false":
@@ -437,7 +440,7 @@ class SalesReturnViewSet(viewsets.ModelViewSet):
     ]
 
     def get_queryset(self):
-        return (
+        queryset = (
             SalesReturn.objects.filter(
                 **get_shared_tenant_filter(self.request),
                 deleted_at__isnull=True,
@@ -452,6 +455,11 @@ class SalesReturnViewSet(viewsets.ModelViewSet):
                 )
             )
             .order_by("-date", "-created_at")
+        )
+        return filter_queryset_by_allowed_salesmen(
+            queryset,
+            self.request.user,
+            field_name="sales_invoice__salesman_id",
         )
 
     def _get_serializable_return(self, sales_return_id):
@@ -555,6 +563,7 @@ class SalesReturnViewSet(viewsets.ModelViewSet):
             .order_by("-date", "-created_at")
             .values("id", "invoice_number", "date")
         )
+        invoices = filter_queryset_by_allowed_salesmen(invoices, request.user)
         return Response({"data": list(invoices)})
 
     @action(detail=False, methods=["get"], url_path="invoice-lines")
@@ -650,13 +659,19 @@ class SalesBankReceiptViewSet(viewsets.ModelViewSet):
     ]
 
     def get_queryset(self):
-        return (
+        queryset = (
             SalesBankReceipt.objects.filter(
                 **get_shared_tenant_filter(self.request),
                 deleted_at__isnull=True,
             )
             .select_related("customer", "sales_invoice", "bank_account")
+            .select_related("salesman")
             .order_by("-date", "-created_at")
+        )
+        return filter_queryset_by_allowed_salesmen(
+            queryset,
+            self.request.user,
+            field_name="sales_invoice__salesman_id",
         )
 
     def _get_serializable_receipt(self, receipt_id):
@@ -682,10 +697,17 @@ class SalesBankReceiptViewSet(viewsets.ModelViewSet):
     def update(self, request, *args, **kwargs):
         partial = kwargs.pop("partial", False)
         instance = self.get_object()
+        previous_tenant_id = instance.tenant_id
         with transaction.atomic():
             serializer = self.get_serializer(instance, data=request.data, partial=partial)
             serializer.is_valid(raise_exception=True)
             receipt = serializer.save()
+            if previous_tenant_id != receipt.tenant_id:
+                delete_journal_entry(
+                    JournalEntry.SourceType.SALES_BANK_RECEIPT,
+                    receipt.id,
+                    previous_tenant_id,
+                )
             sync_sales_bank_receipt_journal(self._get_serializable_receipt(receipt.id))
         response_serializer = self.get_serializer(
             self._get_serializable_receipt(receipt.id)
@@ -729,6 +751,8 @@ class SalesBankReceiptViewSet(viewsets.ModelViewSet):
                 )
             except SalesBankReceipt.DoesNotExist:
                 raise ValidationError({"receipt_id": "Sales bank receipt not found."})
+            if not user_can_access_salesman(request.user, current_receipt.sales_invoice.salesman_id):
+                raise ValidationError({"receipt_id": "Sales bank receipt not found."})
 
         invoices = (
             SalesInvoice.objects.filter(
@@ -736,8 +760,10 @@ class SalesBankReceiptViewSet(viewsets.ModelViewSet):
                 customer_id=customer_id,
                 deleted_at__isnull=True,
             )
+            .select_related("salesman")
             .order_by("-date", "-created_at")
         )
+        invoices = filter_queryset_by_allowed_salesmen(invoices, request.user)
 
         payload = []
         for invoice in invoices:
@@ -755,10 +781,21 @@ class SalesBankReceiptViewSet(viewsets.ModelViewSet):
                     "id": str(invoice.id),
                     "invoice_number": invoice.invoice_number,
                     "date": invoice.date,
+                    "tenant_id": invoice.tenant_id,
                     "net_amount": str(financials["net_amount"]),
                     "returned_amount": str(financials["returned_amount"]),
                     "received_amount": str(financials["received_amount"]),
                     "balance_amount": str(financials["balance_amount"]),
+                    "salesman": (
+                        {
+                            "id": str(invoice.salesman.id),
+                            "code": invoice.salesman.code,
+                            "name": invoice.salesman.name,
+                            "commission_on_recovery": str(invoice.salesman.commission_on_recovery),
+                        }
+                        if invoice.salesman
+                        else None
+                    ),
                 }
             )
 
@@ -779,7 +816,7 @@ class SalesmanCommissionPaymentViewSet(viewsets.ModelViewSet):
     ]
 
     def get_queryset(self):
-        return (
+        queryset = (
             SalesmanCommissionPayment.objects.filter(
                 **get_shared_tenant_filter(self.request),
                 deleted_at__isnull=True,
@@ -787,6 +824,7 @@ class SalesmanCommissionPaymentViewSet(viewsets.ModelViewSet):
             .select_related("salesman", "sales_invoice", "payable_account", "payment_account")
             .order_by("-date", "-created_at")
         )
+        return filter_queryset_by_allowed_salesmen(queryset, self.request.user)
 
     def _get_serializable_payment(self, payment_id):
         return self.get_queryset().get(id=payment_id)
@@ -850,6 +888,8 @@ class SalesmanCommissionPaymentViewSet(viewsets.ModelViewSet):
 
         if not salesman_id:
             return Response({"data": []})
+        if not user_can_access_salesman(request.user, salesman_id):
+            raise ValidationError({"salesman_id": "You do not have access to this salesman."})
 
         shared_filter = get_shared_tenant_filter(request)
         current_payment = None
@@ -866,14 +906,23 @@ class SalesmanCommissionPaymentViewSet(viewsets.ModelViewSet):
                 raise ValidationError(
                     {"payment_id": "Salesman commission voucher not found."}
                 )
+            if not user_can_access_salesman(request.user, current_payment.salesman_id):
+                raise ValidationError({"payment_id": "Salesman commission voucher not found."})
 
         invoices = (
             SalesInvoice.objects.filter(
                 **shared_filter,
-                salesman_id=salesman_id,
                 deleted_at__isnull=True,
             )
-            .exclude(salesman_commission_amount__lte=Decimal("0.00"))
+            .filter(
+                Q(salesman_id=salesman_id, salesman_commission_amount__gt=Decimal("0.00"))
+                | Q(
+                    bank_receipts__salesman_id=salesman_id,
+                    bank_receipts__recovery_commission_amount__gt=Decimal("0.00"),
+                    bank_receipts__deleted_at__isnull=True,
+                )
+            )
+            .distinct()
             .select_related("customer", "salesman")
             .order_by("-date", "-created_at")
         )
@@ -883,6 +932,7 @@ class SalesmanCommissionPaymentViewSet(viewsets.ModelViewSet):
             excluded_payment_ids = [current_payment.id] if current_payment else []
             financials = get_salesman_commission_financials(
                 invoice,
+                salesman_id=salesman_id,
                 excluded_payment_ids=excluded_payment_ids,
             )
             include_current_invoice = (

@@ -91,7 +91,6 @@ def get_sales_invoice_financials(sales_invoice, excluded_receipt_ids=None):
 
     received_amount = (
         SalesBankReceipt.objects.filter(
-            tenant_id=sales_invoice.tenant_id,
             sales_invoice=sales_invoice,
             deleted_at__isnull=True,
         )
@@ -116,22 +115,47 @@ def get_sales_invoice_financials(sales_invoice, excluded_receipt_ids=None):
     }
 
 
-def get_salesman_commission_financials(sales_invoice, excluded_payment_ids=None):
+def get_salesman_commission_financials(
+    sales_invoice,
+    salesman_id=None,
+    excluded_payment_ids=None,
+):
     excluded_payment_ids = excluded_payment_ids or []
 
-    commission_amount = quantize_money(
-        sales_invoice.salesman_commission_amount or Decimal("0.00")
+    sales_commission_amount = Decimal("0.00")
+    if salesman_id is None or str(sales_invoice.salesman_id or "") == str(salesman_id):
+        sales_commission_amount = sales_invoice.salesman_commission_amount or Decimal("0.00")
+
+    recovery_receipts = SalesBankReceipt.objects.filter(
+        tenant_id=sales_invoice.tenant_id,
+        sales_invoice=sales_invoice,
+        deleted_at__isnull=True,
     )
-    paid_amount = (
-        SalesmanCommissionPayment.objects.filter(
-            tenant_id=sales_invoice.tenant_id,
-            sales_invoice=sales_invoice,
-            deleted_at__isnull=True,
-        )
-        .exclude(id__in=excluded_payment_ids)
-        .aggregate(total=Sum("payment"))["total"]
+    if salesman_id is not None:
+        recovery_receipts = recovery_receipts.filter(salesman_id=salesman_id)
+
+    recovery_commission_amount = (
+        recovery_receipts.aggregate(total=Sum("recovery_commission_amount"))["total"]
         or Decimal("0.00")
     )
+
+    payment_queryset = SalesmanCommissionPayment.objects.filter(
+        tenant_id=sales_invoice.tenant_id,
+        sales_invoice=sales_invoice,
+        deleted_at__isnull=True,
+    )
+    if salesman_id is not None:
+        payment_queryset = payment_queryset.filter(salesman_id=salesman_id)
+
+    paid_amount = (
+        payment_queryset.exclude(id__in=excluded_payment_ids).aggregate(total=Sum("payment"))[
+            "total"
+        ]
+        or Decimal("0.00")
+    )
+    sales_commission_amount = quantize_money(sales_commission_amount)
+    recovery_commission_amount = quantize_money(recovery_commission_amount)
+    commission_amount = quantize_money(sales_commission_amount + recovery_commission_amount)
     paid_amount = quantize_money(paid_amount)
     pending_amount = max(
         quantize_money(commission_amount - paid_amount),
@@ -140,6 +164,8 @@ def get_salesman_commission_financials(sales_invoice, excluded_payment_ids=None)
 
     return {
         "commission_amount": commission_amount,
+        "sales_commission_amount": sales_commission_amount,
+        "recovery_commission_amount": recovery_commission_amount,
         "paid_amount": paid_amount,
         "pending_amount": pending_amount,
     }

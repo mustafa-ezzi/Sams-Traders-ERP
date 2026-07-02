@@ -8,6 +8,7 @@ from django.db.models import Count, DecimalField, IntegerField, OuterRef, Prefet
 from django.db.models.functions import Coalesce
 from rest_framework.decorators import action
 from accounts.journal import delete_journal_entry
+from accounts.access_control import filter_queryset_by_allowed_salesmen
 from accounts.models import JournalEntry
 from .models import (
     Brand,
@@ -1148,6 +1149,14 @@ class SalesmanViewSet(SharedMasterViewSet):
     queryset = Salesman.objects.all()
     serializer_class = SalesmanSerializer
     search_fields = ["code", "name", "email", "phone_number"]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        return filter_queryset_by_allowed_salesmen(
+            queryset,
+            self.request.user,
+            field_name="id",
+        )
 
 
 class WarehouseViewSet(viewsets.ModelViewSet):

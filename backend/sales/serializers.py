@@ -6,8 +6,9 @@ from django.utils.timezone import now
 from rest_framework import serializers
 
 from accounts.dimensions import get_user_active_dimension_codes
+from accounts.access_control import user_can_access_salesman
 from common.tenancy import get_shared_tenant_ids, shared_master_exists
-from accounts.models import Account
+from accounts.models import Account, Dimension
 from inventory.party_accounts import resolve_default_payable_account
 from inventory.models import Customer, Product, ProductStock, Salesman, Warehouse
 from inventory.serializers import ProductDetailedSerializer
@@ -48,6 +49,7 @@ class SalesmanMiniSerializer(serializers.Serializer):
     id = serializers.UUIDField()
     code = serializers.CharField()
     name = serializers.CharField()
+    commission_on_recovery = serializers.DecimalField(max_digits=5, decimal_places=2, required=False)
 
 
 class SalesInvoiceMiniSerializer(serializers.Serializer):
@@ -254,6 +256,8 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
 
         if not shared_master_exists(Salesman, self.context["request"], value):
             raise serializers.ValidationError("Salesman not found")
+        if not user_can_access_salesman(self.context["request"].user, value):
+            raise serializers.ValidationError("You do not have access to this salesman.")
         return value
 
     def _sales_order_is_invoiced(self, sales_order_id, exclude_invoice_id=None):
@@ -617,6 +621,8 @@ class SalesOrderSerializer(serializers.ModelSerializer):
 
         if not shared_master_exists(Salesman, self.context["request"], value):
             raise serializers.ValidationError("Salesman not found")
+        if not user_can_access_salesman(self.context["request"].user, value):
+            raise serializers.ValidationError("You do not have access to this salesman.")
         return value
 
     def validate_order_discount(self, value):
@@ -972,6 +978,10 @@ class SalesReturnSerializer(serializers.ModelSerializer):
         ).first()
         if not sales_invoice:
             raise serializers.ValidationError({"sales_invoice_id": "Sales invoice not found."})
+        if not user_can_access_salesman(request.user, sales_invoice.salesman_id):
+            raise serializers.ValidationError(
+                {"sales_invoice_id": "You do not have access to this salesman's invoice."}
+            )
 
         if sales_invoice.customer_id != customer_id:
             raise serializers.ValidationError(
@@ -1048,12 +1058,16 @@ class SalesReturnSerializer(serializers.ModelSerializer):
 
 
 class SalesBankReceiptSerializer(serializers.ModelSerializer):
+    tenant_id = serializers.CharField(required=False)
     customer = CustomerMiniSerializer(read_only=True)
     customer_id = serializers.UUIDField(write_only=True)
     sales_invoice = SalesInvoiceMiniSerializer(read_only=True)
     sales_invoice_id = serializers.UUIDField(write_only=True)
     bank_account = AccountMiniSerializer(read_only=True)
     bank_account_id = serializers.UUIDField(write_only=True)
+    salesman = SalesmanMiniSerializer(read_only=True)
+    salesman_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
+    dimension_name = serializers.SerializerMethodField()
     invoice_net_amount = serializers.SerializerMethodField()
     invoice_returned_amount = serializers.SerializerMethodField()
     invoice_received_amount = serializers.SerializerMethodField()
@@ -1064,6 +1078,8 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "receipt_number",
+            "tenant_id",
+            "dimension_name",
             "date",
             "customer",
             "customer_id",
@@ -1071,7 +1087,11 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
             "sales_invoice_id",
             "bank_account",
             "bank_account_id",
+            "salesman",
+            "salesman_id",
             "amount",
+            "recovery_commission_rate",
+            "recovery_commission_amount",
             "remarks",
             "invoice_net_amount",
             "invoice_returned_amount",
@@ -1083,6 +1103,9 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id",
             "receipt_number",
+            "dimension_name",
+            "recovery_commission_rate",
+            "recovery_commission_amount",
             "invoice_net_amount",
             "invoice_returned_amount",
             "invoice_received_amount",
@@ -1096,6 +1119,10 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
         if obj and obj.pk:
             excluded_ids = [obj.id]
         return get_sales_invoice_financials(obj.sales_invoice, excluded_receipt_ids=excluded_ids)
+
+    def get_dimension_name(self, obj):
+        dimension = Dimension.objects.filter(code=obj.tenant_id).first()
+        return dimension.name if dimension else obj.tenant_id
 
     def get_invoice_net_amount(self, obj):
         return str(self._get_financials(obj)["net_amount"])
@@ -1118,6 +1145,16 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
     def validate_customer_id(self, value):
         if not shared_master_exists(Customer, self.context["request"], value):
             raise serializers.ValidationError("Customer not found")
+        return value
+
+    def validate_tenant_id(self, value):
+        request = self.context["request"]
+        tenant_ids = get_user_active_dimension_codes(request.user)
+        current = getattr(request, "tenant_id", "") or request.user.tenant_id
+        if current and current not in tenant_ids:
+            tenant_ids.append(current)
+        if value not in tenant_ids:
+            raise serializers.ValidationError("Dimension not found")
         return value
 
     def validate_sales_invoice_id(self, value):
@@ -1153,6 +1190,21 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
 
         return value
 
+    def validate_salesman_id(self, value):
+        if not value:
+            return value
+        request = self.context["request"]
+        salesman = Salesman.objects.filter(
+            id=value,
+            tenant_id__in=get_shared_tenant_ids(request),
+            deleted_at__isnull=True,
+        ).first()
+        if not salesman:
+            raise serializers.ValidationError("Salesman not found")
+        if not user_can_access_salesman(request.user, salesman.id):
+            raise serializers.ValidationError("You do not have access to this salesman.")
+        return value
+
     def validate_amount(self, value):
         if value <= 0:
             raise serializers.ValidationError("Receipt amount must be greater than 0")
@@ -1170,11 +1222,33 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
         ).first()
         if not sales_invoice:
             raise serializers.ValidationError({"sales_invoice_id": "Sales invoice not found."})
+        if not user_can_access_salesman(request.user, sales_invoice.salesman_id):
+            raise serializers.ValidationError(
+                {"sales_invoice_id": "You do not have access to this salesman's invoice."}
+            )
 
         if sales_invoice.customer_id != customer_id:
             raise serializers.ValidationError(
                 {"sales_invoice_id": "Selected sales invoice does not belong to the chosen customer."}
             )
+
+        salesman_id = attrs.get("salesman_id", getattr(self.instance, "salesman_id", None))
+        if not salesman_id:
+            salesman_id = sales_invoice.salesman_id
+
+        salesman = None
+        if salesman_id:
+            salesman = Salesman.objects.filter(
+                id=salesman_id,
+                tenant_id__in=get_shared_tenant_ids(request),
+                deleted_at__isnull=True,
+            ).first()
+            if not salesman:
+                raise serializers.ValidationError({"salesman_id": "Salesman not found."})
+            if not user_can_access_salesman(request.user, salesman.id):
+                raise serializers.ValidationError(
+                    {"salesman_id": "You do not have access to this salesman."}
+                )
 
         amount = attrs.get("amount", getattr(self.instance, "amount", Decimal("0.00")))
         excluded_ids = [self.instance.id] if self.instance else []
@@ -1194,6 +1268,14 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
 
         self.context["sales_invoice"] = sales_invoice
         self.context["invoice_financials"] = financials
+        attrs["salesman_id"] = salesman_id
+        recovery_rate = quantize_money(salesman.commission_on_recovery) if salesman else Decimal("0.00")
+        attrs["recovery_commission_rate"] = recovery_rate
+        attrs["recovery_commission_amount"] = (
+            quantize_money((amount * recovery_rate) / Decimal("100"))
+            if recovery_rate > 0
+            else Decimal("0.00")
+        )
         return attrs
 
     def _generate_receipt_number(self, tenant_id):
@@ -1202,27 +1284,39 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
 
     @transaction.atomic
     def create(self, validated_data):
-        tenant_id = self.context["request"].user.tenant_id
+        tenant_id = validated_data.pop("tenant_id", None) or self.context["request"].user.tenant_id
         customer_id = validated_data.pop("customer_id")
         sales_invoice_id = validated_data.pop("sales_invoice_id")
         bank_account_id = validated_data.pop("bank_account_id")
+        salesman_id = validated_data.pop("salesman_id", None)
 
         return SalesBankReceipt.objects.create(
             tenant_id=tenant_id,
             customer_id=customer_id,
             sales_invoice_id=sales_invoice_id,
             bank_account_id=bank_account_id,
+            salesman_id=salesman_id,
             receipt_number=self._generate_receipt_number(tenant_id),
             **validated_data,
         )
 
     @transaction.atomic
     def update(self, instance, validated_data):
+        instance.tenant_id = validated_data.pop("tenant_id", instance.tenant_id)
         instance.customer_id = validated_data.pop("customer_id", instance.customer_id)
         instance.sales_invoice_id = validated_data.pop("sales_invoice_id", instance.sales_invoice_id)
         instance.bank_account_id = validated_data.pop("bank_account_id", instance.bank_account_id)
+        instance.salesman_id = validated_data.pop("salesman_id", instance.salesman_id)
         instance.date = validated_data.get("date", instance.date)
         instance.amount = validated_data.get("amount", instance.amount)
+        instance.recovery_commission_rate = validated_data.get(
+            "recovery_commission_rate",
+            instance.recovery_commission_rate,
+        )
+        instance.recovery_commission_amount = validated_data.get(
+            "recovery_commission_amount",
+            instance.recovery_commission_amount,
+        )
         instance.remarks = validated_data.get("remarks", instance.remarks)
         instance.save()
         return instance
@@ -1300,6 +1394,8 @@ class SalesmanCommissionPaymentSerializer(serializers.ModelSerializer):
     def validate_salesman_id(self, value):
         if not shared_master_exists(Salesman, self.context["request"], value):
             raise serializers.ValidationError("Salesman not found")
+        if not user_can_access_salesman(self.context["request"].user, value):
+            raise serializers.ValidationError("You do not have access to this salesman.")
         return value
 
     def validate_sales_invoice_id(self, value):
@@ -1354,6 +1450,10 @@ class SalesmanCommissionPaymentSerializer(serializers.ModelSerializer):
         ).first()
         if not sales_invoice:
             raise serializers.ValidationError({"sales_invoice_id": "Sales invoice not found."})
+        if not user_can_access_salesman(request.user, sales_invoice.salesman_id):
+            raise serializers.ValidationError(
+                {"sales_invoice_id": "You do not have access to this salesman's invoice."}
+            )
 
         if not sales_invoice.salesman_id:
             raise serializers.ValidationError(

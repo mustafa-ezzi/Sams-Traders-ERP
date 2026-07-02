@@ -23,6 +23,7 @@ const PERM_HOME = {
   reports_party_ledger: "/reports/party-ledger",
   reports_coa_completeness: "/reports/coa-completeness",
   reports_aging: "/reports/aging",
+  reports_sales: "/reports/sales",
   reports_salesman: "/reports/salesman",
   masters_units: "/masters/units",
   masters_brands: "/masters/brands",
@@ -86,6 +87,7 @@ export function pathToPermissionKey(pathname) {
   if (p.startsWith("/reports/coa-completeness")) return "reports_coa_completeness";
   if (p.startsWith("/reports/aging")) return "reports_aging";
   if (p.startsWith("/reports/salesman")) return "reports_salesman";
+  if (p.startsWith("/reports/sales")) return "reports_sales";
 
   if (p.startsWith("/settings/staff")) return "tenant_staff_manage";
 

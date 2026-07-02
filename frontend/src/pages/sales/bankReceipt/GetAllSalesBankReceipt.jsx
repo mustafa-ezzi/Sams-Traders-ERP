@@ -132,9 +132,12 @@ const GetAllSalesBankReceipt = () => {
                     <th className="px-4 py-3">Receipt</th>{" "}
                     <th className="px-4 py-3">Date</th>{" "}
                     <th className="px-4 py-3">Customer</th>{" "}
+                    <th className="px-4 py-3">Dimension</th>{" "}
                     <th className="px-4 py-3">Invoice</th>{" "}
+                    <th className="px-4 py-3">Salesman</th>{" "}
                     <th className="px-4 py-3">Bank</th>{" "}
                     <th className="px-4 py-3">Total</th>{" "}
+                    <th className="px-4 py-3">Recovery Comm.</th>{" "}
                     <th className="px-4 py-3">Balance After</th>{" "}
                     <th className="px-4 py-3">Actions</th>{" "}
                   </tr>{" "}
@@ -157,7 +160,17 @@ const GetAllSalesBankReceipt = () => {
                       </td>{" "}
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
                         {" "}
+                        {record.dimensionName || record.tenantId}{" "}
+                      </td>{" "}
+                      <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
+                        {" "}
                         {record.sales_invoice?.invoice_number}{" "}
+                      </td>{" "}
+                      <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
+                        {" "}
+                        {record.salesman
+                          ? `${record.salesman.code || ""} ${record.salesman.name || ""}`.trim()
+                          : "-"}{" "}
                       </td>{" "}
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
                         {" "}
@@ -167,6 +180,10 @@ const GetAllSalesBankReceipt = () => {
                       <td className="px-4 py-3 font-semibold text-slate-800 dark:text-slate-100">
                         {" "}
                         {formatDecimal(record.amount)}{" "}
+                      </td>{" "}
+                      <td className="px-4 py-3 font-semibold text-amber-600 dark:text-amber-400">
+                        {" "}
+                        {formatDecimal(record.recoveryCommissionAmount)}{" "}
                       </td>{" "}
                       <td className="px-4 py-3 font-semibold text-blue-600 dark:text-blue-400">
                         {" "}

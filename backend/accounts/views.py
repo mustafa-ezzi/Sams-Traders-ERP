@@ -24,6 +24,7 @@ from accounts.reporting import (
     build_payable_aging_report,
     build_profit_and_loss_report,
     build_receivable_aging_report,
+    build_sales_report,
     build_salesman_performance_report,
     get_account_balance,
 )
@@ -70,6 +71,11 @@ from .journal import (
 )
 from inventory.pagination import StandardResultsSetPagination
 from accounts.authentication import AdminJWTAuthentication
+from accounts.access_control import (
+    filter_queryset_by_allowed_salesmen,
+    get_user_allowed_salesman_ids,
+    user_can_access_salesman,
+)
 
 
 class LoginView(APIView):
@@ -1193,12 +1199,88 @@ class AccountViewSet(ModelViewSet):
         if from_date > to_date:
             raise ValidationError({"date": "From date cannot be after to date."})
 
+        allowed_salesman_ids = get_user_allowed_salesman_ids(request.user)
+        if salesman_id and not user_can_access_salesman(request.user, salesman_id):
+            raise ValidationError({"salesman_id": "You do not have access to this salesman."})
+
         tenant_ids = self._resolve_tenant_ids(tenant_scope)
         payload = build_salesman_performance_report(
             tenant_ids=tenant_ids,
             from_date=from_date,
             to_date=to_date,
             salesman_id=salesman_id,
+            salesman_ids=allowed_salesman_ids,
+        )
+
+        return Response(
+            {
+                "data": {
+                    "tenant_scope": tenant_scope,
+                    **payload,
+                }
+            }
+        )
+
+    @action(detail=False, methods=["get"], url_path="sales-report")
+    def sales_report(self, request):
+        tenant_scope = request.query_params.get("tenant_scope") or request.user.tenant_id
+        from_raw = request.query_params.get("from_date")
+        to_raw = request.query_params.get("to_date")
+        customer_id = request.query_params.get("customer_id") or None
+        product_id = request.query_params.get("product_id") or None
+        salesman_id = request.query_params.get("salesman_id") or None
+        warehouse_id = request.query_params.get("warehouse_id") or None
+
+        if not from_raw or not to_raw:
+            raise ValidationError({"date": "From date and to date are required."})
+
+        try:
+            from_date = date.fromisoformat(from_raw)
+            to_date = date.fromisoformat(to_raw)
+        except ValueError:
+            raise ValidationError({"date": "Dates must be in YYYY-MM-DD format."})
+
+        if from_date > to_date:
+            raise ValidationError({"date": "From date cannot be after to date."})
+
+        tenant_ids = self._resolve_tenant_ids(tenant_scope)
+        if customer_id and not Customer.objects.filter(
+            id=customer_id,
+            tenant_id__in=tenant_ids,
+            deleted_at__isnull=True,
+        ).exists():
+            raise ValidationError({"customer_id": "Customer not found."})
+        if product_id and not Product.objects.filter(
+            id=product_id,
+            tenant_id__in=tenant_ids,
+            deleted_at__isnull=True,
+        ).exists():
+            raise ValidationError({"product_id": "Product not found."})
+        if warehouse_id and not Warehouse.objects.filter(
+            id=warehouse_id,
+            tenant_id__in=tenant_ids,
+            deleted_at__isnull=True,
+        ).exists():
+            raise ValidationError({"warehouse_id": "Warehouse not found."})
+        if salesman_id:
+            if not Salesman.objects.filter(
+                id=salesman_id,
+                tenant_id__in=tenant_ids,
+                deleted_at__isnull=True,
+            ).exists():
+                raise ValidationError({"salesman_id": "Salesman not found."})
+            if not user_can_access_salesman(request.user, salesman_id):
+                raise ValidationError({"salesman_id": "You do not have access to this salesman."})
+
+        payload = build_sales_report(
+            tenant_ids=tenant_ids,
+            from_date=from_date,
+            to_date=to_date,
+            customer_id=customer_id,
+            product_id=product_id,
+            salesman_id=salesman_id,
+            salesman_ids=get_user_allowed_salesman_ids(request.user),
+            warehouse_id=warehouse_id,
         )
 
         return Response(
@@ -1244,6 +1326,13 @@ class AccountViewSet(ModelViewSet):
         receipt_queryset = SalesBankReceipt.objects.filter(
             tenant_id=tenant_id,
             deleted_at__isnull=True,
+        )
+        has_salesman_scope = bool(get_user_allowed_salesman_ids(request.user))
+        sales_queryset = filter_queryset_by_allowed_salesmen(sales_queryset, request.user)
+        receipt_queryset = filter_queryset_by_allowed_salesmen(
+            receipt_queryset,
+            request.user,
+            field_name="sales_invoice__salesman_id",
         )
         payment_queryset = PurchaseBankPayment.objects.filter(
             tenant_id=tenant_id,
@@ -1309,28 +1398,40 @@ class AccountViewSet(ModelViewSet):
             payments_filtered.aggregate(total=Coalesce(Sum("amount"), Decimal("0.00")))["total"]
             or Decimal("0.00")
         )
-        month_profit = (
-            journal_filtered.filter(
-                account__account_type=Account.AccountType.REVENUE,
-            ).aggregate(total=Coalesce(Sum("credit"), Decimal("0.00")))["total"]
-            or Decimal("0.00")
-        ) - (
-            journal_filtered.filter(
-                account__account_type=Account.AccountType.COGS,
-            ).aggregate(total=Coalesce(Sum("debit"), Decimal("0.00")))["total"]
-            or Decimal("0.00")
-        )
-        total_profit = (
-            journal_filtered.filter(
-                account__account_type=Account.AccountType.REVENUE,
-            ).aggregate(total=Coalesce(Sum("credit"), Decimal("0.00")))["total"]
-            or Decimal("0.00")
-        ) - (
-            journal_filtered.filter(
-                account__account_type=Account.AccountType.COGS,
-            ).aggregate(total=Coalesce(Sum("debit"), Decimal("0.00")))["total"]
-            or Decimal("0.00")
-        )
+        if has_salesman_scope:
+            month_profit = (
+                sales_filtered.aggregate(
+                    total=Coalesce(
+                        Sum("lines__profit", filter=Q(lines__deleted_at__isnull=True)),
+                        Decimal("0.00"),
+                    )
+                )["total"]
+                or Decimal("0.00")
+            )
+            total_profit = month_profit
+        else:
+            month_profit = (
+                journal_filtered.filter(
+                    account__account_type=Account.AccountType.REVENUE,
+                ).aggregate(total=Coalesce(Sum("credit"), Decimal("0.00")))["total"]
+                or Decimal("0.00")
+            ) - (
+                journal_filtered.filter(
+                    account__account_type=Account.AccountType.COGS,
+                ).aggregate(total=Coalesce(Sum("debit"), Decimal("0.00")))["total"]
+                or Decimal("0.00")
+            )
+            total_profit = (
+                journal_filtered.filter(
+                    account__account_type=Account.AccountType.REVENUE,
+                ).aggregate(total=Coalesce(Sum("credit"), Decimal("0.00")))["total"]
+                or Decimal("0.00")
+            ) - (
+                journal_filtered.filter(
+                    account__account_type=Account.AccountType.COGS,
+                ).aggregate(total=Coalesce(Sum("debit"), Decimal("0.00")))["total"]
+                or Decimal("0.00")
+            )
 
         receivables_outstanding = Decimal("0.00")
         for invoice in sales_filtered:
@@ -1380,24 +1481,38 @@ class AccountViewSet(ModelViewSet):
             .values("month")
             .annotate(total=Coalesce(Sum("amount"), Decimal("0.00")))
         }
-        monthly_revenue_map = {
-            item["month"]: self._money(item["total"])
-            for item in journal_filtered.filter(
-                account__account_type=Account.AccountType.REVENUE,
-            )
-            .annotate(month=TruncMonth("journal_entry__date"))
-            .values("month")
-            .annotate(total=Coalesce(Sum("credit"), Decimal("0.00")))
-        }
-        monthly_cogs_map = {
-            item["month"]: self._money(item["total"])
-            for item in journal_filtered.filter(
-                account__account_type=Account.AccountType.COGS,
-            )
-            .annotate(month=TruncMonth("journal_entry__date"))
-            .values("month")
-            .annotate(total=Coalesce(Sum("debit"), Decimal("0.00")))
-        }
+        if has_salesman_scope:
+            monthly_profit_map = {
+                item["month"]: self._money(item["total"])
+                for item in sales_filtered
+                .annotate(month=TruncMonth("date"))
+                .values("month")
+                .annotate(
+                    total=Coalesce(
+                        Sum("lines__profit", filter=Q(lines__deleted_at__isnull=True)),
+                        Decimal("0.00"),
+                    )
+                )
+            }
+        else:
+            monthly_revenue_map = {
+                item["month"]: self._money(item["total"])
+                for item in journal_filtered.filter(
+                    account__account_type=Account.AccountType.REVENUE,
+                )
+                .annotate(month=TruncMonth("journal_entry__date"))
+                .values("month")
+                .annotate(total=Coalesce(Sum("credit"), Decimal("0.00")))
+            }
+            monthly_cogs_map = {
+                item["month"]: self._money(item["total"])
+                for item in journal_filtered.filter(
+                    account__account_type=Account.AccountType.COGS,
+                )
+                .annotate(month=TruncMonth("journal_entry__date"))
+                .values("month")
+                .annotate(total=Coalesce(Sum("debit"), Decimal("0.00")))
+            }
 
         month_cursor = today.replace(day=1)
         monthly_trends = []
@@ -1406,10 +1521,13 @@ class AccountViewSet(ModelViewSet):
             purchase_total = monthly_purchase_map.get(month_cursor, Decimal("0.00"))
             receipt_total = monthly_receipt_map.get(month_cursor, Decimal("0.00"))
             payment_total = monthly_payment_map.get(month_cursor, Decimal("0.00"))
-            profit_total = self._money(
-                monthly_revenue_map.get(month_cursor, Decimal("0.00"))
-                - monthly_cogs_map.get(month_cursor, Decimal("0.00"))
-            )
+            if has_salesman_scope:
+                profit_total = self._money(monthly_profit_map.get(month_cursor, Decimal("0.00")))
+            else:
+                profit_total = self._money(
+                    monthly_revenue_map.get(month_cursor, Decimal("0.00"))
+                    - monthly_cogs_map.get(month_cursor, Decimal("0.00"))
+                )
             monthly_trends.append(
                 {
                     "month": month_cursor.strftime("%b %Y"),

@@ -7,6 +7,7 @@ import IconButton from "../../components/ui/IconButton";
 import ConfirmModal from "../../components/ui/ConfirmModal";
 import { useToast } from "../../context/ToastContext";
 import tenantStaffService from "../../api/services/tenantStaffService";
+import salesmanService from "../../api/services/salesmanService";
 import { TENANT_UI_PERMISSION_GROUPS } from "../../constants/tenantUiPermissions";
 
 const emptyForm = {
@@ -15,11 +16,31 @@ const emptyForm = {
   password: "",
   tenant_role: "",
   ui_permissions: [],
+  data_access: {
+    salesman_ids: [],
+  },
+};
+
+const fetchAllSalesmen = async () => {
+  const limit = 100;
+  let page = 1;
+  let total = 0;
+  const salesmen = [];
+
+  do {
+    const response = await salesmanService.list({ page, limit, search: "" });
+    salesmen.push(...(response.data || []));
+    total = response.total || salesmen.length;
+    page += 1;
+  } while (salesmen.length < total);
+
+  return salesmen;
 };
 
 const TenantStaffPage = () => {
   const toast = useToast();
   const [rows, setRows] = useState([]);
+  const [salesmen, setSalesmen] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [form, setForm] = useState(emptyForm);
@@ -44,12 +65,33 @@ const TenantStaffPage = () => {
     load();
   }, []);
 
+  useEffect(() => {
+    fetchAllSalesmen()
+      .then(setSalesmen)
+      .catch(() => setSalesmen([]));
+  }, []);
+
   const togglePerm = (key) => {
     setForm((prev) => {
       const set = new Set(prev.ui_permissions);
       if (set.has(key)) set.delete(key);
       else set.add(key);
       return { ...prev, ui_permissions: [...set] };
+    });
+  };
+
+  const toggleSalesmanAccess = (salesmanId) => {
+    setForm((prev) => {
+      const set = new Set(prev.data_access?.salesman_ids || []);
+      if (set.has(salesmanId)) set.delete(salesmanId);
+      else set.add(salesmanId);
+      return {
+        ...prev,
+        data_access: {
+          ...prev.data_access,
+          salesman_ids: [...set],
+        },
+      };
     });
   };
 
@@ -71,6 +113,9 @@ const TenantStaffPage = () => {
         email: form.email.trim(),
         tenant_role: form.tenant_role.trim(),
         ui_permissions: form.ui_permissions,
+        data_access: {
+          salesman_ids: form.data_access?.salesman_ids || [],
+        },
       };
       if (form.password?.trim()) {
         payload.password = form.password;
@@ -114,6 +159,11 @@ const TenantStaffPage = () => {
       ui_permissions: Array.isArray(row.ui_permissions)
         ? [...row.ui_permissions]
         : [],
+      data_access: {
+        salesman_ids: Array.isArray(row.data_access?.salesman_ids)
+          ? [...row.data_access.salesman_ids]
+          : [],
+      },
     });
   };
 
@@ -128,6 +178,11 @@ const TenantStaffPage = () => {
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Delete failed");
     }
+  };
+
+  const getSalesmanAccessLabel = (row) => {
+    const count = row.data_access?.salesman_ids?.length || 0;
+    return count ? `${count} selected` : "All salesmen";
   };
 
   return (
@@ -178,6 +233,37 @@ const TenantStaffPage = () => {
                 setForm((p) => ({ ...p, password: e.target.value }))
               }
             />
+          </div>
+
+          <div>
+            <p className="mb-2 text-sm font-semibold text-slate-800">
+              Salesman data access
+            </p>
+            <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+              {salesmen.length ? (
+                <div className="flex flex-wrap gap-2">
+                  {salesmen.map((salesman) => (
+                    <label
+                      key={salesman.id}
+                      className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm"
+                    >
+                      <input
+                        type="checkbox"
+                        className="rounded border-slate-300"
+                        checked={(form.data_access?.salesman_ids || []).includes(
+                          salesman.id,
+                        )}
+                        onChange={() => toggleSalesmanAccess(salesman.id)}
+                      />
+                      {salesman.code ? `${salesman.code} - ` : ""}
+                      {salesman.name}
+                    </label>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500">No salesmen found.</p>
+              )}
+            </div>
           </div>
 
           <div>
@@ -247,6 +333,7 @@ const TenantStaffPage = () => {
                   <th className="px-4 py-3">Email</th>
                   <th className="px-4 py-3">Role</th>
                   <th className="px-4 py-3">Modules</th>
+                  <th className="px-4 py-3">Salesmen</th>
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
@@ -262,6 +349,9 @@ const TenantStaffPage = () => {
                     </td>
                     <td className="px-4 py-3 text-slate-600">
                       {(row.ui_permissions || []).length} selected
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {getSalesmanAccessLabel(row)}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <span className="inline-flex gap-1">

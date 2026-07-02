@@ -21,6 +21,7 @@ class User(AbstractUser):
     )
     tenant_role = models.CharField(max_length=120, blank=True, default="")
     ui_permissions = models.JSONField(default=list, blank=True)
+    data_access = models.JSONField(default=dict, blank=True)
     allowed_dimensions = models.ManyToManyField(
         "Dimension",
         blank=True,

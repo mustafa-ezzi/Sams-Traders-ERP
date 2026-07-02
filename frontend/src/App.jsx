@@ -50,6 +50,7 @@ import CoaCompletenessReportPage from "./pages/reports/CoaCompletenessReportPage
 import BalanceSheetPage from "./pages/reports/BalanceSheetPage";
 import ProfitLossPage from "./pages/reports/ProfitLossPage";
 import AgingReportsPage from "./pages/reports/AgingReportsPage";
+import SalesReportPage from "./pages/reports/SalesReportPage";
 import SalesmanReportsPage from "./pages/reports/SalesmanReportsPage";
 import LedgerReportsPage from "./pages/reports/LedgerReportsPage";
 import PartyLedgerReportsPage from "./pages/reports/PartyLedgerReportsPage";
@@ -166,6 +167,7 @@ const App = () => (
         <Route path="reports/balance-sheet" element={<BalanceSheetPage />} />
         <Route path="reports/profit-loss" element={<ProfitLossPage />} />
         <Route path="reports/aging" element={<AgingReportsPage />} />
+        <Route path="reports/sales" element={<SalesReportPage />} />
         <Route path="reports/salesman" element={<SalesmanReportsPage />} />
         <Route path="reports/coa-completeness" element={<CoaCompletenessReportPage />} />
         <Route path="warehouses" element={<WarehousePage />} />

@@ -304,6 +304,12 @@ const navigation = [
         perm: "reports_aging",
       },
       {
+        to: "/reports/sales",
+        label: "Sales Report",
+        icon: icons.reports,
+        perm: "reports_sales",
+      },
+      {
         to: "/reports/salesman",
         label: "Salesman Performance",
         icon: icons.reports,
@@ -416,6 +422,7 @@ const pageTitles = {
   "/reports/ledger": { title: "Ledger Reports", eyebrow: "Reports" },
   "/reports/party-ledger": { title: "Party Ledger", eyebrow: "Reports" },
   "/reports/aging": { title: "Aging Reports", eyebrow: "Reports" },
+  "/reports/sales": { title: "Sales Report", eyebrow: "Reports" },
   "/reports/salesman": { title: "Salesman Performance", eyebrow: "Reports" },
   "/warehouses": { title: "Warehouses", eyebrow: "Inventory" },
   "/opening-stock": { title: "Opening Stock", eyebrow: "Inventory" },

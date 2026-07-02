@@ -7,7 +7,14 @@ const mapReceipt = (receipt) => ({
   customerId: receipt.customer?.id || receipt.customer_id || "",
   salesInvoiceId: receipt.sales_invoice?.id || receipt.sales_invoice_id || "",
   bankAccountId: receipt.bank_account?.id || receipt.bank_account_id || "",
+  tenantId: receipt.tenant_id || receipt.tenantId || "",
+  dimensionName: receipt.dimension_name || receipt.dimensionName || "",
+  salesmanId: receipt.salesman?.id || receipt.salesman_id || "",
   amount: receipt.amount ?? 0,
+  recoveryCommissionRate:
+    receipt.recovery_commission_rate ?? receipt.recoveryCommissionRate ?? 0,
+  recoveryCommissionAmount:
+    receipt.recovery_commission_amount ?? receipt.recoveryCommissionAmount ?? 0,
   invoiceNetAmount: receipt.invoice_net_amount ?? receipt.invoiceNetAmount ?? 0,
   invoiceReturnedAmount:
     receipt.invoice_returned_amount ?? receipt.invoiceReturnedAmount ?? 0,

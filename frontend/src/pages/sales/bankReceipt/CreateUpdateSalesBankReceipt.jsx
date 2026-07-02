@@ -3,22 +3,29 @@ import { useNavigate, useParams } from "react-router-dom";
 import Card from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
 import FormInput from "../../../components/ui/FormInput";
+import SearchableSelect from "../../../components/ui/SearchableSelect";
 import customerService from "../../../api/services/customerService";
 import accountService from "../../../api/services/accountService";
+import dimensionService from "../../../api/services/dimensionService";
 import salesBankReceiptService from "../../../api/services/salesBankReceiptService";
+import salesmanService from "../../../api/services/salesmanService";
 import { formatDecimal } from "../../../utils/format";
 import {
   flattenAccountTree,
   formatAccountLabel,
 } from "../../../utils/accounts";
 import { useToast } from "../../../context/ToastContext";
+import { useAuth } from "../../../context/AuthContext";
+
 const selectClassName =
   "w-full rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/90 px-4 py-3 text-sm text-slate-800 dark:text-slate-100 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/40";
 const createDefaultForm = () => ({
   date: new Date().toISOString().slice(0, 10),
+  tenantId: "",
   customerId: "",
   salesInvoiceId: "",
   bankAccountId: "",
+  salesmanId: "",
   amount: "0",
   remarks: "",
 });
@@ -45,11 +52,17 @@ const CreateUpdateSalesBankReceipt = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
+  const { tenantId } = useAuth();
   const editingId = id || "";
+  const [dimensions, setDimensions] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [bankAccounts, setBankAccounts] = useState([]);
+  const [salesmen, setSalesmen] = useState([]);
   const [invoiceOptions, setInvoiceOptions] = useState([]);
-  const [form, setForm] = useState(createDefaultForm());
+  const [form, setForm] = useState(() => ({
+    ...createDefaultForm(),
+    tenantId: tenantId || "",
+  }));
   const [submitting, setSubmitting] = useState(false);
   const [loadingRecord, setLoadingRecord] = useState(Boolean(id));
   const selectedInvoice = useMemo(
@@ -58,13 +71,38 @@ const CreateUpdateSalesBankReceipt = () => {
       null,
     [form.salesInvoiceId, invoiceOptions],
   );
+  const selectedSalesman = useMemo(
+    () => salesmen.find((salesman) => salesman.id === form.salesmanId) || null,
+    [form.salesmanId, salesmen],
+  );
+  const recoveryCommissionRate = toNumber(
+    selectedSalesman?.commission_on_recovery ??
+      selectedSalesman?.commissionOnRecovery ??
+      0,
+  );
+  const recoveryCommissionAmount =
+    (toNumber(form.amount) * recoveryCommissionRate) / 100;
   const loadSetupData = async () => {
     try {
-      const [customerResponse, accountsResponse] = await Promise.all([
+      const [dimensionItems, customerResponse, accountsResponse, salesmanResponse] =
+        await Promise.all([
+          dimensionService.list(),
         customerService.list({ page: 1, limit: 100, search: "" }),
         accountService.list(),
-      ]);
+          salesmanService.list({ page: 1, limit: 200, search: "" }),
+        ]);
+      setDimensions(dimensionItems || []);
+      setForm((current) => ({
+        ...current,
+        tenantId:
+          current.tenantId ||
+          tenantId ||
+          dimensionItems?.find((dimension) => dimension.is_active)?.code ||
+          dimensionItems?.[0]?.code ||
+          "",
+      }));
       setCustomers(customerResponse.data || []);
+      setSalesmen(salesmanResponse.data || []);
       const flatAccounts = flattenAccountTree(
         Array.isArray(accountsResponse)
           ? accountsResponse
@@ -79,7 +117,7 @@ const CreateUpdateSalesBankReceipt = () => {
       );
       setBankAccounts(bankTypeAccounts);
     } catch {
-      toast.error("Failed to load customer and bank account options");
+      toast.error("Failed to load receipt setup options");
     }
   };
   const loadInvoiceOptions = async (customerId, receiptId = editingId) => {
@@ -120,9 +158,11 @@ const CreateUpdateSalesBankReceipt = () => {
         if (cancelled) return;
         setForm({
           date: receipt.date,
+          tenantId: receipt.tenantId || tenantId || "",
           customerId: receipt.customerId,
           salesInvoiceId: receipt.salesInvoiceId,
           bankAccountId: receipt.bankAccountId,
+          salesmanId: receipt.salesmanId || "",
           amount: String(receipt.amount ?? 0),
           remarks: receipt.remarks || "",
         });
@@ -151,6 +191,7 @@ const CreateUpdateSalesBankReceipt = () => {
       ...current,
       customerId,
       salesInvoiceId: "",
+      salesmanId: "",
       amount: "0",
     }));
   };
@@ -159,20 +200,52 @@ const CreateUpdateSalesBankReceipt = () => {
     setForm((current) => ({
       ...current,
       salesInvoiceId,
+      salesmanId: invoice?.salesman?.id || "",
       amount: invoice ? String(invoice.balance_amount || 0) : "0",
     }));
+    if (invoice?.salesman && !salesmen.some((item) => item.id === invoice.salesman.id)) {
+      setSalesmen((current) => [...current, invoice.salesman]);
+    }
+  };
+  const searchSalesmen = async (query) => {
+    const response = await salesmanService.list({
+      page: 1,
+      limit: 20,
+      search: query,
+    });
+    return response.data || [];
+  };
+  const resolveSalesman = async (salesmanId) => {
+    const existing = salesmen.find((salesman) => salesman.id === salesmanId);
+    if (existing) return existing;
+    const response = await salesmanService.list({ page: 1, limit: 200, search: "" });
+    const match = (response.data || []).find((salesman) => salesman.id === salesmanId);
+    if (match) {
+      setSalesmen((current) =>
+        current.some((salesman) => salesman.id === match.id)
+          ? current
+          : [...current, match],
+      );
+    }
+    return match || null;
   };
   const buildPayload = () => ({
     date: form.date,
+    tenant_id: form.tenantId,
     customer_id: form.customerId,
     sales_invoice_id: form.salesInvoiceId,
     bank_account_id: form.bankAccountId,
+    salesman_id: form.salesmanId || null,
     amount: toNumber(form.amount),
     remarks: form.remarks,
   });
   const validateBeforeSubmit = () => {
     if (!form.date) {
       toast.error("Please select a receipt date");
+      return false;
+    }
+    if (!form.tenantId) {
+      toast.error("Please select a dimension");
       return false;
     }
     if (!form.customerId) {
@@ -273,6 +346,27 @@ const CreateUpdateSalesBankReceipt = () => {
               {" "}
               <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 dark:text-slate-500">
                 {" "}
+                Dimension <span className="text-rose-500">*</span>{" "}
+              </label>{" "}
+              <select
+                className={selectClassName}
+                value={form.tenantId}
+                onChange={(e) => handleChange("tenantId", e.target.value)}
+              >
+                {" "}
+                <option value="">Select Dimension</option>{" "}
+                {dimensions.map((dimension) => (
+                  <option key={dimension.code} value={dimension.code}>
+                    {" "}
+                    {dimension.name}{" "}
+                  </option>
+                ))}{" "}
+              </select>{" "}
+            </div>{" "}
+            <div className="space-y-1">
+              {" "}
+              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 dark:text-slate-500">
+                {" "}
                 Customer <span className="text-rose-500">*</span>{" "}
               </label>{" "}
               <select
@@ -335,6 +429,17 @@ const CreateUpdateSalesBankReceipt = () => {
                 ))}{" "}
               </select>{" "}
             </div>{" "}
+            <SearchableSelect
+              label="Salesman"
+              value={form.salesmanId}
+              onChange={(salesmanId) => handleChange("salesmanId", salesmanId)}
+              onSearch={searchSalesmen}
+              resolveValue={resolveSalesman}
+              getOptionLabel={(salesman) =>
+                `${salesman.code ? `${salesman.code} - ` : ""}${salesman.name || "Salesman"}`
+              }
+              placeholder="Type to search salesman"
+            />{" "}
             <FormInput
               label="Total *"
               type="number"
@@ -392,6 +497,19 @@ const CreateUpdateSalesBankReceipt = () => {
                 {" "}
                 {formatDecimal(selectedInvoice?.balance_amount || 0)}{" "}
               </p>{" "}
+            </div>{" "}
+            <div className="rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-4 py-4">
+              {" "}
+              <p className="text-xs uppercase tracking-wide text-amber-600 dark:text-amber-300">
+                Recovery Commission
+              </p>{" "}
+              <p className="mt-1 text-xl font-extrabold text-amber-700 dark:text-amber-300">
+                {" "}
+                {formatDecimal(recoveryCommissionAmount)}{" "}
+              </p>{" "}
+              <p className="mt-1 text-xs text-amber-700/80 dark:text-amber-200/80">
+                {formatDecimal(recoveryCommissionRate)}% of receipt amount
+              </p>
             </div>{" "}
           </div>{" "}
           <div className="flex justify-end border-t border-slate-100 dark:border-slate-700 pt-4">

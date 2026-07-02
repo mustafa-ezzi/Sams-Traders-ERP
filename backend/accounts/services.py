@@ -49,15 +49,18 @@ def login_service(data):
     is_tenant_child = bool(user.parent_user_id)
     child_ui_permissions = list(user.ui_permissions or []) if is_tenant_child else []
     child_tenant_role = (user.tenant_role or "") if is_tenant_child else ""
+    child_data_access = dict(user.data_access or {}) if is_tenant_child else {}
 
     refresh = RefreshToken.for_user(user)
     refresh["is_tenant_child"] = is_tenant_child
     refresh["ui_permissions"] = child_ui_permissions
     refresh["tenant_role"] = child_tenant_role
+    refresh["data_access"] = child_data_access
     access = refresh.access_token
     access["is_tenant_child"] = is_tenant_child
     access["ui_permissions"] = child_ui_permissions
     access["tenant_role"] = child_tenant_role
+    access["data_access"] = child_data_access
 
     return {
         "access": str(access),
@@ -74,6 +77,7 @@ def login_service(data):
             "is_tenant_child": is_tenant_child,
             "ui_permissions": child_ui_permissions,
             "tenant_role": child_tenant_role,
+            "data_access": child_data_access,
         },
     }
 

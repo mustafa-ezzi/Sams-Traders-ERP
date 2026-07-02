@@ -5,6 +5,7 @@ import Button from "../../../components/ui/Button";
 import FormInput from "../../../components/ui/FormInput";
 import { useToast } from "../../../context/ToastContext";
 import tenantStaffService from "../../../api/services/tenantStaffService";
+import salesmanService from "../../../api/services/salesmanService";
 import { TENANT_UI_PERMISSION_GROUPS } from "../../../constants/tenantUiPermissions";
 const emptyForm = {
   username: "",
@@ -12,6 +13,24 @@ const emptyForm = {
   password: "",
   tenant_role: "",
   ui_permissions: [],
+  data_access: {
+    salesman_ids: [],
+  },
+};
+const fetchAllSalesmen = async () => {
+  const limit = 100;
+  let page = 1;
+  let total = 0;
+  const salesmen = [];
+
+  do {
+    const response = await salesmanService.list({ page, limit, search: "" });
+    salesmen.push(...(response.data || []));
+    total = response.total || salesmen.length;
+    page += 1;
+  } while (salesmen.length < total);
+
+  return salesmen;
 };
 const CreateUpdateStaffAccess = () => {
   const navigate = useNavigate();
@@ -19,8 +38,14 @@ const CreateUpdateStaffAccess = () => {
   const isEdit = Boolean(id);
   const toast = useToast();
   const [form, setForm] = useState(emptyForm);
+  const [salesmen, setSalesmen] = useState([]);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    fetchAllSalesmen()
+      .then(setSalesmen)
+      .catch(() => setSalesmen([]));
+  }, []);
   useEffect(() => {
     if (!isEdit || !id) {
       setForm(emptyForm);
@@ -41,6 +66,11 @@ const CreateUpdateStaffAccess = () => {
             ui_permissions: Array.isArray(row.ui_permissions)
               ? [...row.ui_permissions]
               : [],
+            data_access: {
+              salesman_ids: Array.isArray(row.data_access?.salesman_ids)
+                ? [...row.data_access.salesman_ids]
+                : [],
+            },
           });
         } else {
           toast.error("Staff user not found");
@@ -58,6 +88,20 @@ const CreateUpdateStaffAccess = () => {
       return { ...prev, ui_permissions: [...set] };
     });
   };
+  const toggleSalesmanAccess = (salesmanId) => {
+    setForm((prev) => {
+      const set = new Set(prev.data_access?.salesman_ids || []);
+      if (set.has(salesmanId)) set.delete(salesmanId);
+      else set.add(salesmanId);
+      return {
+        ...prev,
+        data_access: {
+          ...prev.data_access,
+          salesman_ids: [...set],
+        },
+      };
+    });
+  };
   const onSubmit = async (event) => {
     event.preventDefault();
     if (!form.ui_permissions.length) {
@@ -71,6 +115,9 @@ const CreateUpdateStaffAccess = () => {
         email: form.email.trim(),
         tenant_role: form.tenant_role.trim(),
         ui_permissions: form.ui_permissions,
+        data_access: {
+          salesman_ids: form.data_access?.salesman_ids || [],
+        },
       };
       if (form.password?.trim()) {
         payload.password = form.password;
@@ -175,6 +222,39 @@ const CreateUpdateStaffAccess = () => {
                   setForm((p) => ({ ...p, password: e.target.value }))
                 }
               />{" "}
+            </div>{" "}
+            <div>
+              {" "}
+              <p className="mb-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                Salesman data access
+              </p>{" "}
+              <div className="space-y-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/70 p-4">
+                {salesmen.length ? (
+                  <div className="flex flex-wrap gap-2">
+                    {salesmen.map((salesman) => (
+                      <label
+                        key={salesman.id}
+                        className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm shadow-sm"
+                      >
+                        <input
+                          type="checkbox"
+                          className="rounded border-slate-300"
+                          checked={(form.data_access?.salesman_ids || []).includes(
+                            salesman.id,
+                          )}
+                          onChange={() => toggleSalesmanAccess(salesman.id)}
+                        />{" "}
+                        {salesman.code ? `${salesman.code} - ` : ""}
+                        {salesman.name}
+                      </label>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    No salesmen found.
+                  </p>
+                )}
+              </div>
             </div>{" "}
             <div>
               {" "}
