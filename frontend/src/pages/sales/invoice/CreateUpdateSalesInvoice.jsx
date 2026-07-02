@@ -93,6 +93,28 @@ const extractErrorMessage = (error) => {
   }
   return "Something went wrong";
 };
+
+const fetchAllPendingSalesOrders = async ({ search = "" } = {}) => {
+  const limit = 100;
+  let page = 1;
+  let total = 0;
+  const orders = [];
+
+  do {
+    const response = await salesOrderService.list({
+      page,
+      limit,
+      search,
+      invoiced: false,
+    });
+    orders.push(...(response.data || []));
+    total = response.total || orders.length;
+    page += 1;
+  } while (orders.length < total);
+
+  return orders;
+};
+
 const CreateUpdateSalesInvoice = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -196,6 +218,24 @@ const CreateUpdateSalesInvoice = () => {
       salesmanService.getById(salesmanId),
     [salesmen],
   );
+  const searchPendingSalesOrders = useCallback(
+    async (query) => {
+      if (!query.trim()) return openOrders;
+      return fetchAllPendingSalesOrders({ search: query });
+    },
+    [openOrders],
+  );
+  const resolveSalesOrder = useCallback(
+    async (salesOrderId) =>
+      openOrders.find((order) => order.id === salesOrderId) ||
+      salesOrderService.getById(salesOrderId),
+    [openOrders],
+  );
+  const getSalesOrderLabel = useCallback((order) => {
+    const customerName = order.customer?.business_name || "Customer";
+    const status = order.isInvoiced ? "invoiced" : "pending";
+    return `${order.order_number} - ${customerName} (${status})`;
+  }, []);
   const handleCustomerSelect = (customerId, customer) => {
     handleChange("customerId", customerId);
     if (customer) {
@@ -216,6 +256,14 @@ const CreateUpdateSalesInvoice = () => {
       );
     }
   };
+  const handleSalesOrderSelect = (orderId, order) => {
+    if (order) {
+      setOpenOrders((current) =>
+        current.some((item) => item.id === order.id) ? current : [order, ...current],
+      );
+    }
+    applySalesOrder(orderId);
+  };
   const estimatedSalesmanCommission = useMemo(() => {
     const rate = toNumber(selectedSalesman?.commission_on_sales);
     if (!form.salesmanId || rate <= 0) return 0;
@@ -234,13 +282,13 @@ const CreateUpdateSalesInvoice = () => {
       customerService.list({ page: 1, limit: 100, search: "" }),
       warehouseService.list({ page: 1, limit: 100, search: "" }),
       salesmanService.list({ page: 1, limit: 100, search: "" }),
-      salesOrderService.list({ page: 1, limit: 200, invoiced: false }),
+      fetchAllPendingSalesOrders(),
     ])
       .then(([customerResponse, warehouseResponse, salesmanResponse, orderResponse]) => {
         setCustomers(customerResponse.data || []);
         setWarehouses(warehouseResponse.data || []);
         setSalesmen(salesmanResponse.data || []);
-        setOpenOrders(orderResponse.data || []);
+        setOpenOrders(orderResponse || []);
       })
       .catch(() => toast.error("Failed to load sales setup options"));
   }, [toast]);
@@ -402,9 +450,6 @@ const CreateUpdateSalesInvoice = () => {
     } catch (orderError) {
       toast.error(extractErrorMessage(orderError) || "Failed to load sales order");
     }
-  };
-  const handleSalesOrderChange = (orderId) => {
-    applySalesOrder(orderId);
   };
   const handleLineChange = (index, field, value) => {
     setForm((current) => {
@@ -607,28 +652,15 @@ const CreateUpdateSalesInvoice = () => {
               ) : null}
             </div>
             {!editingId ? (
-              <div className="space-y-1">
-                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                  Sales Order
-                </label>
-                <select
-                  className={selectClassName}
-                  value={form.salesOrderId}
-                  onChange={(e) => handleSalesOrderChange(e.target.value)}
-                >
-                  <option value="">Select open order (optional)</option>
-                  {openOrders.map((order) => (
-                    <option
-                      key={order.id}
-                      value={order.id}
-                      className={!order.isInvoiced ? "text-red-600" : ""}
-                    >
-                      {order.order_number} — {order.customer?.business_name || "Customer"}
-                      {!order.isInvoiced ? " (pending)" : ""}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <SearchableSelect
+                label="Sales Order"
+                value={form.salesOrderId}
+                onChange={handleSalesOrderSelect}
+                onSearch={searchPendingSalesOrders}
+                resolveValue={resolveSalesOrder}
+                getOptionLabel={getSalesOrderLabel}
+                placeholder="Search pending sales order"
+              />
             ) : null}
             <FormInput
               label="Order Reference"
