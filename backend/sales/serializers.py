@@ -1,7 +1,7 @@
 import re
 from decimal import Decimal
 
-from django.db import transaction
+from django.db import models, transaction
 from django.utils.timezone import now
 from rest_framework import serializers
 
@@ -428,9 +428,17 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
             next_number += 1
 
     def _create_lines(self, invoice, lines_data, tenant_id):
+        products_by_id = {
+            product.id: product
+            for product in Product.objects.filter(
+                id__in=[line_data["product_id"] for line_data in lines_data],
+                deleted_at__isnull=True,
+            )
+        }
         for line_data in lines_data:
+            product = products_by_id.get(line_data["product_id"])
             SalesInvoiceLine.objects.create(
-                tenant_id=tenant_id,
+                tenant_id=product.tenant_id if product else tenant_id,
                 invoice=invoice,
                 product_id=line_data["product_id"],
                 quantity=line_data["quantity"],
@@ -842,13 +850,13 @@ class SalesReturnLineSerializer(serializers.ModelSerializer):
         return str(metrics["available_return_quantity"])
 
     def validate_sales_invoice_line_id(self, value):
-        tenant_id = self.context["request"].user.tenant_id
+        tenant_ids = get_shared_tenant_ids(self.context["request"])
         invoice = self.context.get("sales_invoice")
 
         try:
             invoice_line = SalesInvoiceLine.objects.select_related("invoice", "product").get(
                 id=value,
-                tenant_id=tenant_id,
+                tenant_id__in=tenant_ids,
                 deleted_at__isnull=True,
                 invoice__deleted_at__isnull=True,
             )
@@ -866,10 +874,10 @@ class SalesReturnLineSerializer(serializers.ModelSerializer):
         return quantize_money(value)
 
     def validate(self, attrs):
-        tenant_id = self.context["request"].user.tenant_id
+        tenant_ids = get_shared_tenant_ids(self.context["request"])
         invoice_line = SalesInvoiceLine.objects.select_related("invoice", "product").get(
             id=attrs["sales_invoice_line_id"],
-            tenant_id=tenant_id,
+            tenant_id__in=tenant_ids,
             deleted_at__isnull=True,
             invoice__deleted_at__isnull=True,
         )
@@ -957,7 +965,13 @@ class SalesReturnSerializer(serializers.ModelSerializer):
         return value
 
     def validate_sales_invoice_id(self, value):
-        if not shared_master_exists(SalesInvoice, self.context["request"], value):
+        tenant_ids = get_shared_tenant_ids(self.context["request"])
+        if not (
+            SalesInvoice.objects.filter(id=value, deleted_at__isnull=True)
+            .filter(models.Q(tenant_id__in=tenant_ids) | models.Q(lines__tenant_id__in=tenant_ids))
+            .distinct()
+            .exists()
+        ):
             raise serializers.ValidationError("Sales invoice not found")
         return value
 
@@ -971,11 +985,14 @@ class SalesReturnSerializer(serializers.ModelSerializer):
         customer_id = attrs.get("customer_id") or getattr(self.instance, "customer_id", None)
         sales_invoice_id = attrs.get("sales_invoice_id") or getattr(self.instance, "sales_invoice_id", None)
 
-        sales_invoice = SalesInvoice.objects.select_related("customer", "warehouse").filter(
-            id=sales_invoice_id,
-            tenant_id__in=get_shared_tenant_ids(request),
-            deleted_at__isnull=True,
-        ).first()
+        tenant_ids = get_shared_tenant_ids(request)
+        sales_invoice = (
+            SalesInvoice.objects.select_related("customer", "warehouse")
+            .filter(id=sales_invoice_id, deleted_at__isnull=True)
+            .filter(models.Q(tenant_id__in=tenant_ids) | models.Q(lines__tenant_id__in=tenant_ids))
+            .distinct()
+            .first()
+        )
         if not sales_invoice:
             raise serializers.ValidationError({"sales_invoice_id": "Sales invoice not found."})
         if not user_can_access_salesman(request.user, sales_invoice.salesman_id):
@@ -1016,7 +1033,7 @@ class SalesReturnSerializer(serializers.ModelSerializer):
     def _create_lines(self, sales_return, lines_data, tenant_id):
         for line_data in lines_data:
             SalesReturnLine.objects.create(
-                tenant_id=tenant_id,
+                tenant_id=line_data["product"].tenant_id,
                 sales_return=sales_return,
                 sales_invoice_line=line_data["sales_invoice_line"],
                 product_id=line_data["product_id"],
@@ -1158,7 +1175,13 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
         return value
 
     def validate_sales_invoice_id(self, value):
-        if not shared_master_exists(SalesInvoice, self.context["request"], value):
+        tenant_ids = get_shared_tenant_ids(self.context["request"])
+        if not (
+            SalesInvoice.objects.filter(id=value, deleted_at__isnull=True)
+            .filter(models.Q(tenant_id__in=tenant_ids) | models.Q(lines__tenant_id__in=tenant_ids))
+            .distinct()
+            .exists()
+        ):
             raise serializers.ValidationError("Sales invoice not found")
         return value
 
@@ -1215,11 +1238,14 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
         customer_id = attrs.get("customer_id") or getattr(self.instance, "customer_id", None)
         sales_invoice_id = attrs.get("sales_invoice_id") or getattr(self.instance, "sales_invoice_id", None)
 
-        sales_invoice = SalesInvoice.objects.select_related("customer").filter(
-            id=sales_invoice_id,
-            tenant_id__in=get_shared_tenant_ids(request),
-            deleted_at__isnull=True,
-        ).first()
+        tenant_ids = get_shared_tenant_ids(request)
+        sales_invoice = (
+            SalesInvoice.objects.select_related("customer")
+            .filter(id=sales_invoice_id, deleted_at__isnull=True)
+            .filter(models.Q(tenant_id__in=tenant_ids) | models.Q(lines__tenant_id__in=tenant_ids))
+            .distinct()
+            .first()
+        )
         if not sales_invoice:
             raise serializers.ValidationError({"sales_invoice_id": "Sales invoice not found."})
         if not user_can_access_salesman(request.user, sales_invoice.salesman_id):

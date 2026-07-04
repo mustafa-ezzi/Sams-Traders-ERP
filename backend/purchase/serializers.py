@@ -1,11 +1,11 @@
 from decimal import Decimal
 
-from django.db import transaction
+from django.db import models, transaction
 from django.utils.timezone import now
 from rest_framework import serializers
 
 from accounts.dimensions import get_user_active_dimension_codes
-from common.tenancy import shared_master_exists
+from common.tenancy import get_shared_tenant_ids, shared_master_exists
 from accounts.models import Account
 from inventory.models import Product, ProductStock, RawMaterial, Stock, Supplier, Warehouse
 from inventory.serializers import ProductDetailedSerializer, RawMaterialDetailedSerializer
@@ -102,14 +102,14 @@ class PurchaseInvoiceLineSerializer(serializers.ModelSerializer):
     def validate_product_id(self, value):
         if value is None:
             return value
-        tenant_id = self.context["request"].user.tenant_id
+        tenant_ids = get_shared_tenant_ids(self.context["request"])
         product = Product.objects.filter(
             id=value,
-            tenant_id=tenant_id,
+            tenant_id__in=tenant_ids,
             deleted_at__isnull=True,
         ).first()
         if not product:
-            raise serializers.ValidationError("Product not found for this tenant")
+            raise serializers.ValidationError("Product not found")
         if product.product_type not in {"FINISHED_GOOD", "READY_MADE"}:
             raise serializers.ValidationError(
                 "Only direct finished goods can be purchased from this product field."
@@ -287,9 +287,22 @@ class PurchaseInvoiceSerializer(serializers.ModelSerializer):
         return f"PINV-{count:05d}"
 
     def _create_lines(self, invoice, lines_data, tenant_id):
+        product_ids = [
+            line_data.get("product_id")
+            for line_data in lines_data
+            if line_data.get("product_id")
+        ]
+        products_by_id = {
+            product.id: product
+            for product in Product.objects.filter(
+                id__in=product_ids,
+                deleted_at__isnull=True,
+            )
+        }
         for line_data in lines_data:
+            product = products_by_id.get(line_data.get("product_id"))
             PurchaseInvoiceLine.objects.create(
-                tenant_id=tenant_id,
+                tenant_id=product.tenant_id if product else tenant_id,
                 invoice=invoice,
                 item_type=line_data["item_type"],
                 product_id=line_data.get("product_id"),
@@ -400,7 +413,7 @@ class PurchaseReturnLineSerializer(serializers.ModelSerializer):
         return str(metrics["available_return_quantity"])
 
     def validate_purchase_invoice_line_id(self, value):
-        tenant_id = self.context["request"].user.tenant_id
+        tenant_ids = get_shared_tenant_ids(self.context["request"])
         invoice = self.context.get("purchase_invoice")
 
         try:
@@ -408,7 +421,7 @@ class PurchaseReturnLineSerializer(serializers.ModelSerializer):
                 PurchaseInvoiceLine.objects.select_related("invoice", "product")
                 .get(
                     id=value,
-                    tenant_id=tenant_id,
+                    tenant_id__in=tenant_ids,
                     deleted_at__isnull=True,
                     invoice__deleted_at__isnull=True,
                 )
@@ -427,10 +440,10 @@ class PurchaseReturnLineSerializer(serializers.ModelSerializer):
         return quantize_money(value)
 
     def validate(self, attrs):
-        tenant_id = self.context["request"].user.tenant_id
+        tenant_ids = get_shared_tenant_ids(self.context["request"])
         invoice_line = PurchaseInvoiceLine.objects.select_related("invoice", "product").get(
             id=attrs["purchase_invoice_line_id"],
-            tenant_id=tenant_id,
+            tenant_id__in=tenant_ids,
             deleted_at__isnull=True,
             invoice__deleted_at__isnull=True,
         )
@@ -523,12 +536,13 @@ class PurchaseReturnSerializer(serializers.ModelSerializer):
         return value
 
     def validate_purchase_invoice_id(self, value):
-        tenant_id = self.context["request"].user.tenant_id
-        if not PurchaseInvoice.objects.filter(
-            id=value,
-            tenant_id=tenant_id,
-            deleted_at__isnull=True,
-        ).exists():
+        tenant_ids = get_shared_tenant_ids(self.context["request"])
+        if not (
+            PurchaseInvoice.objects.filter(id=value, deleted_at__isnull=True)
+            .filter(models.Q(tenant_id__in=tenant_ids) | models.Q(lines__tenant_id__in=tenant_ids))
+            .distinct()
+            .exists()
+        ):
             raise serializers.ValidationError("Purchase invoice not found for this tenant")
         return value
 
@@ -538,14 +552,16 @@ class PurchaseReturnSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
-        tenant_id = self.context["request"].user.tenant_id
+        tenant_ids = get_shared_tenant_ids(self.context["request"])
         supplier_id = attrs.get("supplier_id") or getattr(self.instance, "supplier_id", None)
         purchase_invoice_id = attrs.get("purchase_invoice_id") or getattr(self.instance, "purchase_invoice_id", None)
 
-        purchase_invoice = PurchaseInvoice.objects.select_related("supplier", "warehouse").get(
-            id=purchase_invoice_id,
-            tenant_id=tenant_id,
-            deleted_at__isnull=True,
+        purchase_invoice = (
+            PurchaseInvoice.objects.select_related("supplier", "warehouse")
+            .filter(id=purchase_invoice_id, deleted_at__isnull=True)
+            .filter(models.Q(tenant_id__in=tenant_ids) | models.Q(lines__tenant_id__in=tenant_ids))
+            .distinct()
+            .get()
         )
 
         if purchase_invoice.supplier_id != supplier_id:
@@ -581,7 +597,7 @@ class PurchaseReturnSerializer(serializers.ModelSerializer):
     def _create_lines(self, purchase_return, lines_data, tenant_id):
         for line_data in lines_data:
             PurchaseReturnLine.objects.create(
-                tenant_id=tenant_id,
+                tenant_id=line_data["product"].tenant_id,
                 purchase_return=purchase_return,
                 purchase_invoice_line=line_data["purchase_invoice_line"],
                 product_id=line_data["product_id"],
@@ -699,12 +715,13 @@ class PurchaseBankPaymentSerializer(serializers.ModelSerializer):
         return value
 
     def validate_purchase_invoice_id(self, value):
-        tenant_id = self.context["request"].user.tenant_id
-        if not PurchaseInvoice.objects.filter(
-            id=value,
-            tenant_id=tenant_id,
-            deleted_at__isnull=True,
-        ).exists():
+        tenant_ids = get_shared_tenant_ids(self.context["request"])
+        if not (
+            PurchaseInvoice.objects.filter(id=value, deleted_at__isnull=True)
+            .filter(models.Q(tenant_id__in=tenant_ids) | models.Q(lines__tenant_id__in=tenant_ids))
+            .distinct()
+            .exists()
+        ):
             raise serializers.ValidationError("Purchase invoice not found for this tenant")
         return value
 
@@ -745,14 +762,16 @@ class PurchaseBankPaymentSerializer(serializers.ModelSerializer):
         return quantize_money(value)
 
     def validate(self, attrs):
-        tenant_id = self.context["request"].user.tenant_id
+        tenant_ids = get_shared_tenant_ids(self.context["request"])
         supplier_id = attrs.get("supplier_id") or getattr(self.instance, "supplier_id", None)
         purchase_invoice_id = attrs.get("purchase_invoice_id") or getattr(self.instance, "purchase_invoice_id", None)
 
-        purchase_invoice = PurchaseInvoice.objects.select_related("supplier").get(
-            id=purchase_invoice_id,
-            tenant_id=tenant_id,
-            deleted_at__isnull=True,
+        purchase_invoice = (
+            PurchaseInvoice.objects.select_related("supplier")
+            .filter(id=purchase_invoice_id, deleted_at__isnull=True)
+            .filter(models.Q(tenant_id__in=tenant_ids) | models.Q(lines__tenant_id__in=tenant_ids))
+            .distinct()
+            .get()
         )
 
         if purchase_invoice.supplier_id != supplier_id:

@@ -56,7 +56,6 @@ def rebuild_product_costing(tenant_id, product_ids):
                 item_type="FINISHED_GOOD",
                 product_id=product_id,
                 deleted_at__isnull=True,
-                invoice__tenant_id=tenant_id,
                 invoice__deleted_at__isnull=True,
             )
             .select_related("invoice")
@@ -141,7 +140,6 @@ def rebuild_product_costing(tenant_id, product_ids):
                 tenant_id=tenant_id,
                 product_id=product_id,
                 deleted_at__isnull=True,
-                invoice__tenant_id=tenant_id,
                 invoice__deleted_at__isnull=True,
             )
             .select_related("invoice")
@@ -300,7 +298,6 @@ def sync_product_stock_quantity(tenant_id, warehouse_id, product_id):
             tenant_id=tenant_id,
             product_id=product_id,
             deleted_at__isnull=True,
-            invoice__tenant_id=tenant_id,
             invoice__warehouse_id=warehouse_id,
             invoice__deleted_at__isnull=True,
         ).aggregate(total=Sum("quantity"))["total"]
@@ -312,7 +309,6 @@ def sync_product_stock_quantity(tenant_id, warehouse_id, product_id):
             tenant_id=tenant_id,
             product_id=product_id,
             deleted_at__isnull=True,
-            purchase_return__tenant_id=tenant_id,
             purchase_return__purchase_invoice__warehouse_id=warehouse_id,
             purchase_return__deleted_at__isnull=True,
             purchase_return__purchase_invoice__deleted_at__isnull=True,
@@ -325,7 +321,6 @@ def sync_product_stock_quantity(tenant_id, warehouse_id, product_id):
             tenant_id=tenant_id,
             product_id=product_id,
             deleted_at__isnull=True,
-            invoice__tenant_id=tenant_id,
             invoice__warehouse_id=warehouse_id,
             invoice__deleted_at__isnull=True,
         ).aggregate(total=Sum("quantity"))["total"]
@@ -337,7 +332,6 @@ def sync_product_stock_quantity(tenant_id, warehouse_id, product_id):
             tenant_id=tenant_id,
             product_id=product_id,
             deleted_at__isnull=True,
-            sales_return__tenant_id=tenant_id,
             sales_return__sales_invoice__warehouse_id=warehouse_id,
             sales_return__deleted_at__isnull=True,
             sales_return__sales_invoice__deleted_at__isnull=True,

@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import DecimalField, ExpressionWrapper, F, OuterRef, Prefetch, Subquery, Sum, Value
+from django.db.models import DecimalField, ExpressionWrapper, F, OuterRef, Prefetch, Q, Subquery, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils.timezone import now
 from rest_framework import filters, status, viewsets
@@ -43,7 +43,8 @@ from purchase.services import (
     get_purchase_return_line_metrics,
     quantize_money,
 )
-from common.tenancy import get_request_tenant_filter
+from accounts.models import Dimension
+from common.tenancy import get_request_tenant_filter, get_shared_tenant_ids
 
 
 class PurchaseInvoiceViewSet(viewsets.ModelViewSet):
@@ -121,20 +122,19 @@ class PurchaseInvoiceViewSet(viewsets.ModelViewSet):
         return self.get_queryset().get(id=invoice_id)
 
     def _sync_invoice_inventory_stock(self, invoice):
-        product_ids = list(
+        product_line_pairs = list(
             invoice.lines.filter(
                 deleted_at__isnull=True,
                 item_type="FINISHED_GOOD",
                 product_id__isnull=False,
-            ).values_list("product_id", flat=True).distinct()
+            ).values_list("tenant_id", "product_id").distinct()
         )
-        for product_id in product_ids:
-            sync_product_stock_quantity(
-                invoice.tenant_id,
-                invoice.warehouse_id,
-                product_id,
-            )
-        rebuild_product_costing(invoice.tenant_id, product_ids)
+        product_ids_by_tenant = {}
+        for line_tenant_id, product_id in product_line_pairs:
+            product_ids_by_tenant.setdefault(line_tenant_id, set()).add(product_id)
+            sync_product_stock_quantity(line_tenant_id, invoice.warehouse_id, product_id)
+        for line_tenant_id, product_ids in product_ids_by_tenant.items():
+            rebuild_product_costing(line_tenant_id, product_ids)
         raw_material_ids = list(
             invoice.lines.filter(
                 deleted_at__isnull=True,
@@ -150,10 +150,18 @@ class PurchaseInvoiceViewSet(viewsets.ModelViewSet):
             )
 
     def _sync_product_stock_pairs(self, tenant_id, warehouse_id, product_ids):
-        product_ids = {product_id for product_id in product_ids if product_id}
-        for product_id in product_ids:
-            sync_product_stock_quantity(tenant_id, warehouse_id, product_id)
-        rebuild_product_costing(tenant_id, product_ids)
+        product_ids_by_tenant = {}
+        for item in product_ids:
+            if isinstance(item, (list, tuple)):
+                line_tenant_id, product_id = item
+            else:
+                line_tenant_id, product_id = tenant_id, item
+            if product_id:
+                product_ids_by_tenant.setdefault(line_tenant_id, set()).add(product_id)
+        for line_tenant_id, scoped_product_ids in product_ids_by_tenant.items():
+            for product_id in scoped_product_ids:
+                sync_product_stock_quantity(line_tenant_id, warehouse_id, product_id)
+            rebuild_product_costing(line_tenant_id, scoped_product_ids)
 
     def _sync_raw_material_stock_pairs(self, tenant_id, warehouse_id, raw_material_ids):
         for raw_material_id in {raw_material_id for raw_material_id in raw_material_ids if raw_material_id}:
@@ -185,7 +193,7 @@ class PurchaseInvoiceViewSet(viewsets.ModelViewSet):
         instance = self.get_object()
         old_warehouse_id = instance.warehouse_id
         old_product_ids = list(
-            instance.lines.filter(deleted_at__isnull=True).values_list("product_id", flat=True)
+            instance.lines.filter(deleted_at__isnull=True).values_list("tenant_id", "product_id")
         )
         old_raw_material_ids = list(
             instance.lines.filter(deleted_at__isnull=True).values_list("raw_material_id", flat=True)
@@ -213,7 +221,7 @@ class PurchaseInvoiceViewSet(viewsets.ModelViewSet):
         tenant_id = instance.tenant_id
         warehouse_id = instance.warehouse_id
         product_ids = list(
-            instance.lines.filter(deleted_at__isnull=True).values_list("product_id", flat=True)
+            instance.lines.filter(deleted_at__isnull=True).values_list("tenant_id", "product_id")
         )
         raw_material_ids = list(
             instance.lines.filter(deleted_at__isnull=True).values_list("raw_material_id", flat=True)
@@ -235,14 +243,19 @@ class PurchaseInvoiceViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["get"], url_path="product-options")
     def product_options(self, request):
         tenant_id = request.user.tenant_id
+        tenant_ids = get_shared_tenant_ids(request)
         warehouse_id = request.query_params.get("warehouse_id")
         search = request.query_params.get("search", "").strip()
+        dimension_names = {
+            row["code"]: row["name"]
+            for row in Dimension.objects.filter(code__in=tenant_ids).values("code", "name")
+        }
 
         product_queryset = Product.objects.filter(
-            tenant_id=tenant_id,
+            tenant_id__in=tenant_ids,
             deleted_at__isnull=True,
             product_type__in=["FINISHED_GOOD", "READY_MADE"],
-        ).select_related("unit").order_by("name")
+        ).select_related("unit").order_by("tenant_id", "name")
 
         if search:
             product_queryset = product_queryset.filter(name__icontains=search)
@@ -252,7 +265,7 @@ class PurchaseInvoiceViewSet(viewsets.ModelViewSet):
             quantity = Decimal("0.00")
             if warehouse_id:
                 stock = ProductStock.objects.filter(
-                    tenant_id=tenant_id,
+                    tenant_id=product.tenant_id,
                     warehouse_id=warehouse_id,
                     product_id=product.id,
                     deleted_at__isnull=True,
@@ -263,11 +276,13 @@ class PurchaseInvoiceViewSet(viewsets.ModelViewSet):
                     "id": str(product.id),
                     "item_type": "FINISHED_GOOD",
                     "name": product.name,
+                    "dimension_code": product.tenant_id,
+                    "dimension_name": dimension_names.get(product.tenant_id, product.tenant_id),
                     "quantity": str(quantity),
                     "unit": product.unit.name if product.unit else None,
                     "product_type": product.product_type,
                     "net_amount": str(product.net_amount),
-                    "average_cost": str(get_current_product_average_cost(tenant_id, product.id)),
+                    "average_cost": str(get_current_product_average_cost(product.tenant_id, product.id)),
                 }
             )
 
@@ -339,22 +354,28 @@ class PurchaseReturnViewSet(viewsets.ModelViewSet):
     def _sync_purchase_return_stock(self, purchase_return):
         product_ids = list(
             purchase_return.lines.filter(deleted_at__isnull=True)
-            .values_list("product_id", flat=True)
+            .values_list("tenant_id", "product_id")
             .distinct()
         )
-        for product_id in product_ids:
-            sync_product_stock_quantity(
-                purchase_return.tenant_id,
-                purchase_return.purchase_invoice.warehouse_id,
-                product_id,
-            )
-        rebuild_product_costing(purchase_return.tenant_id, product_ids)
+        self._sync_product_stock_pairs(
+            purchase_return.tenant_id,
+            purchase_return.purchase_invoice.warehouse_id,
+            product_ids,
+        )
 
     def _sync_product_stock_pairs(self, tenant_id, warehouse_id, product_ids):
-        product_ids = {product_id for product_id in product_ids if product_id}
-        for product_id in product_ids:
-            sync_product_stock_quantity(tenant_id, warehouse_id, product_id)
-        rebuild_product_costing(tenant_id, product_ids)
+        product_ids_by_tenant = {}
+        for item in product_ids:
+            if isinstance(item, (list, tuple)):
+                line_tenant_id, product_id = item
+            else:
+                line_tenant_id, product_id = tenant_id, item
+            if product_id:
+                product_ids_by_tenant.setdefault(line_tenant_id, set()).add(product_id)
+        for line_tenant_id, scoped_product_ids in product_ids_by_tenant.items():
+            for product_id in scoped_product_ids:
+                sync_product_stock_quantity(line_tenant_id, warehouse_id, product_id)
+            rebuild_product_costing(line_tenant_id, scoped_product_ids)
 
     def create(self, request, *args, **kwargs):
         with transaction.atomic():
@@ -379,7 +400,7 @@ class PurchaseReturnViewSet(viewsets.ModelViewSet):
         instance = self.get_object()
         old_warehouse_id = instance.purchase_invoice.warehouse_id
         old_product_ids = list(
-            instance.lines.filter(deleted_at__isnull=True).values_list("product_id", flat=True)
+            instance.lines.filter(deleted_at__isnull=True).values_list("tenant_id", "product_id")
         )
         with transaction.atomic():
             serializer = self.get_serializer(instance, data=request.data, partial=partial)
@@ -403,7 +424,7 @@ class PurchaseReturnViewSet(viewsets.ModelViewSet):
         tenant_id = instance.tenant_id
         warehouse_id = instance.purchase_invoice.warehouse_id
         product_ids = list(
-            instance.lines.filter(deleted_at__isnull=True).values_list("product_id", flat=True)
+            instance.lines.filter(deleted_at__isnull=True).values_list("tenant_id", "product_id")
         )
         with transaction.atomic():
             self.perform_destroy(instance)
@@ -446,14 +467,14 @@ class PurchaseReturnViewSet(viewsets.ModelViewSet):
         if not purchase_invoice_id:
             raise ValidationError({"purchase_invoice_id": "Purchase invoice is required."})
 
+        tenant_ids = get_shared_tenant_ids(request)
         try:
             invoice = (
                 PurchaseInvoice.objects.select_related("warehouse", "supplier")
-                .get(
-                    id=purchase_invoice_id,
-                    tenant_id=tenant_id,
-                    deleted_at__isnull=True,
-                )
+                .filter(id=purchase_invoice_id, deleted_at__isnull=True)
+                .filter(Q(tenant_id__in=tenant_ids) | Q(lines__tenant_id__in=tenant_ids))
+                .distinct()
+                .get()
             )
         except PurchaseInvoice.DoesNotExist:
             raise ValidationError({"purchase_invoice_id": "Purchase invoice not found for this tenant."})
@@ -482,6 +503,7 @@ class PurchaseReturnViewSet(viewsets.ModelViewSet):
 
         payload = []
         invoice_lines = invoice.lines.filter(
+            tenant_id__in=tenant_ids,
             deleted_at__isnull=True,
             item_type="FINISHED_GOOD",
         ).select_related("product")

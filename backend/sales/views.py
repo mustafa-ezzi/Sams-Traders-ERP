@@ -158,18 +158,29 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
         return self.get_queryset().get(id=invoice_id)
 
     def _sync_invoice_product_stock(self, invoice):
-        product_ids = list(
-            invoice.lines.filter(deleted_at__isnull=True).values_list("product_id", flat=True).distinct()
+        line_pairs = list(
+            invoice.lines.filter(deleted_at__isnull=True)
+            .values_list("tenant_id", "product_id")
+            .distinct()
         )
-        for product_id in product_ids:
-            sync_product_stock_quantity(invoice.tenant_id, invoice.warehouse_id, product_id)
-        rebuild_product_costing(invoice.tenant_id, product_ids)
+        product_ids_by_tenant = {}
+        for line_tenant_id, product_id in line_pairs:
+            product_ids_by_tenant.setdefault(line_tenant_id, set()).add(product_id)
+            sync_product_stock_quantity(line_tenant_id, invoice.warehouse_id, product_id)
+        for line_tenant_id, product_ids in product_ids_by_tenant.items():
+            rebuild_product_costing(line_tenant_id, product_ids)
 
-    def _sync_product_stock_pairs(self, tenant_id, warehouse_id, product_ids):
-        product_ids = {product_id for product_id in product_ids if product_id}
-        for product_id in product_ids:
-            sync_product_stock_quantity(tenant_id, warehouse_id, product_id)
-        rebuild_product_costing(tenant_id, product_ids)
+    def _sync_product_stock_pairs(self, tenant_id, warehouse_id, product_ids, line_pairs=None):
+        if line_pairs is None:
+            line_pairs = [(tenant_id, product_id) for product_id in product_ids]
+        product_ids_by_tenant = {}
+        for line_tenant_id, product_id in line_pairs:
+            if product_id:
+                product_ids_by_tenant.setdefault(line_tenant_id, set()).add(product_id)
+        for line_tenant_id, product_ids in product_ids_by_tenant.items():
+            for product_id in product_ids:
+                sync_product_stock_quantity(line_tenant_id, warehouse_id, product_id)
+            rebuild_product_costing(line_tenant_id, product_ids)
 
     def create(self, request, *args, **kwargs):
         with transaction.atomic():
@@ -191,15 +202,15 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
         partial = kwargs.pop("partial", False)
         instance = self.get_object()
         old_warehouse_id = instance.warehouse_id
-        old_product_ids = list(
-            instance.lines.filter(deleted_at__isnull=True).values_list("product_id", flat=True)
+        old_line_pairs = list(
+            instance.lines.filter(deleted_at__isnull=True).values_list("tenant_id", "product_id")
         )
         with transaction.atomic():
             serializer = self.get_serializer(instance, data=request.data, partial=partial)
             serializer.is_valid(raise_exception=True)
             invoice = serializer.save()
             self._sync_invoice_product_stock(invoice)
-            self._sync_product_stock_pairs(instance.tenant_id, old_warehouse_id, old_product_ids)
+            self._sync_product_stock_pairs(instance.tenant_id, old_warehouse_id, [], old_line_pairs)
             sync_sales_invoice_journal(self._get_serializable_invoice(invoice.id))
         response_serializer = self.get_serializer(self._get_serializable_invoice(invoice.id))
         return Response(response_serializer.data)
@@ -213,12 +224,12 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
         instance = self.get_object()
         tenant_id = instance.tenant_id
         warehouse_id = instance.warehouse_id
-        product_ids = list(
-            instance.lines.filter(deleted_at__isnull=True).values_list("product_id", flat=True)
+        old_line_pairs = list(
+            instance.lines.filter(deleted_at__isnull=True).values_list("tenant_id", "product_id")
         )
         with transaction.atomic():
             self.perform_destroy(instance)
-            self._sync_product_stock_pairs(tenant_id, warehouse_id, product_ids)
+            self._sync_product_stock_pairs(tenant_id, warehouse_id, [], old_line_pairs)
             delete_journal_entry(
                 JournalEntry.SourceType.SALES_INVOICE,
                 instance.id,
@@ -466,24 +477,33 @@ class SalesReturnViewSet(viewsets.ModelViewSet):
         return self.get_queryset().get(id=sales_return_id)
 
     def _sync_sales_return_stock(self, sales_return):
-        product_ids = list(
+        line_pairs = list(
             sales_return.lines.filter(deleted_at__isnull=True)
-            .values_list("product_id", flat=True)
+            .values_list("tenant_id", "product_id")
             .distinct()
         )
-        for product_id in product_ids:
+        product_ids_by_tenant = {}
+        for line_tenant_id, product_id in line_pairs:
+            product_ids_by_tenant.setdefault(line_tenant_id, set()).add(product_id)
             sync_product_stock_quantity(
-                sales_return.tenant_id,
+                line_tenant_id,
                 sales_return.sales_invoice.warehouse_id,
                 product_id,
             )
-        rebuild_product_costing(sales_return.tenant_id, product_ids)
+        for line_tenant_id, product_ids in product_ids_by_tenant.items():
+            rebuild_product_costing(line_tenant_id, product_ids)
 
-    def _sync_product_stock_pairs(self, tenant_id, warehouse_id, product_ids):
-        product_ids = {product_id for product_id in product_ids if product_id}
-        for product_id in product_ids:
-            sync_product_stock_quantity(tenant_id, warehouse_id, product_id)
-        rebuild_product_costing(tenant_id, product_ids)
+    def _sync_product_stock_pairs(self, tenant_id, warehouse_id, product_ids, line_pairs=None):
+        if line_pairs is None:
+            line_pairs = [(tenant_id, product_id) for product_id in product_ids]
+        product_ids_by_tenant = {}
+        for line_tenant_id, product_id in line_pairs:
+            if product_id:
+                product_ids_by_tenant.setdefault(line_tenant_id, set()).add(product_id)
+        for line_tenant_id, product_ids in product_ids_by_tenant.items():
+            for product_id in product_ids:
+                sync_product_stock_quantity(line_tenant_id, warehouse_id, product_id)
+            rebuild_product_costing(line_tenant_id, product_ids)
 
     def create(self, request, *args, **kwargs):
         with transaction.atomic():
@@ -507,15 +527,15 @@ class SalesReturnViewSet(viewsets.ModelViewSet):
         partial = kwargs.pop("partial", False)
         instance = self.get_object()
         old_warehouse_id = instance.sales_invoice.warehouse_id
-        old_product_ids = list(
-            instance.lines.filter(deleted_at__isnull=True).values_list("product_id", flat=True)
+        old_line_pairs = list(
+            instance.lines.filter(deleted_at__isnull=True).values_list("tenant_id", "product_id")
         )
         with transaction.atomic():
             serializer = self.get_serializer(instance, data=request.data, partial=partial)
             serializer.is_valid(raise_exception=True)
             sales_return = serializer.save()
             self._sync_sales_return_stock(sales_return)
-            self._sync_product_stock_pairs(instance.tenant_id, old_warehouse_id, old_product_ids)
+            self._sync_product_stock_pairs(instance.tenant_id, old_warehouse_id, [], old_line_pairs)
             sync_sales_return_journal(self._get_serializable_return(sales_return.id))
         response_serializer = self.get_serializer(
             self._get_serializable_return(sales_return.id)
@@ -531,12 +551,12 @@ class SalesReturnViewSet(viewsets.ModelViewSet):
         instance = self.get_object()
         tenant_id = instance.tenant_id
         warehouse_id = instance.sales_invoice.warehouse_id
-        product_ids = list(
-            instance.lines.filter(deleted_at__isnull=True).values_list("product_id", flat=True)
+        old_line_pairs = list(
+            instance.lines.filter(deleted_at__isnull=True).values_list("tenant_id", "product_id")
         )
         with transaction.atomic():
             self.perform_destroy(instance)
-            self._sync_product_stock_pairs(tenant_id, warehouse_id, product_ids)
+            self._sync_product_stock_pairs(tenant_id, warehouse_id, [], old_line_pairs)
             delete_journal_entry(
                 JournalEntry.SourceType.SALES_RETURN,
                 instance.id,
@@ -575,10 +595,13 @@ class SalesReturnViewSet(viewsets.ModelViewSet):
             raise ValidationError({"sales_invoice_id": "Sales invoice is required."})
 
         try:
-            invoice = SalesInvoice.objects.select_related("warehouse", "customer").get(
-                id=sales_invoice_id,
-                tenant_id__in=get_shared_tenant_filter(request)["tenant_id__in"],
-                deleted_at__isnull=True,
+            tenant_ids = get_shared_tenant_filter(request)["tenant_id__in"]
+            invoice = (
+                SalesInvoice.objects.select_related("warehouse", "customer")
+                .filter(id=sales_invoice_id, deleted_at__isnull=True)
+                .filter(Q(tenant_id__in=tenant_ids) | Q(lines__tenant_id__in=tenant_ids))
+                .distinct()
+                .get()
             )
         except SalesInvoice.DoesNotExist:
             raise ValidationError({"sales_invoice_id": "Sales invoice not found."})
@@ -606,7 +629,10 @@ class SalesReturnViewSet(viewsets.ModelViewSet):
             }
 
         payload = []
-        invoice_lines = invoice.lines.filter(deleted_at__isnull=True).select_related("product")
+        invoice_lines = invoice.lines.filter(
+            tenant_id__in=get_shared_tenant_filter(request)["tenant_id__in"],
+            deleted_at__isnull=True,
+        ).select_related("product")
         for invoice_line in invoice_lines:
             metrics = get_sales_return_line_metrics(
                 invoice_line,

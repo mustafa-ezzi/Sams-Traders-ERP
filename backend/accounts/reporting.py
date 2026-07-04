@@ -407,6 +407,36 @@ def _dimension_name_map(tenant_ids):
     }
 
 
+def _allocated_invoice_amount(invoice, amount, scoped_line_total):
+    if not invoice.gross_amount:
+        return Decimal("0.00")
+    return _money((_money(amount) * _money(scoped_line_total)) / invoice.gross_amount)
+
+
+def _sales_invoice_line_totals(invoice, tenant_ids):
+    return {
+        row["tenant_id"]: _money(row["total"])
+        for row in invoice.lines.filter(
+            tenant_id__in=tenant_ids,
+            deleted_at__isnull=True,
+        )
+        .values("tenant_id")
+        .annotate(total=Coalesce(Sum("total_amount"), Decimal("0.00")))
+    }
+
+
+def _purchase_invoice_line_totals(invoice, tenant_ids):
+    return {
+        row["tenant_id"]: _money(row["total"])
+        for row in invoice.lines.filter(
+            tenant_id__in=tenant_ids,
+            deleted_at__isnull=True,
+        )
+        .values("tenant_id")
+        .annotate(total=Coalesce(Sum("total_amount"), Decimal("0.00")))
+    }
+
+
 def _build_invoice_aging_report(
     *,
     tenant_ids,
@@ -414,6 +444,7 @@ def _build_invoice_aging_report(
     invoice_queryset,
     party_attr,
     financials_fn,
+    line_totals_fn,
     settled_keys,
     report_type,
 ):
@@ -427,58 +458,70 @@ def _build_invoice_aging_report(
     detail_rows = []
     party_map = {}
 
-    for invoice in invoice_queryset.select_related(party_attr):
+    for invoice in invoice_queryset.select_related(party_attr).prefetch_related("lines"):
         financials = financials_fn(invoice)
-        balance = _money(financials["balance_amount"])
-        if balance <= 0:
+        line_totals = line_totals_fn(invoice, tenant_ids)
+        if not line_totals:
             continue
 
         party = getattr(invoice, party_attr)
         basis_date = invoice.due_date or invoice.date
         days_overdue = max(0, (as_of_date - basis_date).days)
         bucket = _aging_bucket_for_days(days_overdue)
-        settled_amount = sum(_money(financials.get(key, 0)) for key in settled_keys)
+        for line_tenant_id, scoped_line_total in line_totals.items():
+            net_amount = _allocated_invoice_amount(
+                invoice,
+                financials["net_amount"],
+                scoped_line_total,
+            )
+            settled_amount = sum(
+                _allocated_invoice_amount(invoice, financials.get(key, 0), scoped_line_total)
+                for key in settled_keys
+            )
+            balance = max(_money(net_amount - settled_amount), Decimal("0.00"))
+            if balance <= 0:
+                continue
 
-        party_id = str(party.id)
-        party_key = (invoice.tenant_id, party_id)
-        if party_key not in party_map:
-            party_map[party_key] = {
-                "party_id": party_id,
-                "party_name": party.business_name or party.name or "",
-                "tenant_id": invoice.tenant_id,
-                "dimension_name": dimension_names.get(invoice.tenant_id, invoice.tenant_id),
-                "buckets": _empty_aging_buckets(),
-                "total": Decimal("0.00"),
-                "invoice_count": 0,
-            }
+            party_id = str(party.id)
+            party_key = (line_tenant_id, party_id)
+            if party_key not in party_map:
+                party_map[party_key] = {
+                    "party_id": party_id,
+                    "party_name": party.business_name or party.name or "",
+                    "tenant_id": line_tenant_id,
+                    "dimension_name": dimension_names.get(line_tenant_id, line_tenant_id),
+                    "buckets": _empty_aging_buckets(),
+                    "total": Decimal("0.00"),
+                    "invoice_count": 0,
+                }
 
-        party_row = party_map[party_key]
-        party_row["buckets"][bucket] = _money(party_row["buckets"][bucket] + balance)
-        party_row["total"] = _money(party_row["total"] + balance)
-        party_row["invoice_count"] += 1
+            party_row = party_map[party_key]
+            party_row["buckets"][bucket] = _money(party_row["buckets"][bucket] + balance)
+            party_row["total"] = _money(party_row["total"] + balance)
+            party_row["invoice_count"] += 1
 
-        bucket_totals[bucket] = _money(bucket_totals[bucket] + balance)
-        total_outstanding = _money(total_outstanding + balance)
+            bucket_totals[bucket] = _money(bucket_totals[bucket] + balance)
+            total_outstanding = _money(total_outstanding + balance)
 
-        detail_rows.append(
-            {
-                "invoice_id": str(invoice.id),
-                "document_number": invoice.invoice_number,
-                "party_id": party_id,
-                "party_name": party_row["party_name"],
-                "tenant_id": invoice.tenant_id,
-                "dimension_name": party_row["dimension_name"],
-                "invoice_date": invoice.date.isoformat(),
-                "due_date": invoice.due_date.isoformat() if invoice.due_date else "",
-                "aging_basis_date": basis_date.isoformat(),
-                "days_overdue": days_overdue,
-                "bucket": bucket,
-                "bucket_label": AGING_BUCKET_LABELS[bucket],
-                "net_amount": str(_money(financials["net_amount"])),
-                "settled_amount": str(_money(settled_amount)),
-                "balance_amount": str(balance),
-            }
-        )
+            detail_rows.append(
+                {
+                    "invoice_id": str(invoice.id),
+                    "document_number": invoice.invoice_number,
+                    "party_id": party_id,
+                    "party_name": party_row["party_name"],
+                    "tenant_id": line_tenant_id,
+                    "dimension_name": party_row["dimension_name"],
+                    "invoice_date": invoice.date.isoformat(),
+                    "due_date": invoice.due_date.isoformat() if invoice.due_date else "",
+                    "aging_basis_date": basis_date.isoformat(),
+                    "days_overdue": days_overdue,
+                    "bucket": bucket,
+                    "bucket_label": AGING_BUCKET_LABELS[bucket],
+                    "net_amount": str(_money(net_amount)),
+                    "settled_amount": str(_money(settled_amount)),
+                    "balance_amount": str(balance),
+                }
+            )
 
     party_rows = sorted(
         party_map.values(),
@@ -515,10 +558,12 @@ def build_receivable_aging_report(tenant_ids, as_of_date):
     from sales.models import SalesInvoice
     from sales.services import get_sales_invoice_financials
 
-    queryset = SalesInvoice.objects.filter(
-        tenant_id__in=tenant_ids,
-        deleted_at__isnull=True,
-    ).order_by("date", "invoice_number")
+    queryset = (
+        SalesInvoice.objects.filter(deleted_at__isnull=True)
+        .filter(Q(tenant_id__in=tenant_ids) | Q(lines__tenant_id__in=tenant_ids))
+        .distinct()
+        .order_by("date", "invoice_number")
+    )
 
     return _build_invoice_aging_report(
         tenant_ids=tenant_ids,
@@ -526,6 +571,7 @@ def build_receivable_aging_report(tenant_ids, as_of_date):
         invoice_queryset=queryset,
         party_attr="customer",
         financials_fn=get_sales_invoice_financials,
+        line_totals_fn=_sales_invoice_line_totals,
         settled_keys=("returned_amount", "received_amount"),
         report_type="receivable",
     )
@@ -535,10 +581,12 @@ def build_payable_aging_report(tenant_ids, as_of_date):
     from purchase.models import PurchaseInvoice
     from purchase.services import get_purchase_invoice_financials
 
-    queryset = PurchaseInvoice.objects.filter(
-        tenant_id__in=tenant_ids,
-        deleted_at__isnull=True,
-    ).order_by("date", "invoice_number")
+    queryset = (
+        PurchaseInvoice.objects.filter(deleted_at__isnull=True)
+        .filter(Q(tenant_id__in=tenant_ids) | Q(lines__tenant_id__in=tenant_ids))
+        .distinct()
+        .order_by("date", "invoice_number")
+    )
 
     return _build_invoice_aging_report(
         tenant_ids=tenant_ids,
@@ -546,6 +594,7 @@ def build_payable_aging_report(tenant_ids, as_of_date):
         invoice_queryset=queryset,
         party_attr="supplier",
         financials_fn=get_purchase_invoice_financials,
+        line_totals_fn=_purchase_invoice_line_totals,
         settled_keys=("returned_amount", "paid_amount"),
         report_type="payable",
     )
@@ -567,15 +616,17 @@ def build_sales_report(
     dimension_names = _dimension_name_map(tenant_ids)
     line_queryset = SalesInvoiceLine.objects.filter(
         deleted_at__isnull=True,
+        tenant_id__in=tenant_ids,
     ).select_related("product", "product__unit")
 
     invoices = (
         SalesInvoice.objects.filter(
-            tenant_id__in=tenant_ids,
             deleted_at__isnull=True,
             date__gte=from_date,
             date__lte=to_date,
         )
+        .filter(Q(tenant_id__in=tenant_ids) | Q(lines__tenant_id__in=tenant_ids))
+        .distinct()
         .select_related("customer", "warehouse", "salesman", "sales_order")
         .prefetch_related(Prefetch("lines", queryset=line_queryset))
         .order_by("date", "invoice_number")
@@ -658,16 +709,35 @@ def build_sales_report(
         line_net = sum((line.total_amount for line in lines), Decimal("0.00"))
         cost_total = sum((line.cost_total for line in lines), Decimal("0.00"))
         profit = sum((line.profit for line in lines), Decimal("0.00"))
+        invoice_net = (
+            _money((invoice.net_amount * line_net) / invoice.gross_amount)
+            if invoice.gross_amount
+            else Decimal("0.00")
+        )
+        returned_amount = (
+            _money((financials["returned_amount"] * line_net) / invoice.gross_amount)
+            if invoice.gross_amount
+            else Decimal("0.00")
+        )
+        received_amount = (
+            _money((financials["received_amount"] * line_net) / invoice.gross_amount)
+            if invoice.gross_amount
+            else Decimal("0.00")
+        )
+        balance_amount = max(
+            _money(invoice_net - returned_amount - received_amount),
+            Decimal("0.00"),
+        )
 
         row["invoice_count"] += 1
         row["quantity"] += line_quantity
         row["gross_amount"] += gross
         row["line_discount"] += line_discount
         row["line_net_sales"] += line_net
-        row["invoice_net_sales"] += invoice.net_amount
-        row["returned_amount"] += financials["returned_amount"]
-        row["received_amount"] += financials["received_amount"]
-        row["balance_amount"] += financials["balance_amount"]
+        row["invoice_net_sales"] += invoice_net
+        row["returned_amount"] += returned_amount
+        row["received_amount"] += received_amount
+        row["balance_amount"] += balance_amount
         row["cost_total"] += cost_total
         row["profit"] += profit
 
@@ -678,6 +748,10 @@ def build_sales_report(
             "line_net": line_net,
             "cost_total": cost_total,
             "profit": profit,
+            "invoice_net": invoice_net,
+            "returned_amount": returned_amount,
+            "received_amount": received_amount,
+            "balance_amount": balance_amount,
         }
 
     invoices = list(invoices)
@@ -689,6 +763,7 @@ def build_sales_report(
         scoped_lines = [
             line
             for line in invoice.lines.all()
+            if line.tenant_id in tenant_ids
             if not product_id or str(line.product_id) == str(product_id)
         ]
         if not scoped_lines:
@@ -721,10 +796,10 @@ def build_sales_report(
         summary["line_discount"] += line_totals["line_discount"]
         summary["line_net_sales"] += line_totals["line_net"]
         summary["invoice_discount"] += invoice.invoice_discount
-        summary["invoice_net_sales"] += invoice.net_amount
-        summary["returned_amount"] += financials["returned_amount"]
-        summary["received_amount"] += financials["received_amount"]
-        summary["balance_amount"] += financials["balance_amount"]
+        summary["invoice_net_sales"] += line_totals["invoice_net"]
+        summary["returned_amount"] += line_totals["returned_amount"]
+        summary["received_amount"] += line_totals["received_amount"]
+        summary["balance_amount"] += line_totals["balance_amount"]
         summary["cost_total"] += line_totals["cost_total"]
         summary["profit"] += line_totals["profit"]
         summary["salesman_commission"] += invoice.salesman_commission_amount
@@ -747,7 +822,11 @@ def build_sales_report(
             row["gross_amount"] += line.amount
             row["line_discount"] += line.discount
             row["line_net_sales"] += line.total_amount
-            row["invoice_net_sales"] += line.total_amount
+            row["invoice_net_sales"] += (
+                _money((invoice.net_amount * line.total_amount) / invoice.gross_amount)
+                if invoice.gross_amount
+                else Decimal("0.00")
+            )
             row["cost_total"] += line.cost_total
             row["profit"] += line.profit
 
@@ -779,15 +858,17 @@ def build_sales_report(
         )
         add_amounts(warehouse_row, invoice, scoped_lines, financials)
 
-        dimension_row = add_group_row(
-            dimension_rows_map,
-            invoice.tenant_id,
-            {
-                "tenant_id": invoice.tenant_id,
-                "dimension_name": dimension_names.get(invoice.tenant_id, invoice.tenant_id),
-            },
-        )
-        add_amounts(dimension_row, invoice, scoped_lines, financials)
+        for dimension_tenant_id in sorted({line.tenant_id for line in scoped_lines}):
+            dimension_lines = [line for line in scoped_lines if line.tenant_id == dimension_tenant_id]
+            dimension_row = add_group_row(
+                dimension_rows_map,
+                dimension_tenant_id,
+                {
+                    "tenant_id": dimension_tenant_id,
+                    "dimension_name": dimension_names.get(dimension_tenant_id, dimension_tenant_id),
+                },
+            )
+            add_amounts(dimension_row, invoice, dimension_lines, financials)
 
         month_key = invoice.date.replace(day=1).isoformat()
         month_row = monthly_rows_map[month_key]
@@ -814,10 +895,10 @@ def build_sales_report(
                 "line_discount": str(_money(line_totals["line_discount"])),
                 "line_net_sales": str(_money(line_totals["line_net"])),
                 "invoice_discount": str(_money(invoice.invoice_discount)),
-                "invoice_net_sales": str(_money(invoice.net_amount)),
-                "returned_amount": str(_money(financials["returned_amount"])),
-                "received_amount": str(_money(financials["received_amount"])),
-                "balance_amount": str(_money(financials["balance_amount"])),
+                "invoice_net_sales": str(_money(line_totals["invoice_net"])),
+                "returned_amount": str(_money(line_totals["returned_amount"])),
+                "received_amount": str(_money(line_totals["received_amount"])),
+                "balance_amount": str(_money(line_totals["balance_amount"])),
                 "cost_total": str(_money(line_totals["cost_total"])),
                 "profit": str(_money(line_totals["profit"])),
                 "margin_percent": str(_money(margin)),

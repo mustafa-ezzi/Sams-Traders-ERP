@@ -6,7 +6,11 @@ from rest_framework.exceptions import ValidationError
 
 from accounts.models import Account, Expense, JournalEntry, JournalLine, BankTransfer
 from inventory.models import PartyOpeningBalance
-from inventory.party_accounts import resolve_opening_equity_account
+from inventory.party_accounts import (
+    resolve_default_payable_account,
+    resolve_default_receivable_account,
+    resolve_opening_equity_account,
+)
 from purchase.models import PurchaseBankPayment, PurchaseInvoice, PurchaseReturn
 from sales.models import SalesBankReceipt, SalesInvoice, SalesReturn
 
@@ -22,6 +26,38 @@ def _resolve_party_account(party, field_label):
     if not party or not party.account_id:
         raise ValidationError({field_label: f"{field_label} account is required for journal posting."})
     return party.account
+
+
+def _party_control_account_for_dimension(party, field_label, tenant_id):
+    if field_label == "Customer":
+        return resolve_default_receivable_account([tenant_id])
+    if field_label == "Supplier":
+        return resolve_default_payable_account([tenant_id])
+    return _resolve_party_account(party, field_label)
+
+
+def _account_for_dimension(account, tenant_id):
+    if account.tenant_id == tenant_id:
+        return account
+
+    matching_account = Account.objects.filter(
+        tenant_id=tenant_id,
+        code=account.code,
+        deleted_at__isnull=True,
+        is_active=True,
+        is_postable=True,
+    ).first()
+    if matching_account:
+        return matching_account
+
+    raise ValidationError(
+        {
+            "account": (
+                f"Account {account.code} - {account.name} was selected from "
+                f"{account.tenant_id}, but no active postable copy exists in {tenant_id}."
+            )
+        }
+    )
 
 
 def _resolve_product_account(product, field_name, error_label):
@@ -86,6 +122,45 @@ def _allocate_amounts(entries, target_total):
     return allocated
 
 
+def _sales_invoice_weights(invoice):
+    weights = {}
+    for line in invoice.lines.filter(deleted_at__isnull=True).select_related("product"):
+        tenant_id = line.product.tenant_id
+        weights[tenant_id] = weights.get(tenant_id, Decimal("0.00")) + quantize_money(
+            line.total_amount
+        )
+    return weights
+
+
+def _purchase_invoice_weights(invoice):
+    weights = {}
+    lines = invoice.lines.filter(deleted_at__isnull=True).select_related(
+        "product",
+        "raw_material",
+    )
+    for line in lines:
+        tenant_id = line.raw_material.tenant_id if line.item_type == "RAW_MATERIAL" else line.product.tenant_id
+        weights[tenant_id] = weights.get(tenant_id, Decimal("0.00")) + quantize_money(
+            line.total_amount
+        )
+    return weights
+
+
+def _allocate_invoice_amount_by_tenant(invoice, target_total, weights):
+    weighted_entries = [
+        {"tenant_id": tenant_id, "weight": amount}
+        for tenant_id, amount in weights.items()
+        if quantize_money(amount) > 0
+    ]
+    if not weighted_entries:
+        return {invoice.tenant_id: quantize_money(target_total)}
+
+    return {
+        entry["tenant_id"]: entry["allocated_amount"]
+        for entry in _allocate_amounts(weighted_entries, target_total)
+    }
+
+
 def _upsert_journal_entry(
     *,
     tenant_id,
@@ -130,7 +205,7 @@ def _upsert_journal_entry(
 
     for line in lines:
         JournalLine.objects.create(
-            tenant_id=tenant_id,
+            tenant_id=line.get("tenant_id") or line["account"].tenant_id or tenant_id,
             journal_entry=entry,
             account=line["account"],
             debit=quantize_money(line["debit"]),
@@ -158,7 +233,6 @@ def delete_journal_entry(source_type, source_id, tenant_id):
 
 
 def _build_purchase_invoice_lines(invoice):
-    supplier_account = _resolve_party_account(invoice.supplier, "Supplier")
     weighted_lines = []
     invoice_lines = invoice.lines.filter(deleted_at__isnull=True).select_related(
         "product__category",
@@ -173,12 +247,15 @@ def _build_purchase_invoice_lines(invoice):
                 line.raw_material, "inventory_account", "inventory_account"
             )
             line_description = line.raw_material.name
+            line_tenant_id = line.raw_material.tenant_id
         else:
             inventory_account = _resolve_product_account(line.product, "inventory_account", "inventory_account")
             line_description = line.product.name
+            line_tenant_id = line.product.tenant_id
         weighted_lines.append(
             {
                 "account": inventory_account,
+                "tenant_id": line_tenant_id,
                 "weight": line.total_amount,
                 "line_description": line_description,
             }
@@ -187,6 +264,7 @@ def _build_purchase_invoice_lines(invoice):
     inventory_lines = [
         {
             "account": line["account"],
+            "tenant_id": line["tenant_id"],
             "debit": line["allocated_amount"],
             "credit": Decimal("0.00"),
             "line_description": line["line_description"],
@@ -195,11 +273,12 @@ def _build_purchase_invoice_lines(invoice):
     ]
     inventory_by_account = {}
     for line in inventory_lines:
-        key = line["account"].id
+        key = (line["tenant_id"], line["account"].id)
         current = inventory_by_account.setdefault(
             key,
             {
                 "account": line["account"],
+                "tenant_id": line["tenant_id"],
                 "debit": Decimal("0.00"),
                 "credit": Decimal("0.00"),
                 "line_description": "Purchase Inventory",
@@ -207,31 +286,31 @@ def _build_purchase_invoice_lines(invoice):
         )
         current["debit"] += line["debit"]
 
-    return [
-        *inventory_by_account.values(),
-        {
-            "account": supplier_account,
-            "debit": Decimal("0.00"),
-            "credit": invoice.net_amount,
-            "line_description": "Purchase Payable",
-            "people_type": "Supplier",
-            "people_name": invoice.supplier.business_name,
-        },
-    ]
+    payable_lines = []
+    for item in inventory_by_account.values():
+        supplier_account = _party_control_account_for_dimension(
+            invoice.supplier,
+            "Supplier",
+            item["tenant_id"],
+        )
+        payable_lines.append(
+            {
+                "account": supplier_account,
+                "tenant_id": item["tenant_id"],
+                "debit": Decimal("0.00"),
+                "credit": item["debit"],
+                "line_description": "Purchase Payable",
+                "people_type": "Supplier",
+                "people_name": invoice.supplier.business_name,
+            }
+        )
+
+    return [*inventory_by_account.values(), *payable_lines]
 
 
 def _build_purchase_return_lines(purchase_return):
-    supplier_account = _resolve_party_account(purchase_return.supplier, "Supplier")
-    lines = [
-        {
-            "account": supplier_account,
-            "debit": purchase_return.gross_amount,
-            "credit": Decimal("0.00"),
-            "line_description": "Purchase Return Payable Reversal",
-            "people_type": "Supplier",
-            "people_name": purchase_return.supplier.business_name,
-        }
-    ]
+    lines = []
+    payable_totals = {}
     inventory_totals = {}
     return_lines = purchase_return.lines.filter(deleted_at__isnull=True).select_related(
         "product__category",
@@ -239,15 +318,45 @@ def _build_purchase_return_lines(purchase_return):
         "product__category__inventory_account",
     )
     for line in return_lines:
+        tenant_id = line.product.tenant_id
+        payable_totals[tenant_id] = payable_totals.get(tenant_id, Decimal("0.00")) + quantize_money(
+            line.amount
+        )
         inventory_account = _resolve_product_account(line.product, "inventory_account", "inventory_account")
+        inventory_key = (tenant_id, inventory_account.id)
         bucket = inventory_totals.setdefault(
-            inventory_account.id,
-            {"account": inventory_account, "debit": Decimal("0.00"), "credit": Decimal("0.00")},
+            inventory_key,
+            {
+                "account": inventory_account,
+                "tenant_id": tenant_id,
+                "debit": Decimal("0.00"),
+                "credit": Decimal("0.00"),
+            },
         )
         bucket["credit"] += quantize_money(line.amount)
+
+    for tenant_id, amount in payable_totals.items():
+        supplier_account = _party_control_account_for_dimension(
+            purchase_return.supplier,
+            "Supplier",
+            tenant_id,
+        )
+        lines.append(
+            {
+                "account": supplier_account,
+                "tenant_id": tenant_id,
+                "debit": amount,
+                "credit": Decimal("0.00"),
+                "line_description": "Purchase Return Payable Reversal",
+                "people_type": "Supplier",
+                "people_name": purchase_return.supplier.business_name,
+            }
+        )
+
     lines.extend(
         {
             "account": item["account"],
+            "tenant_id": item["tenant_id"],
             "debit": Decimal("0.00"),
             "credit": item["credit"],
             "line_description": "Purchase Return Inventory",
@@ -258,27 +367,43 @@ def _build_purchase_return_lines(purchase_return):
 
 
 def _build_purchase_bank_payment_lines(payment):
-    supplier_account = _resolve_party_account(payment.supplier, "Supplier")
-    return [
-        {
-            "account": supplier_account,
-            "debit": payment.amount,
-            "credit": Decimal("0.00"),
-            "line_description": "Supplier Payment",
-            "people_type": "Supplier",
-            "people_name": payment.supplier.business_name,
-        },
-        {
-            "account": payment.bank_account,
-            "debit": Decimal("0.00"),
-            "credit": payment.amount,
-            "line_description": "Bank Payment",
-        },
-    ]
+    lines = []
+    allocations = _allocate_invoice_amount_by_tenant(
+        payment.purchase_invoice,
+        payment.amount,
+        _purchase_invoice_weights(payment.purchase_invoice),
+    )
+    for tenant_id, amount in allocations.items():
+        supplier_account = _party_control_account_for_dimension(
+            payment.supplier,
+            "Supplier",
+            tenant_id,
+        )
+        bank_account = _account_for_dimension(payment.bank_account, tenant_id)
+        lines.extend(
+            [
+                {
+                    "account": supplier_account,
+                    "tenant_id": tenant_id,
+                    "debit": amount,
+                    "credit": Decimal("0.00"),
+                    "line_description": "Supplier Payment",
+                    "people_type": "Supplier",
+                    "people_name": payment.supplier.business_name,
+                },
+                {
+                    "account": bank_account,
+                    "tenant_id": tenant_id,
+                    "debit": Decimal("0.00"),
+                    "credit": amount,
+                    "line_description": "Bank Payment",
+                },
+            ]
+        )
+    return lines
 
 
 def _build_sales_invoice_lines(invoice):
-    customer_account = _resolve_party_account(invoice.customer, "Customer")
     revenue_weighted = []
     cogs_totals = {}
     inventory_totals = {}
@@ -298,41 +423,57 @@ def _build_sales_invoice_lines(invoice):
         revenue_weighted.append(
             {
                 "account": revenue_account,
+                "tenant_id": line.product.tenant_id,
                 "weight": line.total_amount,
                 "line_description": line.product.name,
             }
         )
         cost_amount = quantize_money(quantize_money(line.quantity) * quantize_money(line.product.net_amount))
-        cogs_totals[cogs_account.id] = cogs_totals.get(cogs_account.id, {"account": cogs_account, "amount": Decimal("0.00")})
-        cogs_totals[cogs_account.id]["amount"] += cost_amount
-        inventory_totals[inventory_account.id] = inventory_totals.get(
-            inventory_account.id,
-            {"account": inventory_account, "amount": Decimal("0.00")},
+        cogs_key = (line.product.tenant_id, cogs_account.id)
+        inventory_key = (line.product.tenant_id, inventory_account.id)
+        cogs_totals[cogs_key] = cogs_totals.get(
+            cogs_key,
+            {"account": cogs_account, "tenant_id": line.product.tenant_id, "amount": Decimal("0.00")},
         )
-        inventory_totals[inventory_account.id]["amount"] += cost_amount
+        cogs_totals[cogs_key]["amount"] += cost_amount
+        inventory_totals[inventory_key] = inventory_totals.get(
+            inventory_key,
+            {"account": inventory_account, "tenant_id": line.product.tenant_id, "amount": Decimal("0.00")},
+        )
+        inventory_totals[inventory_key]["amount"] += cost_amount
 
     revenue_lines = _allocate_amounts(revenue_weighted, invoice.net_amount)
     revenue_totals = {}
     for line in revenue_lines:
-        revenue_totals[line["account"].id] = revenue_totals.get(
-            line["account"].id,
-            {"account": line["account"], "amount": Decimal("0.00")},
+        key = (line["tenant_id"], line["account"].id)
+        revenue_totals[key] = revenue_totals.get(
+            key,
+            {"account": line["account"], "tenant_id": line["tenant_id"], "amount": Decimal("0.00")},
         )
-        revenue_totals[line["account"].id]["amount"] += line["allocated_amount"]
+        revenue_totals[key]["amount"] += line["allocated_amount"]
 
-    lines = [
-        {
-            "account": customer_account,
-            "debit": invoice.net_amount,
-            "credit": Decimal("0.00"),
-            "line_description": "Customer Receivable",
-            "people_type": "Customer",
-            "people_name": invoice.customer.business_name,
-        }
-    ]
+    lines = []
+    for item in revenue_totals.values():
+        customer_account = _party_control_account_for_dimension(
+            invoice.customer,
+            "Customer",
+            item["tenant_id"],
+        )
+        lines.append(
+            {
+                "account": customer_account,
+                "tenant_id": item["tenant_id"],
+                "debit": item["amount"],
+                "credit": Decimal("0.00"),
+                "line_description": "Customer Receivable",
+                "people_type": "Customer",
+                "people_name": invoice.customer.business_name,
+            }
+        )
     lines.extend(
         {
             "account": item["account"],
+            "tenant_id": item["tenant_id"],
             "debit": Decimal("0.00"),
             "credit": item["amount"],
             "line_description": "Sales Revenue",
@@ -342,6 +483,7 @@ def _build_sales_invoice_lines(invoice):
     lines.extend(
         {
             "account": item["account"],
+            "tenant_id": item["tenant_id"],
             "debit": item["amount"],
             "credit": Decimal("0.00"),
             "line_description": "Cost of Goods Sold",
@@ -351,6 +493,7 @@ def _build_sales_invoice_lines(invoice):
     lines.extend(
         {
             "account": item["account"],
+            "tenant_id": item["tenant_id"],
             "debit": Decimal("0.00"),
             "credit": item["amount"],
             "line_description": "Inventory Reduction",
@@ -361,17 +504,8 @@ def _build_sales_invoice_lines(invoice):
 
 
 def _build_sales_return_lines(sales_return):
-    customer_account = _resolve_party_account(sales_return.customer, "Customer")
-    lines = [
-        {
-            "account": customer_account,
-            "debit": Decimal("0.00"),
-            "credit": sales_return.gross_amount,
-            "line_description": "Customer Receivable Reversal",
-            "people_type": "Customer",
-            "people_name": sales_return.customer.business_name,
-        }
-    ]
+    lines = []
+    receivable_totals = {}
     revenue_totals = {}
     cogs_totals = {}
     inventory_totals = {}
@@ -385,30 +519,56 @@ def _build_sales_return_lines(sales_return):
         "product__category__revenue_account",
     )
     for line in return_lines:
+        tenant_id = line.product.tenant_id
         revenue_account = _resolve_product_account(line.product, "revenue_account", "revenue_account")
         cogs_account = _resolve_product_account(line.product, "cogs_account", "cogs_account")
         inventory_account = _resolve_product_account(line.product, "inventory_account", "inventory_account")
-        revenue_totals[revenue_account.id] = revenue_totals.get(
-            revenue_account.id,
-            {"account": revenue_account, "amount": Decimal("0.00")},
+        receivable_totals[tenant_id] = receivable_totals.get(tenant_id, Decimal("0.00")) + quantize_money(
+            line.amount
         )
-        revenue_totals[revenue_account.id]["amount"] += quantize_money(line.amount)
+        revenue_key = (tenant_id, revenue_account.id)
+        revenue_totals[revenue_key] = revenue_totals.get(
+            revenue_key,
+            {"account": revenue_account, "tenant_id": tenant_id, "amount": Decimal("0.00")},
+        )
+        revenue_totals[revenue_key]["amount"] += quantize_money(line.amount)
 
         cost_amount = quantize_money(quantize_money(line.quantity) * quantize_money(line.product.net_amount))
-        inventory_totals[inventory_account.id] = inventory_totals.get(
-            inventory_account.id,
-            {"account": inventory_account, "amount": Decimal("0.00")},
+        inventory_key = (tenant_id, inventory_account.id)
+        inventory_totals[inventory_key] = inventory_totals.get(
+            inventory_key,
+            {"account": inventory_account, "tenant_id": tenant_id, "amount": Decimal("0.00")},
         )
-        inventory_totals[inventory_account.id]["amount"] += cost_amount
-        cogs_totals[cogs_account.id] = cogs_totals.get(
-            cogs_account.id,
-            {"account": cogs_account, "amount": Decimal("0.00")},
+        inventory_totals[inventory_key]["amount"] += cost_amount
+        cogs_key = (tenant_id, cogs_account.id)
+        cogs_totals[cogs_key] = cogs_totals.get(
+            cogs_key,
+            {"account": cogs_account, "tenant_id": tenant_id, "amount": Decimal("0.00")},
         )
-        cogs_totals[cogs_account.id]["amount"] += cost_amount
+        cogs_totals[cogs_key]["amount"] += cost_amount
+
+    for tenant_id, amount in receivable_totals.items():
+        customer_account = _party_control_account_for_dimension(
+            sales_return.customer,
+            "Customer",
+            tenant_id,
+        )
+        lines.append(
+            {
+                "account": customer_account,
+                "tenant_id": tenant_id,
+                "debit": Decimal("0.00"),
+                "credit": amount,
+                "line_description": "Customer Receivable Reversal",
+                "people_type": "Customer",
+                "people_name": sales_return.customer.business_name,
+            }
+        )
 
     lines.extend(
         {
             "account": item["account"],
+            "tenant_id": item["tenant_id"],
             "debit": item["amount"],
             "credit": Decimal("0.00"),
             "line_description": "Sales Return Revenue Reversal",
@@ -418,6 +578,7 @@ def _build_sales_return_lines(sales_return):
     lines.extend(
         {
             "account": item["account"],
+            "tenant_id": item["tenant_id"],
             "debit": item["amount"],
             "credit": Decimal("0.00"),
             "line_description": "Inventory Return",
@@ -427,6 +588,7 @@ def _build_sales_return_lines(sales_return):
     lines.extend(
         {
             "account": item["account"],
+            "tenant_id": item["tenant_id"],
             "debit": Decimal("0.00"),
             "credit": item["amount"],
             "line_description": "COGS Reversal",
@@ -437,23 +599,40 @@ def _build_sales_return_lines(sales_return):
 
 
 def _build_sales_bank_receipt_lines(receipt):
-    customer_account = _resolve_party_account(receipt.customer, "Customer")
-    return [
-        {
-            "account": receipt.bank_account,
-            "debit": receipt.amount,
-            "credit": Decimal("0.00"),
-            "line_description": "Bank Receipt",
-        },
-        {
-            "account": customer_account,
-            "debit": Decimal("0.00"),
-            "credit": receipt.amount,
-            "line_description": "Customer Receipt",
-            "people_type": "Customer",
-            "people_name": receipt.customer.business_name,
-        },
-    ]
+    lines = []
+    allocations = _allocate_invoice_amount_by_tenant(
+        receipt.sales_invoice,
+        receipt.amount,
+        _sales_invoice_weights(receipt.sales_invoice),
+    )
+    for tenant_id, amount in allocations.items():
+        customer_account = _party_control_account_for_dimension(
+            receipt.customer,
+            "Customer",
+            tenant_id,
+        )
+        bank_account = _account_for_dimension(receipt.bank_account, tenant_id)
+        lines.extend(
+            [
+                {
+                    "account": bank_account,
+                    "tenant_id": tenant_id,
+                    "debit": amount,
+                    "credit": Decimal("0.00"),
+                    "line_description": "Bank Receipt",
+                },
+                {
+                    "account": customer_account,
+                    "tenant_id": tenant_id,
+                    "debit": Decimal("0.00"),
+                    "credit": amount,
+                    "line_description": "Customer Receipt",
+                    "people_type": "Customer",
+                    "people_name": receipt.customer.business_name,
+                },
+            ]
+        )
+    return lines
 
 
 def _build_salesman_commission_payment_lines(payment):

@@ -354,6 +354,8 @@ class AccountViewSet(ModelViewSet):
 
     def _resolve_tenant_ids(self, tenant_scope):
         valid_tenants = get_user_active_dimension_codes(self.request.user)
+        if self.request.user.tenant_id and self.request.user.tenant_id not in valid_tenants:
+            valid_tenants.append(self.request.user.tenant_id)
         if tenant_scope == "BOTH":
             return valid_tenants
         if tenant_scope in valid_tenants:
@@ -362,6 +364,116 @@ class AccountViewSet(ModelViewSet):
 
     def _money(self, value):
         return Decimal(value or 0).quantize(Decimal("0.01"))
+
+    def _monthly_line_totals(self, line_queryset):
+        totals = {}
+        for line in line_queryset.select_related("invoice"):
+            invoice = line.invoice
+            if not invoice.gross_amount:
+                continue
+            month = invoice.date.replace(day=1)
+            totals[month] = totals.get(month, Decimal("0.00")) + self._money(
+                (invoice.net_amount * line.total_amount) / invoice.gross_amount
+            )
+        return totals.items()
+
+    def _line_invoice_share(self, invoice, line_amount):
+        if not invoice.gross_amount:
+            return Decimal("0.00")
+        return self._money((self._money(invoice.net_amount) * line_amount) / invoice.gross_amount)
+
+    def _sales_line_total_by_invoice(self, line_queryset):
+        totals = {}
+        for line in line_queryset.select_related("invoice"):
+            totals[line.invoice_id] = totals.get(line.invoice_id, Decimal("0.00")) + self._money(
+                line.total_amount
+            )
+        return totals
+
+    def _purchase_line_total_by_invoice(self, line_queryset):
+        totals = {}
+        for line in line_queryset.select_related("invoice"):
+            totals[line.invoice_id] = totals.get(line.invoice_id, Decimal("0.00")) + self._money(
+                line.total_amount
+            )
+        return totals
+
+    def _allocated_invoice_amount(self, invoice, amount, scoped_line_total):
+        if not invoice.gross_amount:
+            return Decimal("0.00")
+        return self._money((self._money(amount) * scoped_line_total) / invoice.gross_amount)
+
+    def _allocated_sales_receipt_total(self, receipt_queryset, scoped_sales_totals):
+        total = Decimal("0.00")
+        for receipt in receipt_queryset.select_related("sales_invoice"):
+            scoped_total = scoped_sales_totals.get(receipt.sales_invoice_id, Decimal("0.00"))
+            total += self._allocated_invoice_amount(
+                receipt.sales_invoice,
+                receipt.amount,
+                scoped_total,
+            )
+        return self._money(total)
+
+    def _allocated_purchase_payment_total(self, payment_queryset, scoped_purchase_totals):
+        total = Decimal("0.00")
+        for payment in payment_queryset.select_related("purchase_invoice"):
+            scoped_total = scoped_purchase_totals.get(payment.purchase_invoice_id, Decimal("0.00"))
+            total += self._allocated_invoice_amount(
+                payment.purchase_invoice,
+                payment.amount,
+                scoped_total,
+            )
+        return self._money(total)
+
+    def _monthly_allocated_receipt_totals(self, receipt_queryset, scoped_sales_totals):
+        totals = {}
+        for receipt in receipt_queryset.select_related("sales_invoice"):
+            month = receipt.date.replace(day=1)
+            scoped_total = scoped_sales_totals.get(receipt.sales_invoice_id, Decimal("0.00"))
+            totals[month] = totals.get(month, Decimal("0.00")) + self._allocated_invoice_amount(
+                receipt.sales_invoice,
+                receipt.amount,
+                scoped_total,
+            )
+        return totals.items()
+
+    def _monthly_allocated_payment_totals(self, payment_queryset, scoped_purchase_totals):
+        totals = {}
+        for payment in payment_queryset.select_related("purchase_invoice"):
+            month = payment.date.replace(day=1)
+            scoped_total = scoped_purchase_totals.get(payment.purchase_invoice_id, Decimal("0.00"))
+            totals[month] = totals.get(month, Decimal("0.00")) + self._allocated_invoice_amount(
+                payment.purchase_invoice,
+                payment.amount,
+                scoped_total,
+            )
+        return totals.items()
+
+    def _allocated_sales_outstanding(self, invoice_queryset, scoped_sales_totals):
+        total = Decimal("0.00")
+        for invoice in invoice_queryset:
+            scoped_total = scoped_sales_totals.get(invoice.id, Decimal("0.00"))
+            if scoped_total <= 0:
+                continue
+            financials = get_sales_invoice_financials(invoice)
+            net_amount = self._allocated_invoice_amount(invoice, invoice.net_amount, scoped_total)
+            returned = self._allocated_invoice_amount(invoice, financials["returned_amount"], scoped_total)
+            received = self._allocated_invoice_amount(invoice, financials["received_amount"], scoped_total)
+            total += max(self._money(net_amount - returned - received), Decimal("0.00"))
+        return self._money(total)
+
+    def _allocated_purchase_outstanding(self, invoice_queryset, scoped_purchase_totals):
+        total = Decimal("0.00")
+        for invoice in invoice_queryset:
+            scoped_total = scoped_purchase_totals.get(invoice.id, Decimal("0.00"))
+            if scoped_total <= 0:
+                continue
+            financials = get_purchase_invoice_financials(invoice)
+            net_amount = self._allocated_invoice_amount(invoice, invoice.net_amount, scoped_total)
+            returned = self._allocated_invoice_amount(invoice, financials["returned_amount"], scoped_total)
+            paid = self._allocated_invoice_amount(invoice, financials["paid_amount"], scoped_total)
+            total += max(self._money(net_amount - returned - paid), Decimal("0.00"))
+        return self._money(total)
 
     def _get_opening_bank_root(self, tenant_id):
         try:
@@ -1311,21 +1423,28 @@ class AccountViewSet(ModelViewSet):
             start_date = month_start
 
         def with_date_range(queryset, field_name):
+            if field_name == "created_at":
+                if start_date:
+                    queryset = queryset.filter(created_at__date__gte=start_date)
+                return queryset.filter(created_at__date__lte=today)
             if start_date:
                 queryset = queryset.filter(**{f"{field_name}__gte": start_date})
             return queryset.filter(**{f"{field_name}__lte": today})
 
-        sales_queryset = SalesInvoice.objects.filter(
-            tenant_id=tenant_id,
-            deleted_at__isnull=True,
+        sales_queryset = (
+            SalesInvoice.objects.filter(deleted_at__isnull=True)
+            .filter(Q(tenant_id=tenant_id) | Q(lines__tenant_id=tenant_id))
+            .distinct()
         )
-        purchase_queryset = PurchaseInvoice.objects.filter(
-            tenant_id=tenant_id,
-            deleted_at__isnull=True,
+        purchase_queryset = (
+            PurchaseInvoice.objects.filter(deleted_at__isnull=True)
+            .filter(Q(tenant_id=tenant_id) | Q(lines__tenant_id=tenant_id))
+            .distinct()
         )
-        receipt_queryset = SalesBankReceipt.objects.filter(
-            tenant_id=tenant_id,
-            deleted_at__isnull=True,
+        receipt_queryset = (
+            SalesBankReceipt.objects.filter(deleted_at__isnull=True)
+            .filter(Q(tenant_id=tenant_id) | Q(sales_invoice__lines__tenant_id=tenant_id))
+            .distinct()
         )
         has_salesman_scope = bool(get_user_allowed_salesman_ids(request.user))
         sales_queryset = filter_queryset_by_allowed_salesmen(sales_queryset, request.user)
@@ -1334,9 +1453,10 @@ class AccountViewSet(ModelViewSet):
             request.user,
             field_name="sales_invoice__salesman_id",
         )
-        payment_queryset = PurchaseBankPayment.objects.filter(
-            tenant_id=tenant_id,
-            deleted_at__isnull=True,
+        payment_queryset = (
+            PurchaseBankPayment.objects.filter(deleted_at__isnull=True)
+            .filter(Q(tenant_id=tenant_id) | Q(purchase_invoice__lines__tenant_id=tenant_id))
+            .distinct()
         )
         journal_queryset = JournalLine.objects.filter(
             tenant_id=tenant_id,
@@ -1372,14 +1492,27 @@ class AccountViewSet(ModelViewSet):
         product_stock_filtered = with_date_range(product_stock_queryset, "created_at")
         entries_filtered = with_date_range(entry_queryset, "date")
 
-        total_sales = (
-            sales_filtered.aggregate(total=Coalesce(Sum("net_amount"), Decimal("0.00")))["total"]
-            or Decimal("0.00")
+        sales_line_filtered = SalesInvoiceLine.objects.filter(
+            tenant_id=tenant_id,
+            deleted_at__isnull=True,
+            invoice__deleted_at__isnull=True,
         )
-        total_purchases = (
-            purchases_filtered.aggregate(total=Coalesce(Sum("net_amount"), Decimal("0.00")))["total"]
-            or Decimal("0.00")
+        purchase_line_filtered = PurchaseInvoiceLine.objects.filter(
+            tenant_id=tenant_id,
+            deleted_at__isnull=True,
+            invoice__deleted_at__isnull=True,
         )
+        sales_line_filtered = with_date_range(sales_line_filtered, "invoice__date")
+        purchase_line_filtered = with_date_range(purchase_line_filtered, "invoice__date")
+        scoped_sales_totals = self._sales_line_total_by_invoice(sales_line_filtered)
+        scoped_purchase_totals = self._purchase_line_total_by_invoice(purchase_line_filtered)
+
+        total_sales = Decimal("0.00")
+        for line in sales_line_filtered.select_related("invoice"):
+            total_sales += self._line_invoice_share(line.invoice, self._money(line.total_amount))
+        total_purchases = Decimal("0.00")
+        for line in purchase_line_filtered.select_related("invoice"):
+            total_purchases += self._line_invoice_share(line.invoice, self._money(line.total_amount))
 
         products_count = products_filtered.count()
         raw_materials_count = raw_materials_filtered.count()
@@ -1390,13 +1523,13 @@ class AccountViewSet(ModelViewSet):
 
         month_sales = total_sales
         month_purchases = total_purchases
-        month_receipts = (
-            receipts_filtered.aggregate(total=Coalesce(Sum("amount"), Decimal("0.00")))["total"]
-            or Decimal("0.00")
+        month_receipts = self._allocated_sales_receipt_total(
+            receipts_filtered,
+            scoped_sales_totals,
         )
-        month_payments = (
-            payments_filtered.aggregate(total=Coalesce(Sum("amount"), Decimal("0.00")))["total"]
-            or Decimal("0.00")
+        month_payments = self._allocated_purchase_payment_total(
+            payments_filtered,
+            scoped_purchase_totals,
         )
         if has_salesman_scope:
             month_profit = (
@@ -1433,13 +1566,15 @@ class AccountViewSet(ModelViewSet):
                 or Decimal("0.00")
             )
 
-        receivables_outstanding = Decimal("0.00")
-        for invoice in sales_filtered:
-            receivables_outstanding += get_sales_invoice_financials(invoice)["balance_amount"]
+        receivables_outstanding = self._allocated_sales_outstanding(
+            sales_filtered,
+            scoped_sales_totals,
+        )
 
-        payables_outstanding = Decimal("0.00")
-        for invoice in purchases_filtered:
-            payables_outstanding += get_purchase_invoice_financials(invoice)["balance_amount"]
+        payables_outstanding = self._allocated_purchase_outstanding(
+            purchases_filtered,
+            scoped_purchase_totals,
+        )
 
         raw_material_stock_value = Decimal("0.00")
         for stock in stock_filtered:
@@ -1454,32 +1589,26 @@ class AccountViewSet(ModelViewSet):
             )
 
         monthly_purchase_map = {
-            item["month"]: self._money(item["total"])
-            for item in purchases_filtered
-            .annotate(month=TruncMonth("date"))
-            .values("month")
-            .annotate(total=Coalesce(Sum("net_amount"), Decimal("0.00")))
+            month: self._money(total)
+            for month, total in self._monthly_line_totals(purchase_line_filtered)
         }
         monthly_sales_map = {
-            item["month"]: self._money(item["total"])
-            for item in sales_filtered
-            .annotate(month=TruncMonth("date"))
-            .values("month")
-            .annotate(total=Coalesce(Sum("net_amount"), Decimal("0.00")))
+            month: self._money(total)
+            for month, total in self._monthly_line_totals(sales_line_filtered)
         }
         monthly_receipt_map = {
-            item["month"]: self._money(item["total"])
-            for item in receipts_filtered
-            .annotate(month=TruncMonth("date"))
-            .values("month")
-            .annotate(total=Coalesce(Sum("amount"), Decimal("0.00")))
+            month: self._money(total)
+            for month, total in self._monthly_allocated_receipt_totals(
+                receipts_filtered,
+                scoped_sales_totals,
+            )
         }
         monthly_payment_map = {
-            item["month"]: self._money(item["total"])
-            for item in payments_filtered
-            .annotate(month=TruncMonth("date"))
-            .values("month")
-            .annotate(total=Coalesce(Sum("amount"), Decimal("0.00")))
+            month: self._money(total)
+            for month, total in self._monthly_allocated_payment_totals(
+                payments_filtered,
+                scoped_purchase_totals,
+            )
         }
         if has_salesman_scope:
             monthly_profit_map = {
@@ -1571,38 +1700,42 @@ class AccountViewSet(ModelViewSet):
                 }
             )
 
-        top_customers = []
-        for customer in customers_filtered:
-            customer_total = (
-                sales_filtered.filter(
-                    customer=customer,
-                ).aggregate(total=Coalesce(Sum("net_amount"), Decimal("0.00")))["total"]
-                or Decimal("0.00")
+        top_customer_map = {}
+        for invoice in sales_filtered.select_related("customer"):
+            customer_total = self._allocated_invoice_amount(
+                invoice,
+                invoice.net_amount,
+                scoped_sales_totals.get(invoice.id, Decimal("0.00")),
             )
             if customer_total > 0:
-                top_customers.append(
-                    {
-                        "name": customer.business_name,
-                        "amount": self._money(customer_total),
-                    }
-                )
+                customer_name = invoice.customer.business_name
+                top_customer_map[customer_name] = top_customer_map.get(
+                    customer_name,
+                    Decimal("0.00"),
+                ) + customer_total
+        top_customers = [
+            {"name": name, "amount": self._money(amount)}
+            for name, amount in top_customer_map.items()
+        ]
         top_customers = sorted(top_customers, key=lambda item: item["amount"], reverse=True)[:5]
 
-        top_suppliers = []
-        for supplier in suppliers_filtered:
-            supplier_total = (
-                purchases_filtered.filter(
-                    supplier=supplier,
-                ).aggregate(total=Coalesce(Sum("net_amount"), Decimal("0.00")))["total"]
-                or Decimal("0.00")
+        top_supplier_map = {}
+        for invoice in purchases_filtered.select_related("supplier"):
+            supplier_total = self._allocated_invoice_amount(
+                invoice,
+                invoice.net_amount,
+                scoped_purchase_totals.get(invoice.id, Decimal("0.00")),
             )
             if supplier_total > 0:
-                top_suppliers.append(
-                    {
-                        "name": supplier.business_name,
-                        "amount": self._money(supplier_total),
-                    }
-                )
+                supplier_name = invoice.supplier.business_name
+                top_supplier_map[supplier_name] = top_supplier_map.get(
+                    supplier_name,
+                    Decimal("0.00"),
+                ) + supplier_total
+        top_suppliers = [
+            {"name": name, "amount": self._money(amount)}
+            for name, amount in top_supplier_map.items()
+        ]
         top_suppliers = sorted(top_suppliers, key=lambda item: item["amount"], reverse=True)[:5]
 
         stock_mix_total = self._money(raw_material_stock_value + product_stock_value)
