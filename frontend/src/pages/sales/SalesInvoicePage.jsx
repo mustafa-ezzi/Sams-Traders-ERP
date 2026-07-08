@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import IconButton from "../../components/ui/IconButton";
@@ -13,6 +13,8 @@ import { formatDecimal } from "../../utils/format";
 import { useToast } from "../../context/ToastContext";
 import { useAuth } from "../../context/AuthContext";
 import DimensionPrintButtons from "../../components/ui/DimensionPrintButtons";
+import SalesInvoicePrintModal from "../../components/sales/SalesInvoicePrintModal";
+import { dimensionToCompanyConfig } from "../../utils/dimensionCompany";
 import {
   formatDisplayDate,
   getReceiptStatus,
@@ -163,6 +165,9 @@ const SalesInvoicePage = () => {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [deleteId, setDeleteId] = useState("");
+  const [printModal, setPrintModal] = useState(null);
+  const [printLoadingId, setPrintLoadingId] = useState("");
+  const printCancelledRef = useRef(false);
   const limit = 10;
 
   const productMap = useMemo(
@@ -492,15 +497,39 @@ const SalesInvoicePage = () => {
     }
   };
 
-  const handleOpenPrint = (recordId, dimensionCode) => {
-    const query = dimensionCode
-      ? `?dimension=${encodeURIComponent(dimensionCode)}`
-      : "";
-    window.open(
-      `/sales-invoices/${recordId}/print${query}`,
-      "_blank",
-      "noopener,noreferrer",
-    );
+  const handleClosePrint = () => {
+    printCancelledRef.current = true;
+    setPrintModal(null);
+  };
+
+  const handleOpenPrint = async (recordId, dimensionCode) => {
+    printCancelledRef.current = false;
+    setPrintLoadingId(recordId);
+    const dimension = printDimensions.find((item) => item.code === dimensionCode);
+    setPrintModal({
+      loading: true,
+      invoice: null,
+      company: dimensionToCompanyConfig(dimension),
+    });
+    try {
+      const inv = await salesInvoiceService.getById(recordId);
+      if (printCancelledRef.current) return;
+      setPrintModal({
+        loading: false,
+        invoice: inv,
+        company: dimensionToCompanyConfig(dimension),
+      });
+    } catch (printError) {
+      if (!printCancelledRef.current) {
+        toast.error(
+          extractErrorMessage(printError) ||
+            "Could not load invoice for printing",
+        );
+        setPrintModal(null);
+      }
+    } finally {
+      setPrintLoadingId("");
+    }
   };
 
   const confirmDelete = async () => {
@@ -1016,6 +1045,7 @@ const SalesInvoicePage = () => {
                             <DimensionPrintButtons
                               dimensions={printDimensions}
                               recordId={record.id}
+                              disabled={printLoadingId === record.id}
                               onPrint={handleOpenPrint}
                             />
                             <IconButton
@@ -1069,6 +1099,15 @@ const SalesInvoicePage = () => {
         onCancel={() => setDeleteId("")}
         onConfirm={confirmDelete}
       />
+      {printModal ? (
+        <SalesInvoicePrintModal
+          invoice={printModal.invoice}
+          company={printModal.company}
+          loading={printModal.loading}
+          onClose={handleClosePrint}
+          formatDisplayDate={formatDisplayDate}
+        />
+      ) : null}
     </div>
   );
 };

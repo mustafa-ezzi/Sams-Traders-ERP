@@ -11,6 +11,7 @@ import { flattenAccountTree, formatAccountLabel } from "../../utils/accounts";
 import { formatDecimal } from "../../utils/format";
 import { useToast } from "../../context/ToastContext";
 import { useAuth } from "../../context/AuthContext";
+import ReportPrintWrapper from "../../components/print/ReportPrintWrapper";
 
 const selectClassName =
   "w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100";
@@ -376,6 +377,10 @@ const LedgerReportsPage = () => {
         emptyMessage="No ledger rows found for the selected filters."
       >
         {report ? (
+          <ReportPrintWrapper
+            title="Ledger Report"
+            subtitle={`${report.from_date} to ${report.to_date} · ${report.title}`}
+          >
           <Card className="space-y-4">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
@@ -457,6 +462,7 @@ const LedgerReportsPage = () => {
               </div>
             </div>
           </Card>
+          </ReportPrintWrapper>
         ) : null}
       </StateView>
     </div>

@@ -25,7 +25,6 @@ import SalesInvoicePage from "./pages/sales/invoice/GetAllSalesInvoice";
 import CreateUpdateSalesInvoice from "./pages/sales/invoice/CreateUpdateSalesInvoice";
 import SalesOrderPage from "./pages/sales/order/GetAllSalesOrder";
 import CreateUpdateSalesOrder from "./pages/sales/order/CreateUpdateSalesOrder";
-import SalesInvoicePrintPage from "./pages/sales/SalesInvoicePrintPage";
 import SalesReturnPage from "./pages/sales/return/GetAllSalesReturn";
 import CreateUpdateSalesReturn from "./pages/sales/return/CreateUpdateSalesReturn";
 import SalesBankReceiptPage from "./pages/sales/bankReceipt/GetAllSalesBankReceipt";
@@ -116,14 +115,6 @@ const App = () => (
           <AdminProtected>
             <AdminInquiriesPage />
           </AdminProtected>
-        }
-      />
-      <Route
-        path="/sales-invoices/:id/print"
-        element={
-          <Protected>
-            <SalesInvoicePrintPage />
-          </Protected>
         }
       />
       <Route

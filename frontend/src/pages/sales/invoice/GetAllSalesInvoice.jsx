@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Card from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
@@ -7,9 +7,14 @@ import ConfirmModal from "../../../components/ui/ConfirmModal";
 import StateView from "../../../components/StateView";
 import PageSizeSelect from "../../../components/ui/PageSizeSelect";
 import SortableHeader from "../../../components/ui/SortableHeader";
+import DimensionPrintButtons from "../../../components/ui/DimensionPrintButtons";
+import SalesInvoicePrintModal from "../../../components/sales/SalesInvoicePrintModal";
+import { dimensionToCompanyConfig } from "../../../utils/dimensionCompany";
+import { formatDisplayDate } from "./salesInvoiceShared";
 import salesInvoiceService from "../../../api/services/salesInvoiceService";
 import { formatDecimal } from "../../../utils/format";
 import { useToast } from "../../../context/ToastContext";
+import { useAuth } from "../../../context/AuthContext";
 const extractErrorMessage = (error) => {
   const data = error?.response?.data;
   if (!data) return "Something went wrong";
@@ -44,6 +49,11 @@ const getOrdering = (sortConfig) => {
 const GetAllSalesInvoice = () => {
   const navigate = useNavigate();
   const toast = useToast();
+  const { allowedDimensions } = useAuth();
+  const printDimensions = useMemo(
+    () => (allowedDimensions || []).filter((dimension) => dimension.is_active),
+    [allowedDimensions],
+  );
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -51,6 +61,9 @@ const GetAllSalesInvoice = () => {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [deleteId, setDeleteId] = useState("");
+  const [printModal, setPrintModal] = useState(null);
+  const [printLoadingId, setPrintLoadingId] = useState("");
+  const printCancelledRef = useRef(false);
   const [limit, setLimit] = useState(10);
   const [sortConfig, setSortConfig] = useState({
     key: "date",
@@ -85,6 +98,40 @@ const GetAllSalesInvoice = () => {
   useEffect(() => {
     loadInvoices(1, "");
   }, []);
+  const handleClosePrint = () => {
+    printCancelledRef.current = true;
+    setPrintModal(null);
+  };
+  const handleOpenPrint = async (recordId, dimensionCode) => {
+    printCancelledRef.current = false;
+    setPrintLoadingId(recordId);
+    const dimension = printDimensions.find((item) => item.code === dimensionCode);
+    setPrintModal({
+      loading: true,
+      invoice: null,
+      company: dimensionToCompanyConfig(dimension),
+    });
+    try {
+      const inv = await salesInvoiceService.getById(recordId);
+      if (printCancelledRef.current) return;
+      setPrintModal({
+        loading: false,
+        invoice: inv,
+        company: dimensionToCompanyConfig(dimension),
+      });
+    } catch (printError) {
+      if (!printCancelledRef.current) {
+        toast.error(
+          extractErrorMessage(printError) ||
+            "Could not load invoice for printing",
+        );
+        setPrintModal(null);
+      }
+    } finally {
+      setPrintLoadingId("");
+    }
+  };
+
   const confirmDelete = async () => {
     try {
       const response = await salesInvoiceService.remove(deleteId);
@@ -226,26 +273,28 @@ const GetAllSalesInvoice = () => {
                         {formatDecimal(record.balanceAmount)}{" "}
                       </td>{" "}
                       <td className="px-4 py-3">
-                        {" "}
-                        <div className="flex gap-2">
-                          {" "}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <DimensionPrintButtons
+                            dimensions={printDimensions}
+                            recordId={record.id}
+                            disabled={printLoadingId === record.id}
+                            onPrint={handleOpenPrint}
+                          />
                           <Button
                             variant="secondary"
                             onClick={() =>
                               navigate(`/sales-invoices/${record.id}/edit`)
                             }
                           >
-                            {" "}
-                            Edit{" "}
-                          </Button>{" "}
+                            Edit
+                          </Button>
                           <Button
                             variant="danger"
                             onClick={() => setDeleteId(record.id)}
                           >
-                            {" "}
-                            Delete{" "}
-                          </Button>{" "}
-                        </div>{" "}
+                            Delete
+                          </Button>
+                        </div>
                       </td>{" "}
                     </tr>
                   ))}{" "}
@@ -294,6 +343,15 @@ const GetAllSalesInvoice = () => {
         onCancel={() => setDeleteId("")}
         onConfirm={confirmDelete}
       />{" "}
+      {printModal ? (
+        <SalesInvoicePrintModal
+          invoice={printModal.invoice}
+          company={printModal.company}
+          loading={printModal.loading}
+          onClose={handleClosePrint}
+          formatDisplayDate={formatDisplayDate}
+        />
+      ) : null}
     </div>
   );
 };

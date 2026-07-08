@@ -536,19 +536,24 @@ const WelcomeBanner = ({ tenantName, name, today, period, onPeriodChange }) => {
 
 /* ─── Main page ─────────────────────────────────────────────── */
 const DashboardPage = () => {
-  const { tenantId, user } = useAuth();
+  const { tenantId, createTenantIds, user } = useAuth();
   const toast = useToast();
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [period, setPeriod] = useState("all");
 
+  const activeViewTenant =
+    (Array.isArray(createTenantIds) && createTenantIds.length
+      ? createTenantIds[0]
+      : "") || tenantId;
+
   const loadDashboard = async () => {
     setLoading(true);
     setError("");
     try {
       const response = await accountService.getDashboardOverview(
-        tenantId,
+        activeViewTenant,
         period,
       );
       setDashboard(response);
@@ -563,7 +568,7 @@ const DashboardPage = () => {
 
   useEffect(() => {
     loadDashboard();
-  }, [tenantId, period]);
+  }, [activeViewTenant, period]);
 
   const headlineCards = useMemo(() => {
     if (!dashboard) return [];
@@ -620,7 +625,7 @@ const DashboardPage = () => {
 
   /* Adjust field name to match your actual auth user shape */
   const displayName = user?.name || user?.full_name || user?.username || "";
-  const tenantName = (tenantId || "ERP Workspace")
+  const tenantName = (activeViewTenant || "ERP Workspace")
     .toString()
     .replaceAll("_", " ")
     .toLowerCase()

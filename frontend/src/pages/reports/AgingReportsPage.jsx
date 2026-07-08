@@ -8,6 +8,7 @@ import dimensionService from "../../api/services/dimensionService";
 import { formatDecimal } from "../../utils/format";
 import { useToast } from "../../context/ToastContext";
 import { useAuth } from "../../context/AuthContext";
+import ReportPrintWrapper from "../../components/print/ReportPrintWrapper";
 
 const selectClassName =
   "w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-800/90 dark:text-slate-100 dark:focus:ring-blue-900/40";
@@ -380,6 +381,10 @@ const AgingReportsPage = () => {
         emptyMessage="Generate the report to view aging buckets and outstanding invoices."
       >
         {report ? (
+          <ReportPrintWrapper
+            title={tabMeta.title}
+            subtitle={`As of ${report.as_of_date}`}
+          >
           <div className="space-y-6">
             <Card className="space-y-4">
               <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
@@ -433,6 +438,7 @@ const AgingReportsPage = () => {
               />
             </Card>
           </div>
+          </ReportPrintWrapper>
         ) : null}
       </StateView>
     </div>

@@ -10,6 +10,7 @@ import salesmanService from "../../api/services/salesmanService";
 import { formatDecimal } from "../../utils/format";
 import { useToast } from "../../context/ToastContext";
 import { useAuth } from "../../context/AuthContext";
+import ReportPrintWrapper from "../../components/print/ReportPrintWrapper";
 
 const selectClassName =
   "w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-800/90 dark:text-slate-100 dark:focus:ring-blue-900/40";
@@ -262,6 +263,10 @@ const SalesmanReportsPage = () => {
         emptyMessage="Generate the report to view salesman performance."
       >
         {report ? (
+          <ReportPrintWrapper
+            title="Salesman Report"
+            subtitle={`${report.from_date} to ${report.to_date}`}
+          >
           <div className="space-y-6">
             <Card className="space-y-4">
               <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
@@ -502,6 +507,7 @@ const SalesmanReportsPage = () => {
               )}
             </Card>
           </div>
+          </ReportPrintWrapper>
         ) : null}
       </StateView>
     </div>

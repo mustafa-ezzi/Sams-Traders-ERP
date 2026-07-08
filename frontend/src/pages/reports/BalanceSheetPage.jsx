@@ -8,6 +8,7 @@ import dimensionService from "../../api/services/dimensionService";
 import { formatDecimal } from "../../utils/format";
 import { useToast } from "../../context/ToastContext";
 import { useAuth } from "../../context/AuthContext";
+import ReportPrintWrapper from "../../components/print/ReportPrintWrapper";
 
 const selectClassName =
   "w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100";
@@ -250,6 +251,12 @@ const BalanceSheetPage = () => {
 
       <StateView loading={loadingReport} error={error}>
         {report ? (
+          <ReportPrintWrapper
+            title="Balance Sheet"
+            subtitle={`As of ${report.as_of_date} · ${
+              report.tenant_scope === "BOTH" ? "All Dimensions" : report.tenant_scope
+            }`}
+          >
           <div className="space-y-6">
             <Card className="space-y-4">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -341,6 +348,7 @@ const BalanceSheetPage = () => {
               </div>
             </div>
           </div>
+          </ReportPrintWrapper>
         ) : null}
       </StateView>
     </div>

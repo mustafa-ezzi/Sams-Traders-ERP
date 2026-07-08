@@ -12,6 +12,7 @@ import salesmanService from "../../api/services/salesmanService";
 import warehouseService from "../../api/services/warehouseService";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
+import ReportPrintWrapper from "../../components/print/ReportPrintWrapper";
 import { formatDecimal } from "../../utils/format";
 
 const selectClassName =
@@ -348,6 +349,10 @@ const SalesReportPage = () => {
         emptyMessage="Generate the report to view sales data."
       >
         {report ? (
+          <ReportPrintWrapper
+            title="Sales Report"
+            subtitle={`${report.from_date} to ${report.to_date}`}
+          >
           <div className="space-y-6">
             <Card className="space-y-4">
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
@@ -467,6 +472,7 @@ const SalesReportPage = () => {
               emptyMessage="No receipts are linked to the selected sales."
             />
           </div>
+          </ReportPrintWrapper>
         ) : null}
       </StateView>
     </div>

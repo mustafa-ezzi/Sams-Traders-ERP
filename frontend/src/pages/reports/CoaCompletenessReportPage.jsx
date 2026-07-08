@@ -6,6 +6,7 @@ import accountService from "../../api/services/accountService";
 import dimensionService from "../../api/services/dimensionService";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
+import ReportPrintWrapper from "../../components/print/ReportPrintWrapper";
 
 const selectClassName =
   "w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100";
@@ -122,6 +123,14 @@ const CoaCompletenessReportPage = () => {
         emptyMessage="No COA completeness issues found for the selected dimension scope."
       >
         {report ? (
+          <ReportPrintWrapper
+            title="COA Completeness"
+            subtitle={
+              report.tenant_scope === "BOTH"
+                ? "All Dimensions"
+                : report.tenant_scope || "Selected dimension"
+            }
+          >
           <div className="space-y-6">
             <div className="grid gap-3 md:grid-cols-4">
               <Card>
@@ -306,6 +315,7 @@ const CoaCompletenessReportPage = () => {
               </div>
             </Card>
           </div>
+          </ReportPrintWrapper>
         ) : null}
       </StateView>
     </div>

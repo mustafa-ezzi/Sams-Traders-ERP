@@ -2202,6 +2202,20 @@ class DashboardOverviewTests(TestCase):
         self.assertEqual(data["counts"]["customers"], 1)
         self.assertEqual(data["counts"]["suppliers"], 1)
 
+    def test_dashboard_overview_uses_request_tenant_scope(self):
+        request = self.factory.get("/api/accounts/accounts/dashboard-overview/")
+        request.tenant_id = "AM_TRADERS"
+        force_authenticate(request, user=self.user)
+
+        response = AccountViewSet.as_view({"get": "dashboard_overview"})(request)
+
+        self.assertEqual(response.status_code, 200)
+        data = response.data["data"]
+        self.assertEqual(data["tenant_id"], "AM_TRADERS")
+        self.assertEqual(data["counts"]["products"], 0)
+        self.assertEqual(data["counts"]["customers"], 0)
+        self.assertEqual(data["counts"]["suppliers"], 0)
+
 
 class ExpenseTests(TestCase):
     def setUp(self):

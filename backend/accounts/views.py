@@ -1407,7 +1407,9 @@ class AccountViewSet(ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="dashboard-overview")
     def dashboard_overview(self, request):
-        tenant_id = request.user.tenant_id
+        # Respect the active tenant from request headers so dashboard values
+        # match the currently selected dimension in the UI.
+        tenant_id = getattr(request, "tenant_id", None) or request.user.tenant_id
         today = date.today()
         month_start = today.replace(day=1)
         period = (request.query_params.get("period") or "all").lower()

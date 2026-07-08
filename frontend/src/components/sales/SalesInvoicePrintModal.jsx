@@ -1,7 +1,7 @@
 import PrintPreviewShell from "../print/PrintPreviewShell";
-import PurchaseInvoicePrintDocument from "./PurchaseInvoicePrintDocument";
+import SalesInvoicePrintDocument from "./SalesInvoicePrintDocument";
 
-const PurchaseInvoicePrintModal = ({
+const SalesInvoicePrintModal = ({
   invoice,
   company,
   loading = false,
@@ -11,7 +11,7 @@ const PurchaseInvoicePrintModal = ({
   if (!invoice && !loading) return null;
 
   const invNo =
-    invoice?.invoice_number ?? invoice?.invoiceNumber ?? "Purchase invoice";
+    invoice?.invoice_number ?? invoice?.invoiceNumber ?? "Sales invoice";
 
   return (
     <PrintPreviewShell
@@ -21,14 +21,14 @@ const PurchaseInvoicePrintModal = ({
       {loading ? (
         <div className="py-16 text-center text-slate-500">Loading invoice…</div>
       ) : (
-        <PurchaseInvoicePrintDocument
+        <SalesInvoicePrintDocument
           invoice={invoice}
-          company={company}
           formatDisplayDate={formatDisplayDate}
+          company={company}
         />
       )}
     </PrintPreviewShell>
   );
 };
 
-export default PurchaseInvoicePrintModal;
+export default SalesInvoicePrintModal;

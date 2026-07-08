@@ -53,12 +53,12 @@ const GetAllPurchaseInvoice = () => {
   const [deleteId, setDeleteId] = useState("");
   const [printModal, setPrintModal] = useState(null);
   const [printLoadingId, setPrintLoadingId] = useState("");
+  const printCancelledRef = useRef(false);
   const [limit, setLimit] = useState(10);
   const [sortConfig, setSortConfig] = useState({
     key: "date",
     direction: "desc",
   });
-  const printCancelledRef = useRef(false);
   const unpaidPageTotal = useMemo(
     () =>
       records.reduce(
@@ -104,7 +104,11 @@ const GetAllPurchaseInvoice = () => {
     printCancelledRef.current = false;
     setPrintLoadingId(recordId);
     const dimension = printDimensions.find((item) => item.code === dimensionCode);
-    setPrintModal({ loading: true, invoice: null, company: dimensionToCompanyConfig(dimension) });
+    setPrintModal({
+      loading: true,
+      invoice: null,
+      company: dimensionToCompanyConfig(dimension),
+    });
     try {
       const inv = await purchaseInvoiceService.getById(recordId);
       if (printCancelledRef.current) return;
@@ -366,7 +370,7 @@ const GetAllPurchaseInvoice = () => {
           onClose={handleClosePrint}
           formatDisplayDate={formatDisplayDate}
         />
-      ) : null}{" "}
+      ) : null}
     </div>
   );
 };

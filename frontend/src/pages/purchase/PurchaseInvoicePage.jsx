@@ -301,6 +301,7 @@ const PurchaseInvoicePage = () => {
   const [deleteId, setDeleteId] = useState("");
   const [printModal, setPrintModal] = useState(null);
   const [printLoadingId, setPrintLoadingId] = useState("");
+  const printCancelledRef = useRef(false);
   const limit = 10;
 
   const itemMap = useMemo(
@@ -572,16 +573,36 @@ const PurchaseInvoicePage = () => {
     }
   };
 
-  const handleOpenPrint = async (recordId) => {
+  const handleClosePrint = () => {
+    printCancelledRef.current = true;
+    setPrintModal(null);
+  };
+
+  const handleOpenPrint = async (recordId, dimensionCode) => {
+    printCancelledRef.current = false;
     setPrintLoadingId(recordId);
+    const dimension = printDimensions.find((item) => item.code === dimensionCode);
+    setPrintModal({
+      loading: true,
+      invoice: null,
+      company: dimensionToCompanyConfig(dimension),
+    });
     try {
       const inv = await purchaseInvoiceService.getById(recordId);
-      setPrintInvoice(inv);
+      if (printCancelledRef.current) return;
+      setPrintModal({
+        loading: false,
+        invoice: inv,
+        company: dimensionToCompanyConfig(dimension),
+      });
     } catch (printError) {
-      toast.error(
-        extractErrorMessage(printError) ||
-          "Could not load invoice for printing",
-      );
+      if (!printCancelledRef.current) {
+        toast.error(
+          extractErrorMessage(printError) ||
+            "Could not load invoice for printing",
+        );
+        setPrintModal(null);
+      }
     } finally {
       setPrintLoadingId("");
     }
@@ -1049,12 +1070,12 @@ const PurchaseInvoicePage = () => {
         onCancel={() => setDeleteId("")}
         onConfirm={confirmDelete}
       />
-
       {printModal ? (
         <PurchaseInvoicePrintModal
           invoice={printModal.invoice}
           company={printModal.company}
-          onClose={() => setPrintModal(null)}
+          loading={printModal.loading}
+          onClose={handleClosePrint}
           formatDisplayDate={formatDisplayDate}
         />
       ) : null}

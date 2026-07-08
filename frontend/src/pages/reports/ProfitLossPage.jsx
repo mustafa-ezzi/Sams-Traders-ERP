@@ -6,8 +6,7 @@ import StateView from "../../components/StateView";
 import accountService from "../../api/services/accountService";
 import dimensionService from "../../api/services/dimensionService";
 import { formatDecimal } from "../../utils/format";
-import { useToast } from "../../context/ToastContext";
-import { useAuth } from "../../context/AuthContext";
+import ReportPrintWrapper from "../../components/print/ReportPrintWrapper";
 
 const selectClassName =
   "w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100";
@@ -225,6 +224,85 @@ const ProfitLossPage = () => {
       : "border-rose-200 bg-rose-50 text-rose-900";
   }, [report, summary.is_profit]);
 
+  const printSubtitle = report
+    ? `${report.from_date} to ${report.to_date} · ${
+        report.tenant_scope === "BOTH" ? "All Dimensions" : report.tenant_scope
+      }`
+    : "";
+
+  const reportContent = report ? (
+    <div className="space-y-6">
+      <Card className="space-y-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h3 className="text-xl font-bold text-slate-900">Income Statement</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              {report.from_date} to {report.to_date} for{" "}
+              {report.tenant_scope === "BOTH" ? "All Dimensions" : report.tenant_scope}
+            </p>
+          </div>
+          <div className={`rounded-2xl border px-4 py-3 text-right ${netTone}`}>
+            <p className="text-xs uppercase tracking-wide">Net Result</p>
+            <p className="mt-1 text-lg font-bold">
+              {summary.is_profit ? "Net Profit" : "Net Loss"}
+            </p>
+          </div>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+            <p className="text-xs uppercase tracking-wide text-slate-400">Total Revenue</p>
+            <p className="mt-2 text-lg font-bold text-emerald-700">
+              {formatDecimal(summary.total_revenue)}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+            <p className="text-xs uppercase tracking-wide text-slate-400">Cost of Goods Sold</p>
+            <p className="mt-2 text-lg font-bold text-rose-700">
+              {formatDecimal(summary.total_cogs)}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-4">
+            <p className="text-xs uppercase tracking-wide text-blue-500">Gross Profit</p>
+            <p className="mt-2 text-lg font-bold text-blue-900">
+              {formatDecimal(summary.gross_profit)}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+            <p className="text-xs uppercase tracking-wide text-slate-400">Operating Expenses</p>
+            <p className="mt-2 text-lg font-bold text-amber-700">
+              {formatDecimal(summary.total_expense)}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+            <p className="text-xs uppercase tracking-wide text-slate-400">Taxation</p>
+            <p className="mt-2 text-lg font-bold text-purple-700">
+              {formatDecimal(summary.total_tax)}
+            </p>
+          </div>
+          <div
+            className={`rounded-2xl border px-4 py-4 md:col-span-2 xl:col-span-3 ${
+              summary.is_profit
+                ? "border-emerald-900 bg-emerald-900 text-white"
+                : "border-rose-900 bg-rose-900 text-white"
+            }`}
+          >
+            <p className="text-xs uppercase tracking-wide text-white/70">
+              {summary.is_profit ? "Net Profit" : "Net Loss"}
+            </p>
+            <p className="mt-2 text-2xl font-bold">{formatDecimal(summary.net_profit)}</p>
+          </div>
+        </div>
+      </Card>
+
+      <ProfitLossSection sectionKey="revenue" section={report.revenue} />
+      <ProfitLossSection sectionKey="cogs" section={report.cogs} />
+      <ProfitLossSection sectionKey="expense" section={report.expense} />
+      <ProfitLossSection sectionKey="tax" section={report.tax} />
+      <ProfitLossSection sectionKey="purchase" section={report.purchase} />
+    </div>
+  ) : null;
+
   return (
     <div className="space-y-6">
       <Card className="space-y-6">
@@ -284,92 +362,9 @@ const ProfitLossPage = () => {
 
       <StateView loading={loadingReport} error={error}>
         {report ? (
-          <div className="space-y-6">
-            <Card className="space-y-4">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                <div>
-                  <h3 className="text-xl font-bold text-slate-900">
-                    Income Statement
-                  </h3>
-                  <p className="mt-1 text-sm text-slate-500">
-                    {report.from_date} to {report.to_date} for{" "}
-                    {report.tenant_scope === "BOTH"
-                      ? "All Dimensions"
-                      : report.tenant_scope}
-                  </p>
-                </div>
-                <div className={`rounded-2xl border px-4 py-3 text-right ${netTone}`}>
-                  <p className="text-xs uppercase tracking-wide">Net Result</p>
-                  <p className="mt-1 text-lg font-bold">
-                    {summary.is_profit ? "Net Profit" : "Net Loss"}
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                  <p className="text-xs uppercase tracking-wide text-slate-400">
-                    Total Revenue
-                  </p>
-                  <p className="mt-2 text-lg font-bold text-emerald-700">
-                    {formatDecimal(summary.total_revenue)}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                  <p className="text-xs uppercase tracking-wide text-slate-400">
-                    Cost of Goods Sold
-                  </p>
-                  <p className="mt-2 text-lg font-bold text-rose-700">
-                    {formatDecimal(summary.total_cogs)}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-4">
-                  <p className="text-xs uppercase tracking-wide text-blue-500">
-                    Gross Profit
-                  </p>
-                  <p className="mt-2 text-lg font-bold text-blue-900">
-                    {formatDecimal(summary.gross_profit)}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                  <p className="text-xs uppercase tracking-wide text-slate-400">
-                    Operating Expenses
-                  </p>
-                  <p className="mt-2 text-lg font-bold text-amber-700">
-                    {formatDecimal(summary.total_expense)}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                  <p className="text-xs uppercase tracking-wide text-slate-400">
-                    Taxation
-                  </p>
-                  <p className="mt-2 text-lg font-bold text-purple-700">
-                    {formatDecimal(summary.total_tax)}
-                  </p>
-                </div>
-                <div
-                  className={`rounded-2xl border px-4 py-4 md:col-span-2 xl:col-span-3 ${
-                    summary.is_profit
-                      ? "border-emerald-900 bg-emerald-900 text-white"
-                      : "border-rose-900 bg-rose-900 text-white"
-                  }`}
-                >
-                  <p className="text-xs uppercase tracking-wide text-white/70">
-                    {summary.is_profit ? "Net Profit" : "Net Loss"}
-                  </p>
-                  <p className="mt-2 text-2xl font-bold">
-                    {formatDecimal(summary.net_profit)}
-                  </p>
-                </div>
-              </div>
-            </Card>
-
-            <ProfitLossSection sectionKey="revenue" section={report.revenue} />
-            <ProfitLossSection sectionKey="cogs" section={report.cogs} />
-            <ProfitLossSection sectionKey="expense" section={report.expense} />
-            <ProfitLossSection sectionKey="tax" section={report.tax} />
-            <ProfitLossSection sectionKey="purchase" section={report.purchase} />
-          </div>
+          <ReportPrintWrapper title="Profit & Loss" subtitle={printSubtitle}>
+            {reportContent}
+          </ReportPrintWrapper>
         ) : null}
       </StateView>
     </div>
