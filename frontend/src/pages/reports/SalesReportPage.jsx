@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import FormInput from "../../components/ui/FormInput";
@@ -178,106 +178,6 @@ const SalesReportPage = () => {
     setForm((current) => ({ ...current, [field]: value }));
   };
 
-  const searchCustomers = useCallback(async (query) => {
-    const response = await customerService.list({
-      page: 1,
-      limit: 20,
-      search: query,
-    });
-    return response.data || [];
-  }, []);
-
-  const resolveCustomer = useCallback(
-    async (customerId) =>
-      customers.find((customer) => customer.id === customerId) ||
-      customerService.getById(customerId),
-    [customers],
-  );
-
-  const searchProducts = useCallback(async (query) => {
-    const response = await productService.list({
-      page: 1,
-      limit: 20,
-      search: query,
-    });
-    return response.data || [];
-  }, []);
-
-  const resolveProduct = useCallback(
-    async (productId) =>
-      products.find((product) => product.id === productId) ||
-      productService.getById(productId),
-    [products],
-  );
-
-  const searchSalesmen = useCallback(async (query) => {
-    const response = await salesmanService.list({
-      page: 1,
-      limit: 20,
-      search: query,
-    });
-    return response.data || [];
-  }, []);
-
-  const resolveSalesman = useCallback(
-    async (salesmanId) =>
-      salesmen.find((salesman) => salesman.id === salesmanId) ||
-      salesmanService.getById(salesmanId),
-    [salesmen],
-  );
-
-  const searchWarehouses = useCallback(async (query) => {
-    const response = await warehouseService.list({
-      page: 1,
-      limit: 20,
-      search: query,
-    });
-    return response.data || [];
-  }, []);
-
-  const resolveWarehouse = useCallback(
-    async (warehouseId) =>
-      warehouses.find((warehouse) => warehouse.id === warehouseId) ||
-      warehouseService.getById(warehouseId),
-    [warehouses],
-  );
-
-  const handleCustomerSelect = (customerId, customer) => {
-    handleChange("customerId", customerId);
-    if (customer) {
-      setCustomers((current) =>
-        current.some((item) => item.id === customer.id) ? current : [customer, ...current],
-      );
-    }
-  };
-
-  const handleProductSelect = (productId, product) => {
-    handleChange("productId", productId);
-    if (product) {
-      setProducts((current) =>
-        current.some((item) => item.id === product.id) ? current : [product, ...current],
-      );
-    }
-  };
-
-  const handleSalesmanSelect = (salesmanId, salesman) => {
-    handleChange("salesmanId", salesmanId);
-    if (salesman) {
-      setSalesmen((current) =>
-        current.some((item) => item.id === salesman.id) ? current : [salesman, ...current],
-      );
-    }
-  };
-
-  const handleWarehouseSelect = (warehouseId, warehouse) => {
-    handleChange("warehouseId", warehouseId);
-    if (warehouse) {
-      setWarehouses((current) =>
-        current.some((item) => item.id === warehouse.id) ? current : [warehouse, ...current],
-      );
-    }
-  };
-
   const handleGenerate = async (event) => {
     event.preventDefault();
     setError("");
@@ -402,9 +302,8 @@ const SalesReportPage = () => {
             label="Customer"
             value={form.customerId}
             disabled={loadingSetup}
-            onChange={handleCustomerSelect}
-            onSearch={searchCustomers}
-            resolveValue={resolveCustomer}
+            options={customers}
+            onChange={(customerId) => handleChange("customerId", customerId)}
             getOptionLabel={(customer) => customer.business_name || customer.name || "Customer"}
             placeholder="Type to filter by customer"
           />
@@ -412,9 +311,8 @@ const SalesReportPage = () => {
             label="Product"
             value={form.productId}
             disabled={loadingSetup}
-            onChange={handleProductSelect}
-            onSearch={searchProducts}
-            resolveValue={resolveProduct}
+            options={products}
+            onChange={(productId) => handleChange("productId", productId)}
             getOptionLabel={(product) =>
               `${product.sku ? `${product.sku} - ` : ""}${product.name || "Product"}`
             }
@@ -424,9 +322,8 @@ const SalesReportPage = () => {
             label="Salesman"
             value={form.salesmanId}
             disabled={loadingSetup}
-            onChange={handleSalesmanSelect}
-            onSearch={searchSalesmen}
-            resolveValue={resolveSalesman}
+            options={salesmen}
+            onChange={(salesmanId) => handleChange("salesmanId", salesmanId)}
             getOptionLabel={(salesman) =>
               `${salesman.code ? `${salesman.code} - ` : ""}${salesman.name || "Salesman"}`
             }
@@ -436,9 +333,8 @@ const SalesReportPage = () => {
             label="Warehouse"
             value={form.warehouseId}
             disabled={loadingSetup}
-            onChange={handleWarehouseSelect}
-            onSearch={searchWarehouses}
-            resolveValue={resolveWarehouse}
+            options={warehouses}
+            onChange={(warehouseId) => handleChange("warehouseId", warehouseId)}
             getOptionLabel={(warehouse) => warehouse.name || "Warehouse"}
             placeholder="Type to filter by warehouse"
           />

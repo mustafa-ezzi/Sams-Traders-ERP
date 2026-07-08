@@ -1,13 +1,27 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 const inputClassName =
   "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-800/90 dark:text-slate-100 dark:focus:ring-blue-900/40";
+
+const filterLocalOptions = (options, query, getOptionLabel) => {
+  const term = String(query || "")
+    .trim()
+    .toLowerCase();
+  if (!term) return options;
+  return options.filter((option) =>
+    String(getOptionLabel(option) || "")
+      .toLowerCase()
+      .includes(term),
+  );
+};
 
 const SearchableSelect = ({
   label,
   required = false,
   value = "",
   onChange,
+  options: localOptions,
   onSearch,
   resolveValue,
   getOptionLabel,
@@ -17,11 +31,76 @@ const SearchableSelect = ({
 }) => {
   const listId = useId();
   const containerRef = useRef(null);
+  const inputRef = useRef(null);
+  const menuRef = useRef(null);
+  const usesLocalOptions = Array.isArray(localOptions);
   const [query, setQuery] = useState("");
-  const [options, setOptions] = useState([]);
+  const [remoteOptions, setRemoteOptions] = useState([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [resolvedLabel, setResolvedLabel] = useState("");
+  const [menuStyle, setMenuStyle] = useState({
+    top: 0,
+    left: 0,
+    width: 0,
+    maxHeight: 240,
+  });
+
+  const displayOptions = useMemo(() => {
+    if (usesLocalOptions) {
+      // While a selected label is showing unchanged, list everything so the
+      // user can pick another option without clearing first.
+      const filterQuery =
+        open && resolvedLabel && query === resolvedLabel ? "" : query;
+      return filterLocalOptions(localOptions, open ? filterQuery : "", getOptionLabel);
+    }
+    return remoteOptions;
+  }, [
+    getOptionLabel,
+    localOptions,
+    open,
+    query,
+    remoteOptions,
+    resolvedLabel,
+    usesLocalOptions,
+  ]);
+
+  const updateMenuPosition = () => {
+    const input = inputRef.current;
+    if (!input) return;
+    const rect = input.getBoundingClientRect();
+    const viewportPadding = 8;
+    const preferredMaxHeight = 280;
+    const spaceBelow = window.innerHeight - rect.bottom - viewportPadding;
+    const spaceAbove = rect.top - viewportPadding;
+    const openUpward = spaceBelow < 160 && spaceAbove > spaceBelow;
+    const maxHeight = Math.max(
+      120,
+      Math.min(preferredMaxHeight, openUpward ? spaceAbove : spaceBelow),
+    );
+    const top = openUpward
+      ? Math.max(viewportPadding, rect.top - maxHeight - 4)
+      : rect.bottom + 4;
+
+    setMenuStyle({
+      top,
+      left: rect.left,
+      width: rect.width,
+      maxHeight,
+    });
+  };
+
+  useLayoutEffect(() => {
+    if (!open || disabled) return undefined;
+    updateMenuPosition();
+    const handleReposition = () => updateMenuPosition();
+    window.addEventListener("resize", handleReposition);
+    window.addEventListener("scroll", handleReposition, true);
+    return () => {
+      window.removeEventListener("resize", handleReposition);
+      window.removeEventListener("scroll", handleReposition, true);
+    };
+  }, [open, disabled, displayOptions.length, loading]);
 
   useEffect(() => {
     if (!value) {
@@ -32,9 +111,16 @@ const SearchableSelect = ({
 
     let cancelled = false;
     const loadSelected = async () => {
-      if (!resolveValue) return;
       try {
-        const option = await resolveValue(value);
+        let option = null;
+        if (usesLocalOptions) {
+          option =
+            localOptions.find(
+              (item) => String(getOptionValue(item)) === String(value),
+            ) || null;
+        } else if (resolveValue) {
+          option = await resolveValue(value);
+        }
         if (cancelled || !option) return;
         const labelText = getOptionLabel(option);
         setResolvedLabel(labelText);
@@ -50,19 +136,27 @@ const SearchableSelect = ({
     return () => {
       cancelled = true;
     };
-  }, [value, resolveValue, getOptionLabel, open]);
+  }, [
+    getOptionLabel,
+    getOptionValue,
+    localOptions,
+    open,
+    resolveValue,
+    usesLocalOptions,
+    value,
+  ]);
 
   useEffect(() => {
-    if (!open) return undefined;
+    if (!open || usesLocalOptions) return undefined;
 
     let cancelled = false;
     const timer = window.setTimeout(async () => {
       setLoading(true);
       try {
         const results = await onSearch(query.trim());
-        if (!cancelled) setOptions(results || []);
+        if (!cancelled) setRemoteOptions(results || []);
       } catch {
-        if (!cancelled) setOptions([]);
+        if (!cancelled) setRemoteOptions([]);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -72,17 +166,22 @@ const SearchableSelect = ({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [query, open, onSearch]);
+  }, [query, open, onSearch, usesLocalOptions]);
 
   useEffect(() => {
     const handlePointerDown = (event) => {
-      if (!containerRef.current?.contains(event.target)) {
-        setOpen(false);
-        if (value && resolvedLabel) {
-          setQuery(resolvedLabel);
-        } else if (!value) {
-          setQuery("");
-        }
+      const target = event.target;
+      if (
+        containerRef.current?.contains(target) ||
+        menuRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setOpen(false);
+      if (value && resolvedLabel) {
+        setQuery(resolvedLabel);
+      } else if (!value) {
+        setQuery("");
       }
     };
 
@@ -118,42 +217,33 @@ const SearchableSelect = ({
 
   const showDropdown = open && !disabled;
 
-  return (
-    <div className="space-y-1" ref={containerRef}>
-      {label ? (
-        <label
-          htmlFor={listId}
-          className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
-        >
-          {label} {required ? <span className="text-rose-500">*</span> : null}
-        </label>
-      ) : null}
-      <div className="relative">
-        <input
-          id={listId}
-          type="text"
-          className={inputClassName}
-          value={query}
-          placeholder={placeholder}
-          disabled={disabled}
-          autoComplete="off"
-          onChange={handleInputChange}
-          onFocus={handleFocus}
-        />
-        {showDropdown ? (
-          <div className="absolute z-30 mt-1 max-h-60 w-full overflow-auto rounded-2xl border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-800">
+  const menu =
+    showDropdown && typeof document !== "undefined"
+      ? createPortal(
+          <div
+            ref={menuRef}
+            className="overflow-auto rounded-2xl border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-800"
+            style={{
+              position: "fixed",
+              top: menuStyle.top,
+              left: menuStyle.left,
+              width: menuStyle.width,
+              maxHeight: menuStyle.maxHeight,
+              zIndex: 9999,
+            }}
+          >
             {loading ? (
               <p className="px-4 py-2 text-sm text-slate-500 dark:text-slate-400">
                 Searching…
               </p>
             ) : null}
-            {!loading && options.length === 0 ? (
+            {!loading && displayOptions.length === 0 ? (
               <p className="px-4 py-2 text-sm text-slate-500 dark:text-slate-400">
                 No matches found
               </p>
             ) : null}
             {!loading
-              ? options.map((option) => {
+              ? displayOptions.map((option) => {
                   const optionValue = getOptionValue(option);
                   const isSelected = String(optionValue) === String(value);
                   return (
@@ -173,9 +263,36 @@ const SearchableSelect = ({
                   );
                 })
               : null}
-          </div>
-        ) : null}
+          </div>,
+          document.body,
+        )
+      : null;
+
+  return (
+    <div className="space-y-1" ref={containerRef}>
+      {label ? (
+        <label
+          htmlFor={listId}
+          className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
+        >
+          {label} {required ? <span className="text-rose-500">*</span> : null}
+        </label>
+      ) : null}
+      <div className="relative">
+        <input
+          ref={inputRef}
+          id={listId}
+          type="text"
+          className={inputClassName}
+          value={query}
+          placeholder={placeholder}
+          disabled={disabled}
+          autoComplete="off"
+          onChange={handleInputChange}
+          onFocus={handleFocus}
+        />
       </div>
+      {menu}
     </div>
   );
 };

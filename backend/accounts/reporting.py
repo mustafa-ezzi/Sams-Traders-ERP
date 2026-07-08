@@ -48,6 +48,50 @@ def get_account_balance(account, as_of_date=None):
     )
 
 
+def _party_lines_queryset(tenant_ids, people_type, people_name):
+    return JournalLine.objects.filter(
+        tenant_id__in=tenant_ids,
+        deleted_at__isnull=True,
+        journal_entry__deleted_at__isnull=True,
+        people_type=people_type,
+        people_name=people_name,
+    ).select_related("journal_entry", "account")
+
+
+def _journal_net_before(queryset, before_date):
+    """Control-account net (debit - credit) for lines dated before before_date."""
+    totals = queryset.filter(journal_entry__date__lt=before_date).aggregate(
+        debit=Coalesce(Sum("debit"), Decimal("0.00")),
+        credit=Coalesce(Sum("credit"), Decimal("0.00")),
+    )
+    return _money(totals["debit"]) - _money(totals["credit"])
+
+
+def _opening_balance_row(as_of_date, debit, credit, *, invert_for_party=False, show_tenant=False):
+    """Synthetic brought-forward row so prior activity (including openings) stays visible."""
+    journal_debit = _money(debit)
+    journal_credit = _money(credit)
+    if invert_for_party:
+        display_debit = journal_credit
+        display_credit = journal_debit
+    else:
+        display_debit = journal_debit
+        display_credit = journal_credit
+
+    row = {
+        "id": "BF-OPENING",
+        "date": as_of_date.isoformat() if hasattr(as_of_date, "isoformat") else str(as_of_date),
+        "document_type": "Opening Balance",
+        "people_type": "",
+        "remarks": "Brought forward",
+        "debit": str(display_debit),
+        "credit": str(display_credit),
+    }
+    if show_tenant:
+        row["tenant"] = ""
+    return row
+
+
 def build_ledger_report(tenant_ids, ledger_type, ledger_key, from_date, to_date, title=""):
     show_tenant = len(tenant_ids) > 1
     queryset = JournalLine.objects.filter(
@@ -58,15 +102,24 @@ def build_ledger_report(tenant_ids, ledger_type, ledger_key, from_date, to_date,
         journal_entry__date__lte=to_date,
     ).select_related("journal_entry", "account")
 
+    prior_queryset = None
     if ledger_type == "supplier":
-        queryset = queryset.filter(
-            people_type="Supplier",
-            people_name=ledger_key["business_name"],
+        party_filter = {
+            "people_type": "Supplier",
+            "people_name": ledger_key["business_name"],
+        }
+        queryset = queryset.filter(**party_filter)
+        prior_queryset = _party_lines_queryset(
+            tenant_ids, "Supplier", ledger_key["business_name"]
         )
     elif ledger_type == "customer":
-        queryset = queryset.filter(
-            people_type="Customer",
-            people_name=ledger_key["business_name"],
+        party_filter = {
+            "people_type": "Customer",
+            "people_name": ledger_key["business_name"],
+        }
+        queryset = queryset.filter(**party_filter)
+        prior_queryset = _party_lines_queryset(
+            tenant_ids, "Customer", ledger_key["business_name"]
         )
     else:
         accounts = Account.objects.filter(
@@ -75,8 +128,30 @@ def build_ledger_report(tenant_ids, ledger_type, ledger_key, from_date, to_date,
             deleted_at__isnull=True,
         ).values_list("id", flat=True)
         queryset = queryset.filter(account_id__in=list(accounts))
+        prior_queryset = JournalLine.objects.filter(
+            tenant_id__in=tenant_ids,
+            deleted_at__isnull=True,
+            journal_entry__deleted_at__isnull=True,
+            account_id__in=list(accounts),
+        )
 
-    rows = [_serialize_line(line, show_tenant=show_tenant) for line in queryset]
+    rows = []
+    journal_net = _journal_net_before(prior_queryset, from_date)
+    if journal_net != 0:
+        # GL view: positive net → debit brought forward, negative → credit.
+        bf_debit = _money(max(Decimal("0.00"), journal_net))
+        bf_credit = _money(max(Decimal("0.00"), -journal_net))
+        rows.append(
+            _opening_balance_row(
+                from_date,
+                bf_debit,
+                bf_credit,
+                invert_for_party=False,
+                show_tenant=show_tenant,
+            )
+        )
+
+    rows.extend([_serialize_line(line, show_tenant=show_tenant) for line in queryset])
     rows.sort(key=lambda row: (row["date"], row["document_type"], row["id"]))
 
     total_debit = sum(Decimal(row["debit"]) for row in rows)
@@ -87,6 +162,127 @@ def build_ledger_report(tenant_ids, ledger_type, ledger_key, from_date, to_date,
         "rows": rows,
         "total_debit": str(_money(total_debit)),
         "total_credit": str(_money(total_credit)),
+    }
+
+
+def build_party_ledger_report(
+    tenant_ids,
+    partner_type,
+    partner_name,
+    from_date=None,
+    to_date=None,
+):
+    """
+    Party statement for a customer or supplier.
+
+    Includes Opening Balance journals and a brought-forward opening row when
+    from_date excludes earlier activity (including party opening accounts).
+    """
+    people_type = "Customer" if partner_type == "customer" else "Supplier"
+    if partner_type == "customer":
+        summary_labels = [
+            "Opening Balance",
+            "Sales Invoice",
+            "Sales Return",
+            "Bank Receipt",
+            "Journal Voucher",
+        ]
+    else:
+        summary_labels = [
+            "Opening Balance",
+            "Purchase Invoice",
+            "Purchase Return",
+            "Bank Payment",
+            "Journal Voucher",
+        ]
+
+    base_queryset = _party_lines_queryset(tenant_ids, people_type, partner_name)
+    queryset = base_queryset
+    if from_date:
+        queryset = queryset.filter(journal_entry__date__gte=from_date)
+    if to_date:
+        queryset = queryset.filter(journal_entry__date__lte=to_date)
+
+    rows = []
+    document_totals = {label: Decimal("0.00") for label in summary_labels}
+    total_debit = Decimal("0.00")
+    total_credit = Decimal("0.00")
+
+    def _accumulate_row(row):
+        nonlocal total_debit, total_credit
+        display_debit = _money(row["debit"])
+        display_credit = _money(row["credit"])
+        document_type = row["document_type"] or "Journal Voucher"
+        if document_type in document_totals:
+            document_totals[document_type] += display_debit + display_credit
+        total_debit += display_debit
+        total_credit += display_credit
+        rows.append(row)
+
+    if from_date:
+        journal_net = _journal_net_before(base_queryset, from_date)
+        if journal_net != 0:
+            # Invert to party-statement side: customer receivable → credit,
+            # supplier payable → debit (matching control-account journal invert).
+            bf_journal_debit = _money(max(Decimal("0.00"), journal_net))
+            bf_journal_credit = _money(max(Decimal("0.00"), -journal_net))
+            _accumulate_row(
+                _opening_balance_row(
+                    from_date,
+                    bf_journal_debit,
+                    bf_journal_credit,
+                    invert_for_party=True,
+                )
+            )
+
+    for line in queryset.order_by(
+        "journal_entry__date", "journal_entry__reference", "created_at"
+    ):
+        entry = line.journal_entry
+        # Party ledger is shown from the party statement perspective,
+        # so we invert the control-account journal direction.
+        display_debit = _money(line.credit)
+        display_credit = _money(line.debit)
+        _accumulate_row(
+            {
+                "id": entry.reference,
+                "document_type": entry.document_type or "Journal Voucher",
+                "date": entry.date.isoformat(),
+                "remarks": line.line_description or entry.description or "",
+                "debit": str(display_debit),
+                "credit": str(display_credit),
+            }
+        )
+
+    if partner_type == "customer":
+        grand_total = _money(
+            document_totals.get("Opening Balance", Decimal("0.00"))
+            + document_totals.get("Sales Invoice", Decimal("0.00"))
+            - document_totals.get("Sales Return", Decimal("0.00"))
+            - document_totals.get("Bank Receipt", Decimal("0.00"))
+        )
+    else:
+        grand_total = _money(
+            document_totals.get("Opening Balance", Decimal("0.00"))
+            + document_totals.get("Purchase Invoice", Decimal("0.00"))
+            - document_totals.get("Purchase Return", Decimal("0.00"))
+            - document_totals.get("Bank Payment", Decimal("0.00"))
+        )
+
+    return {
+        "rows": rows,
+        "summary": {
+            "document_totals": [
+                {
+                    "label": label,
+                    "amount": str(_money(document_totals.get(label, Decimal("0.00")))),
+                }
+                for label in summary_labels
+            ],
+            "grand_total": str(grand_total),
+            "total_debit": str(_money(total_debit)),
+            "total_credit": str(_money(total_credit)),
+        },
     }
 
 

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import FormInput from "../../components/ui/FormInput";
+import SearchableSelect from "../../components/ui/SearchableSelect";
 import StateView from "../../components/StateView";
 import accountService from "../../api/services/accountService";
 import { formatDecimal } from "../../utils/format";
@@ -11,6 +12,20 @@ import supplierService from "../../api/services/supplierService";
 
 const selectClassName =
   "w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100";
+
+const fetchAll = async (service) => {
+  const limit = 100;
+  let page = 1;
+  let total = 0;
+  const rows = [];
+  do {
+    const response = await service.list({ page, limit, search: "" });
+    rows.push(...(response.data || []));
+    total = response.total || rows.length;
+    page += 1;
+  } while (rows.length < total);
+  return rows;
+};
 
 const extractErrorMessage = (error) => {
   const data = error?.response?.data;
@@ -59,15 +74,11 @@ const PartyLedgerReportsPage = () => {
     toDate: "",
   });
 
-  const partnerOptions = useMemo(() => {
-    const source = form.partnerType === "customer" ? customers : suppliers;
-    return source
-      .map((party) => ({
-        value: party.id,
-        label: party.business_name,
-      }))
-      .sort((a, b) => a.label.localeCompare(b.label));
-  }, [customers, form.partnerType, suppliers]);
+  const partnerLabel =
+    form.partnerType === "customer" ? "Customer" : "Supplier";
+
+  const partnerOptions =
+    form.partnerType === "customer" ? customers : suppliers;
 
   const filteredRows = useMemo(() => {
     const rows = report?.rows || [];
@@ -89,13 +100,13 @@ const PartyLedgerReportsPage = () => {
       setLoadingSetup(true);
       setError("");
       try {
-        const [customerResponse, supplierResponse] = await Promise.all([
-          customerService.list({ page: 1, limit: 500, search: "" }),
-          supplierService.list({ page: 1, limit: 500, search: "" }),
+        const [customerItems, supplierItems] = await Promise.all([
+          fetchAll(customerService),
+          fetchAll(supplierService),
         ]);
 
-        setCustomers(customerResponse.data || []);
-        setSuppliers(supplierResponse.data || []);
+        setCustomers(customerItems);
+        setSuppliers(supplierItems);
       } catch (loadError) {
         setError(
           extractErrorMessage(loadError) || "Failed to load partner filters",
@@ -190,28 +201,19 @@ const PartyLedgerReportsPage = () => {
               </select>
             </div>
 
-            <div className="space-y-1">
-              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                {form.partnerType === "customer" ? "Customer" : "Supplier"}{" "}
-                <span className="text-rose-500">*</span>
-              </label>
-              <select
-                className={selectClassName}
-                value={form.partnerId}
-                onChange={(e) => handleChange("partnerId", e.target.value)}
-                disabled={loadingSetup}
-              >
-                <option value="">
-                  Select{" "}
-                  {form.partnerType === "customer" ? "Customer" : "Supplier"}
-                </option>
-                {partnerOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <SearchableSelect
+              key={form.partnerType}
+              label={partnerLabel}
+              required
+              value={form.partnerId}
+              disabled={loadingSetup}
+              options={partnerOptions}
+              onChange={(partnerId) => handleChange("partnerId", partnerId)}
+              getOptionLabel={(party) =>
+                party.business_name || party.name || partnerLabel
+              }
+              placeholder={`Type to search ${partnerLabel.toLowerCase()}…`}
+            />
 
             <FormInput
               label="From Date"

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import FormInput from "../../components/ui/FormInput";
+import SearchableSelect from "../../components/ui/SearchableSelect";
 import StateView from "../../components/StateView";
 import accountService from "../../api/services/accountService";
 import dimensionService from "../../api/services/dimensionService";
@@ -12,6 +13,20 @@ import { useAuth } from "../../context/AuthContext";
 
 const selectClassName =
   "w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-800/90 dark:text-slate-100 dark:focus:ring-blue-900/40";
+
+const fetchAll = async (service) => {
+  const limit = 100;
+  let page = 1;
+  let total = 0;
+  const rows = [];
+  do {
+    const response = await service.list({ page, limit, search: "" });
+    rows.push(...(response.data || []));
+    total = response.total || rows.length;
+    page += 1;
+  } while (rows.length < total);
+  return rows;
+};
 
 const extractErrorMessage = (error) => {
   const data = error?.response?.data;
@@ -109,12 +124,12 @@ const SalesmanReportsPage = () => {
     const loadSetup = async () => {
       setLoadingSetup(true);
       try {
-        const [dimensionItems, salesmanResponse] = await Promise.all([
+        const [dimensionItems, salesmanItems] = await Promise.all([
           dimensionService.list(),
-          salesmanService.list({ page: 1, limit: 200, search: "" }),
+          fetchAll(salesmanService),
         ]);
         setDimensions(dimensionItems || []);
-        setSalesmen(salesmanResponse.data || []);
+        setSalesmen(salesmanItems);
       } catch {
         setDimensions([]);
         setSalesmen([]);
@@ -203,24 +218,17 @@ const SalesmanReportsPage = () => {
               <option value="BOTH">All Dimensions</option>
             </select>
           </div>
-          <div className="space-y-1">
-            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-              Salesman
-            </label>
-            <select
-              className={selectClassName}
-              value={form.salesmanId}
-              disabled={loadingSetup}
-              onChange={(e) => handleChange("salesmanId", e.target.value)}
-            >
-              <option value="">All salesmen</option>
-              {salesmen.map((salesman) => (
-                <option key={salesman.id} value={salesman.id}>
-                  {salesman.code} — {salesman.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          <SearchableSelect
+            label="Salesman"
+            value={form.salesmanId}
+            disabled={loadingSetup}
+            options={salesmen}
+            onChange={(salesmanId) => handleChange("salesmanId", salesmanId)}
+            getOptionLabel={(salesman) =>
+              `${salesman.code ? `${salesman.code} — ` : ""}${salesman.name || "Salesman"}`
+            }
+            placeholder="Type to search salesman (blank = all)…"
+          />
           <FormInput
             label="From Date"
             type="date"

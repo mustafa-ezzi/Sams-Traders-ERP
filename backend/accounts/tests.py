@@ -554,6 +554,209 @@ class LedgerReportTests(TestCase):
         self.assertEqual(totals["Bank Receipt"], "700.00")
         self.assertEqual(payload["summary"]["grand_total"], "1000.00")
 
+    def test_customer_party_ledger_includes_opening_balance_in_range(self):
+        opening_entry = JournalEntry.objects.create(
+            tenant_id=self.tenant_id,
+            date="2026-03-01",
+            reference="OB-CUST-TEST01",
+            source_type=JournalEntry.SourceType.PARTY_OPENING_BALANCE,
+            source_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            document_type="Opening Balance",
+            description="Customer opening",
+            people_type="Customer",
+            people_name=self.customer.business_name,
+        )
+        JournalLine.objects.create(
+            tenant_id=self.tenant_id,
+            journal_entry=opening_entry,
+            account=self.customer_account,
+            debit=Decimal("1500.00"),
+            credit=Decimal("0.00"),
+            people_type="Customer",
+            people_name=self.customer.business_name,
+            line_description="Customer Opening Balance",
+        )
+
+        sales_entry = JournalEntry.objects.create(
+            tenant_id=self.tenant_id,
+            date="2026-04-01",
+            reference="SINV-OB-00001",
+            source_type=JournalEntry.SourceType.SALES_INVOICE,
+            source_id="bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+            document_type="Sales Invoice",
+            description="Invoice after opening",
+            people_type="Customer",
+            people_name=self.customer.business_name,
+        )
+        JournalLine.objects.create(
+            tenant_id=self.tenant_id,
+            journal_entry=sales_entry,
+            account=self.customer_account,
+            debit=Decimal("500.00"),
+            credit=Decimal("0.00"),
+            people_type="Customer",
+            people_name=self.customer.business_name,
+        )
+
+        request = self.factory.get(
+            "/api/accounts/accounts/party-ledger-report/",
+            {
+                "partner_type": "customer",
+                "partner_id": str(self.customer.id),
+                "from_date": "2026-03-01",
+                "to_date": "2026-04-30",
+            },
+        )
+        force_authenticate(request, user=self.user)
+        response = AccountViewSet.as_view({"get": "party_ledger_report"})(request)
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.data["data"]
+        self.assertEqual(len(payload["rows"]), 2)
+        self.assertEqual(payload["rows"][0]["document_type"], "Opening Balance")
+        self.assertEqual(payload["rows"][0]["credit"], "1500.00")
+        self.assertEqual(payload["rows"][0]["debit"], "0.00")
+        totals = {item["label"]: item["amount"] for item in payload["summary"]["document_totals"]}
+        self.assertEqual(totals["Opening Balance"], "1500.00")
+        self.assertEqual(totals["Sales Invoice"], "500.00")
+        self.assertEqual(payload["summary"]["grand_total"], "2000.00")
+
+    def test_customer_party_ledger_brings_forward_opening_before_from_date(self):
+        opening_entry = JournalEntry.objects.create(
+            tenant_id=self.tenant_id,
+            date="2026-01-15",
+            reference="OB-CUST-TEST02",
+            source_type=JournalEntry.SourceType.PARTY_OPENING_BALANCE,
+            source_id="cccccccc-cccc-cccc-cccc-cccccccccccc",
+            document_type="Opening Balance",
+            description="Prior opening",
+            people_type="Customer",
+            people_name=self.customer.business_name,
+        )
+        JournalLine.objects.create(
+            tenant_id=self.tenant_id,
+            journal_entry=opening_entry,
+            account=self.customer_account,
+            debit=Decimal("800.00"),
+            credit=Decimal("0.00"),
+            people_type="Customer",
+            people_name=self.customer.business_name,
+            line_description="Customer Opening Balance",
+        )
+
+        sales_entry = JournalEntry.objects.create(
+            tenant_id=self.tenant_id,
+            date="2026-04-10",
+            reference="SINV-OB-00002",
+            source_type=JournalEntry.SourceType.SALES_INVOICE,
+            source_id="dddddddd-dddd-dddd-dddd-dddddddddddd",
+            document_type="Sales Invoice",
+            description="Period invoice",
+            people_type="Customer",
+            people_name=self.customer.business_name,
+        )
+        JournalLine.objects.create(
+            tenant_id=self.tenant_id,
+            journal_entry=sales_entry,
+            account=self.customer_account,
+            debit=Decimal("200.00"),
+            credit=Decimal("0.00"),
+            people_type="Customer",
+            people_name=self.customer.business_name,
+        )
+
+        request = self.factory.get(
+            "/api/accounts/accounts/party-ledger-report/",
+            {
+                "partner_type": "customer",
+                "partner_id": str(self.customer.id),
+                "from_date": "2026-04-01",
+                "to_date": "2026-04-30",
+            },
+        )
+        force_authenticate(request, user=self.user)
+        response = AccountViewSet.as_view({"get": "party_ledger_report"})(request)
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.data["data"]
+        self.assertEqual(len(payload["rows"]), 2)
+        self.assertEqual(payload["rows"][0]["id"], "BF-OPENING")
+        self.assertEqual(payload["rows"][0]["document_type"], "Opening Balance")
+        self.assertEqual(payload["rows"][0]["remarks"], "Brought forward")
+        self.assertEqual(payload["rows"][0]["credit"], "800.00")
+        self.assertEqual(payload["rows"][0]["debit"], "0.00")
+        self.assertEqual(payload["rows"][1]["document_type"], "Sales Invoice")
+        totals = {item["label"]: item["amount"] for item in payload["summary"]["document_totals"]}
+        self.assertEqual(totals["Opening Balance"], "800.00")
+        self.assertEqual(totals["Sales Invoice"], "200.00")
+        self.assertEqual(payload["summary"]["grand_total"], "1000.00")
+
+    def test_supplier_ledger_report_includes_opening_balance_brought_forward(self):
+        opening_entry = JournalEntry.objects.create(
+            tenant_id=self.tenant_id,
+            date="2026-02-01",
+            reference="OB-SUP-TEST01",
+            source_type=JournalEntry.SourceType.PARTY_OPENING_BALANCE,
+            source_id="eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+            document_type="Opening Balance",
+            description="Supplier opening",
+            people_type="Supplier",
+            people_name=self.supplier.business_name,
+        )
+        JournalLine.objects.create(
+            tenant_id=self.tenant_id,
+            journal_entry=opening_entry,
+            account=self.payables,
+            debit=Decimal("0.00"),
+            credit=Decimal("1200.00"),
+            people_type="Supplier",
+            people_name=self.supplier.business_name,
+            line_description="Supplier Opening Balance",
+        )
+
+        invoice = PurchaseInvoice.objects.create(
+            tenant_id=self.tenant_id,
+            invoice_number="PINV-OB-00001",
+            date="2026-04-05",
+            supplier=self.supplier,
+            warehouse=self.warehouse,
+            net_amount=Decimal("300.00"),
+            gross_amount=Decimal("300.00"),
+        )
+        PurchaseInvoiceLine.objects.create(
+            tenant_id=self.tenant_id,
+            invoice=invoice,
+            product=self.product,
+            quantity=Decimal("0.50"),
+            rate=Decimal("600.00"),
+            amount=Decimal("300.00"),
+            discount=Decimal("0.00"),
+            total_amount=Decimal("300.00"),
+        )
+        sync_purchase_invoice_journal(invoice)
+
+        request = self.factory.get(
+            "/api/accounts/accounts/ledger-report/",
+            {
+                "head_account_id": str(self.liabilities.id),
+                "ledger_type": "supplier",
+                "ledger_id": str(self.supplier.id),
+                "from_date": "2026-04-01",
+                "to_date": "2026-04-30",
+            },
+        )
+        force_authenticate(request, user=self.user)
+        response = AccountViewSet.as_view({"get": "ledger_report"})(request)
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.data["data"]
+        self.assertEqual(payload["rows"][0]["id"], "BF-OPENING")
+        self.assertEqual(payload["rows"][0]["document_type"], "Opening Balance")
+        self.assertEqual(payload["rows"][0]["credit"], "1200.00")
+        self.assertEqual(payload["rows"][0]["debit"], "0.00")
+        self.assertEqual(payload["total_credit"], "1500.00")
+        self.assertEqual(payload["total_debit"], "0.00")
+
 
 class AccountSoftDeleteProtectionTests(TestCase):
     def setUp(self):

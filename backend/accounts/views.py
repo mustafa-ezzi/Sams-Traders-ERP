@@ -21,6 +21,7 @@ from accounts.dimensions import get_user_active_dimension_codes, seed_default_co
 from accounts.reporting import (
     build_balance_sheet_report,
     build_ledger_report,
+    build_party_ledger_report,
     build_payable_aging_report,
     build_profit_and_loss_report,
     build_receivable_aging_report,
@@ -1816,14 +1817,6 @@ class AccountViewSet(ModelViewSet):
                 )
             except Customer.DoesNotExist:
                 raise ValidationError({"partner_id": "Customer not found."})
-            people_type = "Customer"
-            summary_labels = [
-                "Opening Balance",
-                "Sales Invoice",
-                "Sales Return",
-                "Bank Receipt",
-                "Journal Voucher",
-            ]
         else:
             try:
                 partner = Supplier.objects.get(
@@ -1833,14 +1826,6 @@ class AccountViewSet(ModelViewSet):
                 )
             except Supplier.DoesNotExist:
                 raise ValidationError({"partner_id": "Supplier not found."})
-            people_type = "Supplier"
-            summary_labels = [
-                "Opening Balance",
-                "Purchase Invoice",
-                "Purchase Return",
-                "Bank Payment",
-                "Journal Voucher",
-            ]
 
         from_date = None
         to_date = None
@@ -1857,74 +1842,13 @@ class AccountViewSet(ModelViewSet):
         if from_date and to_date and from_date > to_date:
             raise ValidationError({"date": "From date cannot be greater than to date."})
 
-        queryset = JournalLine.objects.filter(
-            tenant_id__in=company_tenant_ids,
-            deleted_at__isnull=True,
-            journal_entry__deleted_at__isnull=True,
-            people_type=people_type,
-            people_name=partner.business_name,
-        ).select_related("journal_entry", "account")
-
-        if from_date:
-            queryset = queryset.filter(journal_entry__date__gte=from_date)
-        if to_date:
-            queryset = queryset.filter(journal_entry__date__lte=to_date)
-
-        rows = []
-        document_totals = {label: Decimal("0.00") for label in summary_labels}
-        total_debit = Decimal("0.00")
-        total_credit = Decimal("0.00")
-
-        for line in queryset.order_by("journal_entry__date", "journal_entry__reference", "created_at"):
-            entry = line.journal_entry
-
-            # Party ledger is shown from the party statement perspective,
-            # so we invert the control-account journal direction.
-            display_debit = self._money(line.credit)
-            display_credit = self._money(line.debit)
-            document_type = entry.document_type or "Journal Voucher"
-
-            rows.append(
-                {
-                    "id": entry.reference,
-                    "document_type": document_type,
-                    "date": entry.date.isoformat(),
-                    "remarks": line.line_description or entry.description or "",
-                    "debit": str(display_debit),
-                    "credit": str(display_credit),
-                }
-            )
-
-            if document_type in document_totals:
-                document_totals[document_type] += display_debit + display_credit
-
-            total_debit += display_debit
-            total_credit += display_credit
-
-        if partner_type == "customer":
-            grand_total = self._money(
-                document_totals.get("Opening Balance", Decimal("0.00"))
-                + document_totals.get("Sales Invoice", Decimal("0.00"))
-                - document_totals.get("Sales Return", Decimal("0.00"))
-                - document_totals.get("Bank Receipt", Decimal("0.00"))
-            )
-        else:
-            grand_total = self._money(
-                document_totals.get("Opening Balance", Decimal("0.00"))
-                + document_totals.get("Purchase Invoice", Decimal("0.00"))
-                - document_totals.get("Purchase Return", Decimal("0.00"))
-                - document_totals.get("Bank Payment", Decimal("0.00"))
-            )
-
-        summary = {
-            "document_totals": [
-                {"label": label, "amount": str(self._money(document_totals.get(label, Decimal("0.00"))))}
-                for label in summary_labels
-            ],
-            "grand_total": str(grand_total),
-            "total_debit": str(self._money(total_debit)),
-            "total_credit": str(self._money(total_credit)),
-        }
+        payload = build_party_ledger_report(
+            tenant_ids=company_tenant_ids,
+            partner_type=partner_type,
+            partner_name=partner.business_name,
+            from_date=from_date,
+            to_date=to_date,
+        )
 
         return Response(
             {
@@ -1934,8 +1858,7 @@ class AccountViewSet(ModelViewSet):
                     "partner_name": partner.business_name,
                     "from_date": from_date.isoformat() if from_date else "",
                     "to_date": to_date.isoformat() if to_date else "",
-                    "rows": rows,
-                    "summary": summary,
+                    **payload,
                 }
             }
         )

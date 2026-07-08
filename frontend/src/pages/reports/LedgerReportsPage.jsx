@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import FormInput from "../../components/ui/FormInput";
+import SearchableSelect from "../../components/ui/SearchableSelect";
 import StateView from "../../components/StateView";
 import axiosInstance from "../../api/axiosInstance";
 import accountService from "../../api/services/accountService";
@@ -308,45 +309,35 @@ const LedgerReportsPage = () => {
               </select>
             </div>
 
-            <div className="space-y-1">
-              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Account Head <span className="text-rose-500">*</span>
-              </label>
-              <select
-                className={selectClassName}
-                value={form.headAccountId}
-                onChange={(e) => handleChange("headAccountId", e.target.value)}
-                disabled={loadingSetup}
-              >
-                <option value="">Select Account Head</option>
-                {headOptions.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {formatAccountLabel(account)}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <SearchableSelect
+              key={`head-${form.tenantScope}`}
+              label="Account Head"
+              required
+              value={form.headAccountId}
+              disabled={loadingSetup}
+              options={headOptions}
+              getOptionValue={(account) => account.id}
+              getOptionLabel={(account) => formatAccountLabel(account)}
+              onChange={(headAccountId) =>
+                handleChange("headAccountId", headAccountId)
+              }
+              placeholder="Type to search account head…"
+            />
 
-            <div className="space-y-1">
-              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                COA <span className="text-rose-500">*</span>
-              </label>
-              <select
-                className={selectClassName}
-                value={form.ledgerSelection}
-                onChange={(e) =>
-                  handleChange("ledgerSelection", e.target.value)
-                }
-                disabled={!form.headAccountId || loadingSetup}
-              >
-                <option value="">Select COA / Party</option>
-                {ledgerOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <SearchableSelect
+              key={`coa-${form.headAccountId || "none"}`}
+              label="COA"
+              required
+              value={form.ledgerSelection}
+              disabled={!form.headAccountId || loadingSetup}
+              options={ledgerOptions}
+              getOptionValue={(option) => option.value}
+              getOptionLabel={(option) => option.label}
+              onChange={(ledgerSelection) =>
+                handleChange("ledgerSelection", ledgerSelection)
+              }
+              placeholder="Type to search COA / party…"
+            />
 
             <FormInput
               label="From Date *"
