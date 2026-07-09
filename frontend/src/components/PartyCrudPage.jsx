@@ -10,7 +10,9 @@ import FormInput from "./ui/FormInput";
 import ConfirmModal from "./ui/ConfirmModal";
 import IconButton from "./ui/IconButton";
 import PageSizeSelect from "./ui/PageSizeSelect";
+import dimensionService from "../api/services/dimensionService";
 import { useToast } from "../context/ToastContext";
+import { useAuth } from "../context/AuthContext";
 import partyOpeningBalanceService from "../api/services/partyOpeningBalanceService";
 import PartyOpeningBalanceModal from "./parties/PartyOpeningBalanceModal";
 import { formatAccountLabel } from "../utils/accounts";
@@ -71,12 +73,16 @@ const PartyCrudPage = ({
   const [limit, setLimit] = useState(10);
   const [deleteId, setDeleteId] = useState("");
   const [openingBalances, setOpeningBalances] = useState([]);
+  const [openingPartyOptions, setOpeningPartyOptions] = useState([]);
+  const [openingDimensionOptions, setOpeningDimensionOptions] = useState([]);
   const [openingLoading, setOpeningLoading] = useState(false);
+  const [openingPartyLoading, setOpeningPartyLoading] = useState(false);
   const [openingModalOpen, setOpeningModalOpen] = useState(false);
   const [editingOpening, setEditingOpening] = useState(null);
   const [deleteOpeningId, setDeleteOpeningId] = useState("");
   const [loadingRecord, setLoadingRecord] = useState(false);
   const toast = useToast();
+  const { allowedDimensions } = useAuth();
 
   const editingId = isFormView ? routeId || "" : inlineEditingId;
   const singularTitle = title.endsWith("s") ? title.slice(0, -1) : title;
@@ -92,6 +98,34 @@ const PartyCrudPage = ({
     resolver: zodResolver(schema),
     defaultValues,
   });
+
+  const openingDimensions = useMemo(
+    () => {
+      if (openingDimensionOptions.length) {
+        const activeFromApi = openingDimensionOptions
+          .filter((item) => item?.is_active !== false)
+          .map((item) => ({ code: item.code, name: item.name }));
+        if (activeFromApi.length) return activeFromApi;
+      }
+      return (allowedDimensions || [])
+        .filter((item) => item?.is_active)
+        .map((item) => ({ code: item.code, name: item.name }));
+    },
+    [allowedDimensions, openingDimensionOptions],
+  );
+
+  const openingDimensionMap = useMemo(
+    () => Object.fromEntries(openingDimensions.map((item) => [item.code, item.name])),
+    [openingDimensions],
+  );
+
+  const openingPartyMap = useMemo(
+    () =>
+      Object.fromEntries(
+        (openingPartyOptions || []).map((party) => [String(party.id), party]),
+      ),
+    [openingPartyOptions],
+  );
 
   const loadRecords = async (nextPage = page, nextSearch = search, nextLimit = limit) => {
     setLoading(true);
@@ -133,11 +167,100 @@ const PartyCrudPage = ({
   };
 
   useEffect(() => {
+    if (!partyType || isFormView) return;
+    let cancelled = false;
+    dimensionService
+      .list()
+      .then((items) => {
+        if (!cancelled) {
+          setOpeningDimensionOptions(items || []);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setOpeningDimensionOptions([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [partyType, isFormView]);
+
+  const loadOpeningPartyOptions = async () => {
+    if (!partyType || isFormView) return;
+    if (!openingDimensions.length) {
+      setOpeningPartyOptions([]);
+      return;
+    }
+
+    setOpeningPartyLoading(true);
+    try {
+      const fetchAllPartiesForDimension = async (dimension) => {
+        const rows = [];
+        let nextPage = 1;
+        const perPage = 100;
+        let keepLoading = true;
+
+        while (keepLoading) {
+          const response = await service.list(
+            {
+              page: nextPage,
+              limit: perPage,
+              search: "",
+            },
+            dimension.code,
+          );
+
+          const data = response.data || response.results || [];
+          rows.push(
+            ...data.map((row) => ({
+              ...row,
+              tenant_id: dimension.code,
+              dimension_name: dimension.name,
+            })),
+          );
+
+          const total =
+            Number(response.total ?? response.count ?? rows.length) || rows.length;
+          const hasNext =
+            Boolean(response.next) ||
+            (Number.isFinite(total) ? rows.length < total : data.length === perPage);
+
+          if (!hasNext || data.length === 0) {
+            keepLoading = false;
+          } else {
+            nextPage += 1;
+          }
+        }
+
+        return rows;
+      };
+
+      const perDimensionRows = await Promise.all(
+        openingDimensions.map((dimension) => fetchAllPartiesForDimension(dimension)),
+      );
+
+      setOpeningPartyOptions(perDimensionRows.flat());
+    } catch {
+      toast.error(`Failed to load all ${title.toLowerCase()} for opening accounts`);
+      setOpeningPartyOptions([]);
+    } finally {
+      setOpeningPartyLoading(false);
+    }
+  };
+
+  useEffect(() => {
     if (!isFormView) {
       loadRecords(1, "");
       loadOpeningBalances();
     }
   }, [isFormView, partyType]);
+
+  useEffect(() => {
+    if (!isFormView && partyType) {
+      loadOpeningPartyOptions();
+    }
+  }, [isFormView, partyType, openingDimensions.length]);
 
   useEffect(() => {
     if (!isFormView) return;
@@ -407,7 +530,10 @@ const PartyCrudPage = ({
           }}
           partyType={partyType}
           partyLabel={singularTitle}
-          partyOptions={records}
+          partyOptions={openingPartyOptions}
+          dimensions={openingDimensions}
+          loadingParties={openingPartyLoading}
+          dimensionMap={openingDimensionMap}
           editingRecord={editingOpening}
           onSubmit={handleSaveOpening}
         />
@@ -468,6 +594,9 @@ const PartyCrudPage = ({
                     onClick={() => {
                       setEditingOpening(null);
                       setOpeningModalOpen(true);
+                      if (!openingPartyOptions.length && !openingPartyLoading) {
+                        loadOpeningPartyOptions();
+                      }
                     }}
                   >
                     Opening Account
@@ -603,6 +732,9 @@ const PartyCrudPage = ({
                   onClick={() => {
                     setEditingOpening(null);
                     setOpeningModalOpen(true);
+                    if (!openingPartyOptions.length && !openingPartyLoading) {
+                      loadOpeningPartyOptions();
+                    }
                   }}
                 >
                   Add Opening Account
@@ -610,10 +742,11 @@ const PartyCrudPage = ({
               </div>
 
               <div className="overflow-x-auto rounded-2xl border border-slate-200">
-                <table className="w-full min-w-[640px] text-sm">
+                <table className="w-full min-w-[760px] text-sm">
                   <thead className="bg-slate-50 text-left">
                     <tr>
                       <th className="px-4 py-3 font-bold text-slate-700">{singularTitle}</th>
+                      <th className="px-4 py-3 font-bold text-slate-700">Dimension</th>
                       <th className="px-4 py-3 font-bold text-slate-700">Date</th>
                       <th className="px-4 py-3 font-bold text-slate-700 text-right">Amount</th>
                       <th className="px-4 py-3 font-bold text-slate-700">Remarks</th>
@@ -623,13 +756,13 @@ const PartyCrudPage = ({
                   <tbody>
                     {openingLoading ? (
                       <tr>
-                        <td colSpan={5} className="px-4 py-6 text-center text-slate-500">
+                        <td colSpan={6} className="px-4 py-6 text-center text-slate-500">
                           Loading opening accounts...
                         </td>
                       </tr>
                     ) : openingBalances.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="px-4 py-6 text-center text-slate-500">
+                        <td colSpan={6} className="px-4 py-6 text-center text-slate-500">
                           No opening accounts yet.
                         </td>
                       </tr>
@@ -638,6 +771,11 @@ const PartyCrudPage = ({
                         <tr key={record.id} className="border-t border-slate-100">
                           <td className="px-4 py-3 font-medium text-slate-800">
                             {record.partyName}
+                          </td>
+                          <td className="px-4 py-3 text-slate-600">
+                            {openingPartyMap[
+                              String(record.customerId || record.supplierId || "")
+                            ]?.dimension_name || "—"}
                           </td>
                           <td className="px-4 py-3 text-slate-600">{record.date}</td>
                           <td className="px-4 py-3 text-right font-semibold tabular-nums text-slate-900">

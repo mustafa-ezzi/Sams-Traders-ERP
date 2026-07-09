@@ -28,6 +28,7 @@ const SearchableSelect = ({
   getOptionValue = (option) => option.id,
   placeholder = "Type to search…",
   disabled = false,
+  showAllOptions = false,
 }) => {
   const listId = useId();
   const containerRef = useRef(null);
@@ -70,17 +71,34 @@ const SearchableSelect = ({
     if (!input) return;
     const rect = input.getBoundingClientRect();
     const viewportPadding = 8;
-    const preferredMaxHeight = 280;
-    const spaceBelow = window.innerHeight - rect.bottom - viewportPadding;
-    const spaceAbove = rect.top - viewportPadding;
-    const openUpward = spaceBelow < 160 && spaceAbove > spaceBelow;
-    const maxHeight = Math.max(
-      120,
-      Math.min(preferredMaxHeight, openUpward ? spaceAbove : spaceBelow),
-    );
-    const top = openUpward
-      ? Math.max(viewportPadding, rect.top - maxHeight - 4)
-      : rect.bottom + 4;
+    let maxHeight = null;
+    let top = rect.bottom + 4;
+
+    if (!showAllOptions) {
+      const preferredMaxHeight = 280;
+      const spaceBelow = window.innerHeight - rect.bottom - viewportPadding;
+      const spaceAbove = rect.top - viewportPadding;
+      const openUpward = spaceBelow < 160 && spaceAbove > spaceBelow;
+      maxHeight = Math.max(
+        120,
+        Math.min(preferredMaxHeight, openUpward ? spaceAbove : spaceBelow),
+      );
+      top = openUpward
+        ? Math.max(viewportPadding, rect.top - maxHeight - 4)
+        : rect.bottom + 4;
+    } else {
+      const spaceBelow = window.innerHeight - rect.bottom - viewportPadding;
+      const spaceAbove = rect.top - viewportPadding;
+      const openUpward = spaceBelow < 220 && spaceAbove > spaceBelow;
+      const preferredMaxHeight = Math.min(560, Math.floor(window.innerHeight * 0.72));
+      maxHeight = Math.max(
+        220,
+        Math.min(preferredMaxHeight, openUpward ? spaceAbove : spaceBelow),
+      );
+      top = openUpward
+        ? Math.max(viewportPadding, rect.top - maxHeight - 4)
+        : rect.bottom + 4;
+    }
 
     setMenuStyle({
       top,
@@ -222,13 +240,15 @@ const SearchableSelect = ({
       ? createPortal(
           <div
             ref={menuRef}
-            className="overflow-auto rounded-2xl border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-800"
+            className={`overflow-auto rounded-2xl border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-800 ${
+              showAllOptions ? "scrollbar-thin" : ""
+            }`}
             style={{
               position: "fixed",
               top: menuStyle.top,
               left: menuStyle.left,
               width: menuStyle.width,
-              maxHeight: menuStyle.maxHeight,
+              maxHeight: menuStyle.maxHeight || 280,
               zIndex: 9999,
             }}
           >

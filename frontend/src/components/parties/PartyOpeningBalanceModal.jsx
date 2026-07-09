@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Button from "../ui/Button";
 import FormInput from "../ui/FormInput";
+import SearchableSelect from "../ui/SearchableSelect";
 import { formatMoney } from "../../utils/format";
 
 const selectClassName =
@@ -28,10 +29,14 @@ const PartyOpeningBalanceModal = ({
   partyType,
   partyLabel,
   partyOptions = [],
+  dimensions = [],
+  loadingParties = false,
+  dimensionMap = {},
   editingRecord = null,
   onSubmit,
 }) => {
   const [partyId, setPartyId] = useState("");
+  const [dimensionCode, setDimensionCode] = useState("");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [amount, setAmount] = useState("");
   const [remarks, setRemarks] = useState("");
@@ -57,25 +62,58 @@ const PartyOpeningBalanceModal = ({
     return partyOptions;
   }, [editingRecord, isCustomer, partyOptions]);
 
+  const filteredParties = useMemo(() => {
+    if (!dimensionCode) return [];
+    return availableParties.filter(
+      (party) => String(party.tenant_id || "") === String(dimensionCode),
+    );
+  }, [availableParties, dimensionCode]);
+
   useEffect(() => {
     if (!open) return;
     setError("");
     if (editingRecord) {
+      const selectedPartyId = isCustomer
+        ? editingRecord.customerId || editingRecord.customer?.id || ""
+        : editingRecord.supplierId || editingRecord.supplier?.id || "";
+      const selectedParty = availableParties.find(
+        (item) => String(item.id) === String(selectedPartyId),
+      );
+      setDimensionCode(
+        selectedParty?.tenant_id ||
+          editingRecord.tenant_id ||
+          dimensions[0]?.code ||
+          "",
+      );
       setPartyId(
-        isCustomer
-          ? editingRecord.customerId || editingRecord.customer?.id || ""
-          : editingRecord.supplierId || editingRecord.supplier?.id || "",
+        selectedPartyId,
       );
       setDate(String(editingRecord.date || "").slice(0, 10));
       setAmount(String(editingRecord.amount ?? ""));
       setRemarks(editingRecord.remarks || "");
     } else {
-      setPartyId("");
+      const defaultDimension = dimensions[0]?.code || "";
+      setDimensionCode(defaultDimension);
+      const firstParty = availableParties.find(
+        (party) => String(party.tenant_id || "") === String(defaultDimension),
+      );
+      setPartyId(firstParty?.id || "");
       setDate(new Date().toISOString().slice(0, 10));
       setAmount("");
       setRemarks("");
     }
-  }, [open, editingRecord, isCustomer]);
+  }, [open, editingRecord, isCustomer, availableParties, dimensions]);
+
+  useEffect(() => {
+    if (!open || editingRecord) return;
+    if (!dimensionCode) return;
+    const stillValid = filteredParties.some(
+      (party) => String(party.id) === String(partyId),
+    );
+    if (!stillValid) {
+      setPartyId("");
+    }
+  }, [open, editingRecord, dimensionCode, filteredParties, partyId]);
 
   if (!open) return null;
 
@@ -132,21 +170,47 @@ const PartyOpeningBalanceModal = ({
         <form className="mt-5 space-y-4" onSubmit={handleSubmit}>
           <div className="space-y-1">
             <label className="block text-sm font-semibold text-slate-700">
-              {partyLabel} <span className="text-rose-500">*</span>
+              Dimension <span className="text-rose-500">*</span>
             </label>
-            <select
-              className={selectClassName}
+            {editingRecord ? (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700">
+                {dimensionMap[dimensionCode] || dimensionCode || "—"}
+              </div>
+            ) : (
+              <select
+                className={selectClassName}
+                value={dimensionCode}
+                onChange={(event) => setDimensionCode(event.target.value)}
+              >
+                <option value="">Select dimension</option>
+                {dimensions.map((dimension) => (
+                  <option key={dimension.code} value={dimension.code}>
+                    {dimension.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          <div className="space-y-1">
+            <SearchableSelect
+              label={`${partyLabel}`}
+              required
               value={partyId}
-              disabled={Boolean(editingRecord)}
-              onChange={(event) => setPartyId(event.target.value)}
-            >
-              <option value="">Select {partyLabel.toLowerCase()}</option>
-              {availableParties.map((party) => (
-                <option key={party.id} value={party.id}>
-                  {party.business_name}
-                </option>
-              ))}
-            </select>
+              disabled={Boolean(editingRecord) || loadingParties || !dimensionCode}
+              showAllOptions
+              options={filteredParties}
+              onChange={(nextValue) => setPartyId(nextValue)}
+              getOptionLabel={(party) => party.business_name || "Unnamed"}
+              getOptionValue={(party) => party.id}
+              placeholder={
+                !dimensionCode
+                  ? "Select dimension first"
+                  : loadingParties
+                    ? "Loading parties..."
+                    : `Type to search ${partyLabel.toLowerCase()}`
+              }
+            />
           </div>
 
           <FormInput
