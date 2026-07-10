@@ -23,6 +23,7 @@ from inventory.models import (
     Product,
     ProductStock,
     RawMaterial,
+    Salesman,
     Size,
     Stock,
     Supplier,
@@ -2367,3 +2368,152 @@ class SaasIsolationTests(TestCase):
         )
         self.assertEqual(response.status_code, 400)
         self.assertIn("limit", str(response.data).lower())
+
+
+class SalesmanPerformanceReportTests(TestCase):
+    def setUp(self):
+        self.sams_tenant = "REPORT_SAMS"
+        self.other_tenant = "REPORT_OTHER"
+        Dimension.objects.get_or_create(
+            code=self.sams_tenant,
+            defaults={"name": "Sams Traders", "is_active": True},
+        )
+        Dimension.objects.get_or_create(
+            code=self.other_tenant,
+            defaults={"name": "Other Dimension", "is_active": True},
+        )
+
+        self.warehouse = Warehouse.objects.create(
+            tenant_id=self.sams_tenant,
+            name="Main Warehouse",
+            location="Karachi",
+        )
+        receivable_account = Account.objects.create(
+            tenant_id=self.sams_tenant,
+            code="1120",
+            name="Receivables",
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.RECEIVABLE,
+            account_nature=Account.AccountNature.DEBIT,
+            level=1,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+        self.customer = Customer.objects.create(
+            tenant_id=self.sams_tenant,
+            name="Customer One",
+            business_name="Customer One",
+            phone_number="123",
+            address="Main road",
+            account=receivable_account,
+        )
+        self.salesman = Salesman.objects.create(
+            tenant_id=self.sams_tenant,
+            code="TAHA",
+            name="Taha",
+            commission_on_sales=Decimal("10.00"),
+            commission_on_recovery=Decimal("5.00"),
+        )
+
+    def test_report_includes_invoice_when_product_dimension_matches_scope(self):
+        from accounts.reporting import build_salesman_performance_report
+        from datetime import date
+
+        invoice = SalesInvoice.objects.create(
+            tenant_id=self.other_tenant,
+            invoice_number="SI-00001",
+            date=date(2026, 4, 22),
+            customer=self.customer,
+            warehouse=self.warehouse,
+            salesman=self.salesman,
+            gross_amount=Decimal("100.00"),
+            net_amount=Decimal("100.00"),
+            salesman_commission_rate=Decimal("10.00"),
+            salesman_commission_amount=Decimal("10.00"),
+        )
+        SalesInvoiceLine.objects.create(
+            tenant_id=self.sams_tenant,
+            invoice=invoice,
+            product_id=self._create_product().id,
+            quantity=Decimal("1.00"),
+            rate=Decimal("100.00"),
+            amount=Decimal("100.00"),
+            discount=Decimal("0.00"),
+            total_amount=Decimal("100.00"),
+        )
+
+        scoped_report = build_salesman_performance_report(
+            tenant_ids=[self.sams_tenant],
+            from_date=date(2026, 1, 1),
+            to_date=date(2026, 12, 31),
+        )
+        header_only_report = build_salesman_performance_report(
+            tenant_ids=[self.other_tenant],
+            from_date=date(2026, 1, 1),
+            to_date=date(2026, 12, 31),
+        )
+
+        self.assertEqual(scoped_report["summary"]["invoice_count"], 1)
+        self.assertEqual(len(scoped_report["invoice_rows"]), 1)
+        self.assertEqual(scoped_report["invoice_rows"][0]["salesman_name"], "Taha")
+        self.assertEqual(scoped_report["invoice_rows"][0]["sales_commission_amount"], "10.00")
+        self.assertEqual(header_only_report["summary"]["invoice_count"], 0)
+
+    def _create_product(self):
+        inventory_account = Account.objects.create(
+            tenant_id=self.sams_tenant,
+            code="1150",
+            name="Inventory",
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.INVENTORY,
+            account_nature=Account.AccountNature.DEBIT,
+            level=1,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+        cogs_account = Account.objects.create(
+            tenant_id=self.sams_tenant,
+            code="5100",
+            name="COGS",
+            account_group=Account.AccountGroup.COGS,
+            account_type=Account.AccountType.COGS,
+            account_nature=Account.AccountNature.DEBIT,
+            level=1,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+        revenue_account = Account.objects.create(
+            tenant_id=self.sams_tenant,
+            code="4100",
+            name="Sales Revenue",
+            account_group=Account.AccountGroup.REVENUE,
+            account_type=Account.AccountType.REVENUE,
+            account_nature=Account.AccountNature.CREDIT,
+            level=1,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+        category = Category.objects.create(
+            tenant_id=self.sams_tenant,
+            name="Category",
+            inventory_account=inventory_account,
+            cogs_account=cogs_account,
+            revenue_account=revenue_account,
+        )
+        unit = Unit.objects.create(tenant_id=self.sams_tenant, name="Piece")
+        return Product.objects.create(
+            tenant_id=self.sams_tenant,
+            name="Sams Product",
+            product_type="READY_MADE",
+            packaging_cost=Decimal("0.00"),
+            net_amount=Decimal("100.00"),
+            category=category,
+            unit=unit,
+            inventory_account=inventory_account,
+            cogs_account=cogs_account,
+            revenue_account=revenue_account,
+        )

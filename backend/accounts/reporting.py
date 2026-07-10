@@ -1254,21 +1254,27 @@ def build_salesman_performance_report(
     Salesman performance for a date range:
     - Sales commission from invoices dated in the period (with a salesman assigned).
     - Recovery commission from bank receipts dated in the period on invoiced sales.
+
+    Amounts are allocated to dimensions from invoice line tenant_id (product dimension),
+    not only the invoice header tenant_id.
     """
-    from sales.models import SalesBankReceipt, SalesInvoice
+    from sales.models import SalesBankReceipt, SalesInvoice, SalesInvoiceLine
     from sales.services import get_sales_invoice_financials
 
     dimension_names = _dimension_name_map(tenant_ids)
+    all_lines_queryset = SalesInvoiceLine.objects.filter(deleted_at__isnull=True)
 
     invoices = (
         SalesInvoice.objects.filter(
-            tenant_id__in=tenant_ids,
             deleted_at__isnull=True,
             salesman_id__isnull=False,
             date__gte=from_date,
             date__lte=to_date,
         )
+        .filter(Q(tenant_id__in=tenant_ids) | Q(lines__tenant_id__in=tenant_ids))
+        .distinct()
         .select_related("salesman", "customer")
+        .prefetch_related(Prefetch("lines", queryset=all_lines_queryset))
         .order_by("date", "invoice_number")
     )
     if salesman_id:
@@ -1278,14 +1284,25 @@ def build_salesman_performance_report(
 
     receipts = (
         SalesBankReceipt.objects.filter(
-            tenant_id__in=tenant_ids,
             deleted_at__isnull=True,
             date__gte=from_date,
             date__lte=to_date,
             sales_invoice__deleted_at__isnull=True,
+            sales_invoice__isnull=False,
+        )
+        .filter(
+            Q(sales_invoice__tenant_id__in=tenant_ids)
+            | Q(
+                sales_invoice__lines__tenant_id__in=tenant_ids,
+                sales_invoice__lines__deleted_at__isnull=True,
+            )
         )
         .filter(Q(salesman_id__isnull=False) | Q(sales_invoice__salesman_id__isnull=False))
         .select_related("salesman", "sales_invoice", "sales_invoice__salesman", "customer")
+        .prefetch_related(
+            Prefetch("sales_invoice__lines", queryset=all_lines_queryset),
+        )
+        .distinct()
         .order_by("date", "receipt_number")
     )
     if salesman_id:
@@ -1323,6 +1340,8 @@ def build_salesman_performance_report(
     salesman_map = {}
     invoice_detail_rows = []
     receipt_detail_rows = []
+    counted_invoice_ids = set()
+    counted_receipt_ids = set()
 
     total_net_sales = Decimal("0.00")
     total_sales_commission = Decimal("0.00")
@@ -1331,82 +1350,115 @@ def build_salesman_performance_report(
 
     for invoice in invoices:
         salesman = invoice.salesman
-        row = _ensure_salesman_row(salesman, invoice.tenant_id)
+        dimension_totals = _sales_invoice_line_totals(invoice, tenant_ids)
+        if not dimension_totals:
+            continue
+
         financials = get_sales_invoice_financials(invoice)
-        net_amount = _money(invoice.net_amount)
-        sales_commission = _money(invoice.salesman_commission_amount)
+        counted_invoice_ids.add(invoice.id)
 
-        row["invoice_count"] += 1
-        row["net_sales"] = _money(row["net_sales"] + net_amount)
-        row["sales_commission"] = _money(row["sales_commission"] + sales_commission)
+        for dimension_tenant_id, line_total in dimension_totals.items():
+            row = _ensure_salesman_row(salesman, dimension_tenant_id)
+            net_amount = _allocated_invoice_amount(invoice, invoice.net_amount, line_total)
+            sales_commission = _allocated_invoice_amount(
+                invoice,
+                invoice.salesman_commission_amount,
+                line_total,
+            )
+            received_amount = _allocated_invoice_amount(
+                invoice,
+                financials["received_amount"],
+                line_total,
+            )
+            balance_amount = _allocated_invoice_amount(
+                invoice,
+                financials["balance_amount"],
+                line_total,
+            )
 
-        total_net_sales = _money(total_net_sales + net_amount)
-        total_sales_commission = _money(total_sales_commission + sales_commission)
+            row["invoice_count"] += 1
+            row["net_sales"] = _money(row["net_sales"] + net_amount)
+            row["sales_commission"] = _money(row["sales_commission"] + sales_commission)
 
-        invoice_detail_rows.append(
-            {
-                "invoice_id": str(invoice.id),
-                "invoice_number": invoice.invoice_number,
-                "invoice_date": invoice.date.isoformat(),
-                "due_date": invoice.due_date.isoformat() if invoice.due_date else "",
-                "salesman_id": str(salesman.id),
-                "salesman_code": salesman.code,
-                "salesman_name": salesman.name,
-                "customer_name": invoice.customer.business_name or invoice.customer.name or "",
-                "tenant_id": invoice.tenant_id,
-                "dimension_name": row["dimension_name"],
-                "net_amount": str(net_amount),
-                "sales_commission_rate": str(_money(invoice.salesman_commission_rate)),
-                "sales_commission_amount": str(sales_commission),
-                "received_amount": str(_money(financials["received_amount"])),
-                "balance_amount": str(_money(financials["balance_amount"])),
-            }
-        )
+            total_net_sales = _money(total_net_sales + net_amount)
+            total_sales_commission = _money(total_sales_commission + sales_commission)
+
+            invoice_detail_rows.append(
+                {
+                    "invoice_id": str(invoice.id),
+                    "invoice_number": invoice.invoice_number,
+                    "invoice_date": invoice.date.isoformat(),
+                    "due_date": invoice.due_date.isoformat() if invoice.due_date else "",
+                    "salesman_id": str(salesman.id),
+                    "salesman_code": salesman.code,
+                    "salesman_name": salesman.name,
+                    "customer_name": invoice.customer.business_name or invoice.customer.name or "",
+                    "tenant_id": dimension_tenant_id,
+                    "dimension_name": row["dimension_name"],
+                    "net_amount": str(net_amount),
+                    "sales_commission_rate": str(_money(invoice.salesman_commission_rate)),
+                    "sales_commission_amount": str(sales_commission),
+                    "received_amount": str(received_amount),
+                    "balance_amount": str(balance_amount),
+                }
+            )
 
     for receipt in receipts:
         invoice = receipt.sales_invoice
         salesman = receipt.salesman or invoice.salesman
         if not salesman:
             continue
-        row = _ensure_salesman_row(salesman, receipt.tenant_id)
-        receipt_amount = _money(receipt.amount)
-        if receipt.salesman_id:
-            recovery_rate = _money(receipt.recovery_commission_rate)
-            recovery_commission = _money(receipt.recovery_commission_amount)
-        else:
-            recovery_rate = _money(salesman.commission_on_recovery)
-            recovery_commission = (
-                _money((receipt_amount * recovery_rate) / Decimal("100"))
-                if recovery_rate > 0
-                else Decimal("0.00")
+
+        dimension_totals = _sales_invoice_line_totals(invoice, tenant_ids)
+        if not dimension_totals:
+            continue
+
+        counted_receipt_ids.add(receipt.id)
+
+        for dimension_tenant_id, line_total in dimension_totals.items():
+            row = _ensure_salesman_row(salesman, dimension_tenant_id)
+            receipt_amount = _allocated_invoice_amount(invoice, receipt.amount, line_total)
+            if receipt.salesman_id:
+                recovery_rate = _money(receipt.recovery_commission_rate)
+                recovery_commission = _allocated_invoice_amount(
+                    invoice,
+                    receipt.recovery_commission_amount,
+                    line_total,
+                )
+            else:
+                recovery_rate = _money(salesman.commission_on_recovery)
+                recovery_commission = (
+                    _money((receipt_amount * recovery_rate) / Decimal("100"))
+                    if recovery_rate > 0
+                    else Decimal("0.00")
+                )
+
+            row["receipt_count"] += 1
+            row["collected_amount"] = _money(row["collected_amount"] + receipt_amount)
+            row["recovery_commission"] = _money(row["recovery_commission"] + recovery_commission)
+
+            total_collected = _money(total_collected + receipt_amount)
+            total_recovery_commission = _money(total_recovery_commission + recovery_commission)
+
+            receipt_detail_rows.append(
+                {
+                    "receipt_id": str(receipt.id),
+                    "receipt_number": receipt.receipt_number,
+                    "receipt_date": receipt.date.isoformat(),
+                    "invoice_id": str(invoice.id),
+                    "invoice_number": invoice.invoice_number,
+                    "invoice_date": invoice.date.isoformat(),
+                    "salesman_id": str(salesman.id),
+                    "salesman_code": salesman.code,
+                    "salesman_name": salesman.name,
+                    "customer_name": receipt.customer.business_name or receipt.customer.name or "",
+                    "tenant_id": dimension_tenant_id,
+                    "dimension_name": row["dimension_name"],
+                    "receipt_amount": str(receipt_amount),
+                    "recovery_commission_rate": str(recovery_rate),
+                    "recovery_commission_amount": str(recovery_commission),
+                }
             )
-
-        row["receipt_count"] += 1
-        row["collected_amount"] = _money(row["collected_amount"] + receipt_amount)
-        row["recovery_commission"] = _money(row["recovery_commission"] + recovery_commission)
-
-        total_collected = _money(total_collected + receipt_amount)
-        total_recovery_commission = _money(total_recovery_commission + recovery_commission)
-
-        receipt_detail_rows.append(
-            {
-                "receipt_id": str(receipt.id),
-                "receipt_number": receipt.receipt_number,
-                "receipt_date": receipt.date.isoformat(),
-                "invoice_id": str(invoice.id),
-                "invoice_number": invoice.invoice_number,
-                "invoice_date": invoice.date.isoformat(),
-                "salesman_id": str(salesman.id),
-                "salesman_code": salesman.code,
-                "salesman_name": salesman.name,
-                "customer_name": receipt.customer.business_name or receipt.customer.name or "",
-                "tenant_id": receipt.tenant_id,
-                "dimension_name": row["dimension_name"],
-                "receipt_amount": str(receipt_amount),
-                "recovery_commission_rate": str(recovery_rate),
-                "recovery_commission_amount": str(recovery_commission),
-            }
-        )
 
     salesman_rows = []
     for row in salesman_map.values():
@@ -1435,8 +1487,8 @@ def build_salesman_performance_report(
         "salesman_id": str(salesman_id) if salesman_id else "",
         "summary": {
             "salesman_count": len(salesman_rows),
-            "invoice_count": len(invoice_detail_rows),
-            "receipt_count": len(receipt_detail_rows),
+            "invoice_count": len(counted_invoice_ids),
+            "receipt_count": len(counted_receipt_ids),
             "total_net_sales": str(total_net_sales),
             "total_sales_commission": str(total_sales_commission),
             "total_collected": str(total_collected),
