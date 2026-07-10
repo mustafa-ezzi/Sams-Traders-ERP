@@ -143,6 +143,58 @@ const accountService = {
     );
     return response.data.data || {};
   },
+  async getTrialBalanceReport(params, selectedTenant = "") {
+    const response = await axiosInstance.get("/accounts/accounts/trial-balance-report/", {
+      params,
+      headers: tenantHeader(selectedTenant),
+    });
+    return response.data.data || {};
+  },
+  async getGeneralLedgerReport(params, selectedTenant = "") {
+    const response = await axiosInstance.get("/accounts/accounts/general-ledger-report/", {
+      params,
+      headers: tenantHeader(selectedTenant),
+    });
+    return response.data.data || {};
+  },
+  async getDayBookReport(params, selectedTenant = "") {
+    const response = await axiosInstance.get("/accounts/accounts/day-book-report/", {
+      params,
+      headers: tenantHeader(selectedTenant),
+    });
+    return response.data.data || {};
+  },
+  async getCashFlowSummaryReport(params, selectedTenant = "") {
+    const response = await axiosInstance.get("/accounts/accounts/cash-flow-summary-report/", {
+      params,
+      headers: tenantHeader(selectedTenant),
+    });
+    return response.data.data || {};
+  },
+  async getAccountStatementReport(params, selectedTenant = "") {
+    const response = await axiosInstance.get("/accounts/accounts/account-statement-report/", {
+      params,
+      headers: tenantHeader(selectedTenant),
+    });
+    return response.data.data || {};
+  },
+  async getComparativeProfitLossReport(params, selectedTenant = "") {
+    const response = await axiosInstance.get(
+      "/accounts/accounts/comparative-profit-loss-report/",
+      {
+        params,
+        headers: tenantHeader(selectedTenant),
+      },
+    );
+    return response.data.data || {};
+  },
+  async getExpenseAnalysisReport(params, selectedTenant = "") {
+    const response = await axiosInstance.get("/accounts/accounts/expense-analysis-report/", {
+      params,
+      headers: tenantHeader(selectedTenant),
+    });
+    return response.data.data || {};
+  },
   async getDashboardOverview(selectedTenant = "", period = "all") {
     const response = await axiosInstance.get("/accounts/accounts/dashboard-overview/", {
       params: { period },

@@ -48,6 +48,13 @@ import DimensionFormPage from "./pages/users/DimensionFormPage";
 import CoaCompletenessReportPage from "./pages/reports/CoaCompletenessReportPage";
 import BalanceSheetPage from "./pages/reports/BalanceSheetPage";
 import ProfitLossPage from "./pages/reports/ProfitLossPage";
+import TrialBalancePage from "./pages/reports/TrialBalancePage";
+import GeneralLedgerPage from "./pages/reports/GeneralLedgerPage";
+import DayBookPage from "./pages/reports/DayBookPage";
+import CashFlowSummaryPage from "./pages/reports/CashFlowSummaryPage";
+import AccountStatementPage from "./pages/reports/AccountStatementPage";
+import ComparativeProfitLossPage from "./pages/reports/ComparativeProfitLossPage";
+import ExpenseAnalysisPage from "./pages/reports/ExpenseAnalysisPage";
 import AgingReportsPage from "./pages/reports/AgingReportsPage";
 import SalesReportPage from "./pages/reports/SalesReportPage";
 import SalesmanReportsPage from "./pages/reports/SalesmanReportsPage";
@@ -157,6 +164,13 @@ const App = () => (
         <Route path="reports/party-ledger" element={<PartyLedgerReportsPage />} />
         <Route path="reports/balance-sheet" element={<BalanceSheetPage />} />
         <Route path="reports/profit-loss" element={<ProfitLossPage />} />
+        <Route path="reports/trial-balance" element={<TrialBalancePage />} />
+        <Route path="reports/general-ledger" element={<GeneralLedgerPage />} />
+        <Route path="reports/day-book" element={<DayBookPage />} />
+        <Route path="reports/cash-flow" element={<CashFlowSummaryPage />} />
+        <Route path="reports/account-statement" element={<AccountStatementPage />} />
+        <Route path="reports/comparative-profit-loss" element={<ComparativeProfitLossPage />} />
+        <Route path="reports/expense-analysis" element={<ExpenseAnalysisPage />} />
         <Route path="reports/aging" element={<AgingReportsPage />} />
         <Route path="reports/sales" element={<SalesReportPage />} />
         <Route path="reports/salesman" element={<SalesmanReportsPage />} />

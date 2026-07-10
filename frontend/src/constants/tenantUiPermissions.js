@@ -41,6 +41,13 @@ export const TENANT_UI_PERMISSION_GROUPS = [
     keys: [
       { id: "reports_balance_sheet", label: "Balance sheet" },
       { id: "reports_profit_loss", label: "Profit & loss" },
+      { id: "reports_trial_balance", label: "Trial balance" },
+      { id: "reports_general_ledger", label: "General ledger" },
+      { id: "reports_day_book", label: "Day book" },
+      { id: "reports_cash_flow", label: "Cash flow summary" },
+      { id: "reports_account_statement", label: "Account statement" },
+      { id: "reports_comparative_profit_loss", label: "Comparative P&L" },
+      { id: "reports_expense_analysis", label: "Expense analysis" },
       { id: "reports_ledger", label: "Ledger reports" },
       { id: "reports_party_ledger", label: "Party ledger" },
       { id: "reports_coa_completeness", label: "COA completeness" },

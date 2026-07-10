@@ -19,7 +19,13 @@ from rest_framework.viewsets import ModelViewSet
 from accounts.models import Account
 from accounts.dimensions import get_user_active_dimension_codes, seed_default_coa_for_dimension
 from accounts.reporting import (
+    build_account_statement_report,
     build_balance_sheet_report,
+    build_cash_flow_summary_report,
+    build_comparative_profit_and_loss_report,
+    build_day_book_report,
+    build_expense_analysis_report,
+    build_general_ledger_report,
     build_ledger_report,
     build_party_ledger_report,
     build_payable_aging_report,
@@ -27,6 +33,7 @@ from accounts.reporting import (
     build_receivable_aging_report,
     build_sales_report,
     build_salesman_performance_report,
+    build_trial_balance_report,
     get_account_balance,
 )
 from inventory.models import (
@@ -362,6 +369,32 @@ class AccountViewSet(ModelViewSet):
         if tenant_scope in valid_tenants:
             return [tenant_scope]
         raise ValidationError({"tenant_scope": "Valid dimension scope is required."})
+
+    def _parse_report_date_range(self):
+        from_raw = self.request.query_params.get("from_date")
+        to_raw = self.request.query_params.get("to_date")
+        if not from_raw or not to_raw:
+            raise ValidationError({"date": "From date and to date are required."})
+        try:
+            from_date = date.fromisoformat(from_raw)
+            to_date = date.fromisoformat(to_raw)
+        except ValueError:
+            raise ValidationError({"date": "Dates must be in YYYY-MM-DD format."})
+        if from_date > to_date:
+            raise ValidationError({"date": "From date cannot be after to date."})
+        return from_date, to_date
+
+    def _parse_as_of_date(self, param_name="as_of_date"):
+        as_of_date_raw = self.request.query_params.get(param_name)
+        if as_of_date_raw:
+            try:
+                return date.fromisoformat(as_of_date_raw)
+            except ValueError:
+                raise ValidationError({param_name: "Date must be in YYYY-MM-DD format."})
+        return date.today()
+
+    def _financial_report_response(self, tenant_scope, payload):
+        return Response({"data": {"tenant_scope": tenant_scope, **payload}})
 
     def _money(self, value):
         return Decimal(value or 0).quantize(Decimal("0.01"))
@@ -1236,6 +1269,93 @@ class AccountViewSet(ModelViewSet):
                 }
             }
         )
+
+    @action(detail=False, methods=["get"], url_path="trial-balance-report")
+    def trial_balance_report(self, request):
+        tenant_scope = request.query_params.get("tenant_scope") or request.user.tenant_id
+        as_of_date = self._parse_as_of_date()
+        tenant_ids = self._resolve_tenant_ids(tenant_scope)
+        payload = build_trial_balance_report(tenant_ids=tenant_ids, as_of_date=as_of_date)
+        return self._financial_report_response(tenant_scope, payload)
+
+    @action(detail=False, methods=["get"], url_path="general-ledger-report")
+    def general_ledger_report(self, request):
+        tenant_scope = request.query_params.get("tenant_scope") or request.user.tenant_id
+        from_date, to_date = self._parse_report_date_range()
+        tenant_ids = self._resolve_tenant_ids(tenant_scope)
+        payload = build_general_ledger_report(
+            tenant_ids=tenant_ids,
+            from_date=from_date,
+            to_date=to_date,
+        )
+        return self._financial_report_response(tenant_scope, payload)
+
+    @action(detail=False, methods=["get"], url_path="day-book-report")
+    def day_book_report(self, request):
+        tenant_scope = request.query_params.get("tenant_scope") or request.user.tenant_id
+        from_date, to_date = self._parse_report_date_range()
+        tenant_ids = self._resolve_tenant_ids(tenant_scope)
+        payload = build_day_book_report(
+            tenant_ids=tenant_ids,
+            from_date=from_date,
+            to_date=to_date,
+        )
+        return self._financial_report_response(tenant_scope, payload)
+
+    @action(detail=False, methods=["get"], url_path="cash-flow-summary-report")
+    def cash_flow_summary_report(self, request):
+        tenant_scope = request.query_params.get("tenant_scope") or request.user.tenant_id
+        from_date, to_date = self._parse_report_date_range()
+        tenant_ids = self._resolve_tenant_ids(tenant_scope)
+        payload = build_cash_flow_summary_report(
+            tenant_ids=tenant_ids,
+            from_date=from_date,
+            to_date=to_date,
+        )
+        return self._financial_report_response(tenant_scope, payload)
+
+    @action(detail=False, methods=["get"], url_path="account-statement-report")
+    def account_statement_report(self, request):
+        tenant_scope = request.query_params.get("tenant_scope") or request.user.tenant_id
+        account_id = request.query_params.get("account_id")
+        if not account_id:
+            raise ValidationError({"account_id": "Account is required."})
+        from_date, to_date = self._parse_report_date_range()
+        tenant_ids = self._resolve_tenant_ids(tenant_scope)
+        try:
+            payload = build_account_statement_report(
+                tenant_ids=tenant_ids,
+                account_id=account_id,
+                from_date=from_date,
+                to_date=to_date,
+            )
+        except Account.DoesNotExist:
+            raise ValidationError({"account_id": "Account not found."})
+        return self._financial_report_response(tenant_scope, payload)
+
+    @action(detail=False, methods=["get"], url_path="comparative-profit-loss-report")
+    def comparative_profit_loss_report(self, request):
+        tenant_scope = request.query_params.get("tenant_scope") or request.user.tenant_id
+        from_date, to_date = self._parse_report_date_range()
+        tenant_ids = self._resolve_tenant_ids(tenant_scope)
+        payload = build_comparative_profit_and_loss_report(
+            tenant_ids=tenant_ids,
+            from_date=from_date,
+            to_date=to_date,
+        )
+        return self._financial_report_response(tenant_scope, payload)
+
+    @action(detail=False, methods=["get"], url_path="expense-analysis-report")
+    def expense_analysis_report(self, request):
+        tenant_scope = request.query_params.get("tenant_scope") or request.user.tenant_id
+        from_date, to_date = self._parse_report_date_range()
+        tenant_ids = self._resolve_tenant_ids(tenant_scope)
+        payload = build_expense_analysis_report(
+            tenant_ids=tenant_ids,
+            from_date=from_date,
+            to_date=to_date,
+        )
+        return self._financial_report_response(tenant_scope, payload)
 
     @action(detail=False, methods=["get"], url_path="receivable-aging-report")
     def receivable_aging_report(self, request):

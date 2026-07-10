@@ -1,4 +1,4 @@
-    import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
@@ -272,54 +272,132 @@ const navigation = [
     id: "reports",
     color: "from-amber-500 to-orange-500",
     dot: "bg-amber-400",
-    items: [
+    groups: [
       {
-        to: "/reports/balance-sheet",
-        label: "Balance Sheet",
-        icon: icons.reports,
-        perm: "reports_balance_sheet",
+        id: "financial-statements",
+        label: "Financial Statements",
+        items: [
+          {
+            to: "/reports/balance-sheet",
+            label: "Balance Sheet",
+            icon: icons.reports,
+            perm: "reports_balance_sheet",
+          },
+          {
+            to: "/reports/profit-loss",
+            label: "Profit & Loss",
+            icon: icons.reports,
+            perm: "reports_profit_loss",
+          },
+          {
+            to: "/reports/comparative-profit-loss",
+            label: "Comparative P&L",
+            icon: icons.reports,
+            perm: "reports_comparative_profit_loss",
+          },
+        ],
       },
       {
-        to: "/reports/profit-loss",
-        label: "Profit & Loss",
-        icon: icons.reports,
-        perm: "reports_profit_loss",
+        id: "accounting-registers",
+        label: "Accounting Registers",
+        items: [
+          {
+            to: "/reports/trial-balance",
+            label: "Trial Balance",
+            icon: icons.reports,
+            perm: "reports_trial_balance",
+          },
+          {
+            to: "/reports/general-ledger",
+            label: "General Ledger",
+            icon: icons.reports,
+            perm: "reports_general_ledger",
+          },
+          {
+            to: "/reports/day-book",
+            label: "Day Book",
+            icon: icons.reports,
+            perm: "reports_day_book",
+          },
+          {
+            to: "/reports/cash-flow",
+            label: "Cash Flow",
+            icon: icons.reports,
+            perm: "reports_cash_flow",
+          },
+          {
+            to: "/reports/expense-analysis",
+            label: "Expense Analysis",
+            icon: icons.reports,
+            perm: "reports_expense_analysis",
+          },
+        ],
       },
       {
-        to: "/reports/ledger",
+        id: "ledger-reports",
         label: "Ledger Reports",
-        icon: icons.reports,
-        perm: "reports_ledger",
+        items: [
+          {
+            to: "/reports/ledger",
+            label: "COA Ledger",
+            icon: icons.reports,
+            perm: "reports_ledger",
+          },
+          {
+            to: "/reports/account-statement",
+            label: "Account Statement",
+            icon: icons.reports,
+            perm: "reports_account_statement",
+          },
+          {
+            to: "/reports/party-ledger",
+            label: "Party Ledger",
+            icon: icons.reports,
+            perm: "reports_party_ledger",
+          },
+        ],
       },
       {
-        to: "/reports/party-ledger",
-        label: "Party Ledger",
-        icon: icons.reports,
-        perm: "reports_party_ledger",
+        id: "receivables-payables",
+        label: "Receivables & Payables",
+        items: [
+          {
+            to: "/reports/aging",
+            label: "Aging (AR / AP)",
+            icon: icons.reports,
+            perm: "reports_aging",
+          },
+        ],
       },
       {
-        to: "/reports/aging",
-        label: "Aging (AR / AP)",
-        icon: icons.reports,
-        perm: "reports_aging",
+        id: "sales-reports",
+        label: "Sales Reports",
+        items: [
+          {
+            to: "/reports/sales",
+            label: "Sales Report",
+            icon: icons.reports,
+            perm: "reports_sales",
+          },
+          {
+            to: "/reports/salesman",
+            label: "Salesman Performance",
+            icon: icons.reports,
+            perm: "reports_salesman",
+          },
+        ],
       },
       {
-        to: "/reports/sales",
-        label: "Sales Report",
-        icon: icons.reports,
-        perm: "reports_sales",
-      },
-      {
-        to: "/reports/salesman",
-        label: "Salesman Performance",
-        icon: icons.reports,
-        perm: "reports_salesman",
-      },
-      {
-        to: "/reports/coa-completeness",
-        label: "COA Completeness",
-        icon: icons.reports,
-        perm: "reports_coa_completeness",
+        id: "report-setup",
+        label: "Setup",
+        items: [
+          {
+            to: "/reports/coa-completeness",
+            label: "COA Completeness",
+            icon: icons.reports,
+            perm: "reports_coa_completeness",
+          },
+        ],
       },
     ],
   },
@@ -419,6 +497,13 @@ const pageTitles = {
   "/users/configure/create": { title: "Create Company", eyebrow: "Users" },
   "/reports/balance-sheet": { title: "Balance Sheet", eyebrow: "Reports" },
   "/reports/profit-loss": { title: "Profit & Loss", eyebrow: "Reports" },
+  "/reports/trial-balance": { title: "Trial Balance", eyebrow: "Reports" },
+  "/reports/general-ledger": { title: "General Ledger", eyebrow: "Reports" },
+  "/reports/day-book": { title: "Day Book", eyebrow: "Reports" },
+  "/reports/cash-flow": { title: "Cash Flow Summary", eyebrow: "Reports" },
+  "/reports/account-statement": { title: "Account Statement", eyebrow: "Reports" },
+  "/reports/comparative-profit-loss": { title: "Comparative P&L", eyebrow: "Reports" },
+  "/reports/expense-analysis": { title: "Expense Analysis", eyebrow: "Reports" },
   "/reports/ledger": { title: "Ledger Reports", eyebrow: "Reports" },
   "/reports/party-ledger": { title: "Party Ledger", eyebrow: "Reports" },
   "/reports/aging": { title: "Aging Reports", eyebrow: "Reports" },
@@ -469,12 +554,121 @@ const pageTitles = {
 /* ─────────────────────────────────────────────────────────────────
    NAV SECTION (collapsible)
 ───────────────────────────────────────────────────────────────── */
+const getSectionItems = (section) =>
+  section.groups
+    ? section.groups.flatMap((group) => group.items)
+    : section.items || [];
+
+const pathMatches = (pathname, to) =>
+  pathname === to || pathname.startsWith(`${to}/`);
+
+const filterNavItems = (items = [], { isTenantChild, perms }) =>
+  items.filter((item) => {
+    if (item.orgAdminOnly) return !isTenantChild;
+    if (!isTenantChild) return true;
+    return Boolean(item.perm && perms.includes(item.perm));
+  });
+
+const NavLinkItem = ({ item, onNavigate, compact = false }) => (
+  <NavLink
+    to={item.to}
+    end
+    onClick={onNavigate}
+    className={({ isActive }) =>
+      `group flex items-center gap-2.5 rounded-lg px-2.5 text-[13px] transition-all duration-150 ${
+        compact ? "py-1" : "py-1.5"
+      } ${
+        isActive
+          ? "bg-white/[0.1] text-white font-semibold"
+          : "text-slate-400 hover:bg-white/[0.05] hover:text-slate-200 font-medium"
+      }`
+    }
+  >
+    {({ isActive }) => (
+      <>
+        <span
+          className={`shrink-0 transition-colors ${
+            isActive
+              ? "text-blue-400"
+              : "text-slate-600 group-hover:text-slate-400"
+          }`}
+        >
+          {item.icon}
+        </span>
+        <span className="truncate">{item.label}</span>
+        {isActive && (
+          <span className="ml-auto h-1 w-1 rounded-full bg-blue-400 shrink-0" />
+        )}
+      </>
+    )}
+  </NavLink>
+);
+
+const NavGroup = ({ group, onNavigate, pathname }) => {
+  const groupItems = group.items || [];
+  const isActiveGroup = groupItems.some((item) => pathMatches(pathname, item.to));
+  const [open, setOpen] = useState(isActiveGroup);
+
+  useEffect(() => {
+    if (isActiveGroup) {
+      setOpen(true);
+    }
+  }, [isActiveGroup, pathname]);
+
+  if (!groupItems.length) {
+    return null;
+  }
+
+  return (
+    <div className="mb-0.5">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="group flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-all hover:bg-white/[0.04]"
+      >
+        <span
+          className={`text-[10px] text-slate-600 transition-transform duration-200 group-hover:text-slate-400 ${open ? "rotate-90" : ""}`}
+        >
+          {icons.chevron}
+        </span>
+        <span
+          className={`flex-1 text-[11px] font-semibold tracking-wide transition-colors ${
+            isActiveGroup
+              ? "text-slate-300"
+              : "text-slate-500 group-hover:text-slate-400"
+          }`}
+        >
+          {group.label}
+        </span>
+      </button>
+
+      <div
+        className="overflow-hidden transition-all duration-250"
+        style={{ maxHeight: open ? "480px" : "0px", opacity: open ? 1 : 0 }}
+      >
+        <div className="ml-2 space-y-px border-l border-white/[0.05] pl-2.5 pb-1">
+          {groupItems.map((item) => (
+            <NavLinkItem key={item.to} item={item} onNavigate={onNavigate} compact />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const NavSection = ({ section, onNavigate }) => {
   const { pathname } = useLocation();
-  const isActiveSection = section.items.some((item) =>
-    pathname.startsWith(item.to),
+  const sectionItems = getSectionItems(section);
+  const isActiveSection = sectionItems.some((item) =>
+    pathMatches(pathname, item.to),
   );
   const [open, setOpen] = useState(isActiveSection);
+
+  useEffect(() => {
+    if (isActiveSection) {
+      setOpen(true);
+    }
+  }, [isActiveSection, pathname]);
 
   return (
     <div className="mb-0.5">
@@ -501,41 +695,24 @@ const NavSection = ({ section, onNavigate }) => {
       {/* Items */}
       <div
         className="overflow-hidden transition-all duration-250"
-        style={{ maxHeight: open ? "600px" : "0px", opacity: open ? 1 : 0 }}
+        style={{
+          maxHeight: open ? (section.groups ? "1200px" : "600px") : "0px",
+          opacity: open ? 1 : 0,
+        }}
       >
         <div className="ml-3 mt-0.5 space-y-px border-l border-white/[0.06] pl-3 pb-2">
-          {section.items.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              onClick={onNavigate}
-              className={({ isActive }) =>
-                `group flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px] transition-all duration-150 ${
-                  isActive
-                    ? "bg-white/[0.1] text-white font-semibold"
-                    : "text-slate-400 hover:bg-white/[0.05] hover:text-slate-200 font-medium"
-                }`
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  <span
-                    className={`shrink-0 transition-colors ${
-                      isActive
-                        ? "text-blue-400"
-                        : "text-slate-600 group-hover:text-slate-400"
-                    }`}
-                  >
-                    {item.icon}
-                  </span>
-                  <span className="truncate">{item.label}</span>
-                  {isActive && (
-                    <span className="ml-auto h-1 w-1 rounded-full bg-blue-400 shrink-0" />
-                  )}
-                </>
-              )}
-            </NavLink>
-          ))}
+          {section.groups
+            ? section.groups.map((group) => (
+                <NavGroup
+                  key={group.id}
+                  group={group}
+                  onNavigate={onNavigate}
+                  pathname={pathname}
+                />
+              ))
+            : (section.items || []).map((item) => (
+                <NavLinkItem key={item.to} item={item} onNavigate={onNavigate} />
+              ))}
         </div>
       </div>
     </div>
@@ -618,10 +795,25 @@ const Layout = () => {
     return navigation
       .map((section) => {
         if (isTenantChild && section.id === "users") return null;
-        const items = section.items.filter((item) => {
-          if (item.orgAdminOnly) return !isTenantChild;
-          if (!isTenantChild) return true;
-          return Boolean(item.perm && perms.includes(item.perm));
+
+        if (section.groups) {
+          const groups = section.groups
+            .map((group) => {
+              const items = filterNavItems(group.items || [], {
+                isTenantChild,
+                perms,
+              });
+              if (!items.length) return null;
+              return { ...group, items };
+            })
+            .filter(Boolean);
+          if (!groups.length) return null;
+          return { ...section, groups };
+        }
+
+        const items = filterNavItems(section.items || [], {
+          isTenantChild,
+          perms,
         });
         if (!items.length) return null;
         return { ...section, items };

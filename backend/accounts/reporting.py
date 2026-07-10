@@ -1,11 +1,11 @@
 from collections import defaultdict
 from decimal import Decimal
-from datetime import date
+from datetime import date, timedelta
 
 from django.db.models import Prefetch, Q, Sum
 from django.db.models.functions import Coalesce
 
-from accounts.models import Account, Dimension, JournalLine
+from accounts.models import Account, Dimension, JournalEntry, JournalLine
 
 
 def _money(value):
@@ -1498,4 +1498,682 @@ def build_salesman_performance_report(
         "salesman_rows": salesman_rows,
         "invoice_rows": invoice_detail_rows,
         "receipt_rows": receipt_detail_rows,
+    }
+
+
+def _journal_line_totals_for_accounts(tenant_ids, account_ids, *, as_of_date=None, from_date=None, to_date=None):
+    queryset = JournalLine.objects.filter(
+        tenant_id__in=tenant_ids,
+        deleted_at__isnull=True,
+        journal_entry__deleted_at__isnull=True,
+        account_id__in=account_ids,
+    )
+    if as_of_date is not None:
+        queryset = queryset.filter(journal_entry__date__lte=as_of_date)
+    if from_date is not None:
+        queryset = queryset.filter(journal_entry__date__gte=from_date)
+    if to_date is not None:
+        queryset = queryset.filter(journal_entry__date__lte=to_date)
+
+    return {
+        row["account_id"]: {
+            "debit": _money(row["debit"]),
+            "credit": _money(row["credit"]),
+        }
+        for row in queryset.values("account_id").annotate(
+            debit=Coalesce(Sum("debit"), Decimal("0.00")),
+            credit=Coalesce(Sum("credit"), Decimal("0.00")),
+        )
+    }
+
+
+def _trial_balance_columns(account, balance):
+    """Map signed balance to debit/credit presentation columns."""
+    balance = _money(balance)
+    if balance == 0:
+        return Decimal("0.00"), Decimal("0.00")
+    if account.account_nature == Account.AccountNature.DEBIT:
+        if balance > 0:
+            return balance, Decimal("0.00")
+        return Decimal("0.00"), abs(balance)
+    if balance > 0:
+        return Decimal("0.00"), balance
+    return abs(balance), Decimal("0.00")
+
+
+def build_trial_balance_report(tenant_ids, as_of_date):
+    dimension_names = _dimension_name_map(tenant_ids)
+    accounts = list(
+        Account.objects.filter(
+            tenant_id__in=tenant_ids,
+            deleted_at__isnull=True,
+            is_active=True,
+            is_postable=True,
+        ).order_by("code", "tenant_id", "name")
+    )
+    account_ids = [account.id for account in accounts]
+    line_totals = _journal_line_totals_for_accounts(
+        tenant_ids,
+        account_ids,
+        as_of_date=as_of_date,
+    )
+
+    rows = []
+    total_debit = Decimal("0.00")
+    total_credit = Decimal("0.00")
+
+    for account in accounts:
+        totals = line_totals.get(
+            account.id,
+            {"debit": Decimal("0.00"), "credit": Decimal("0.00")},
+        )
+        balance = _balance_for_account(account, totals["debit"], totals["credit"])
+        debit_balance, credit_balance = _trial_balance_columns(account, balance)
+        if debit_balance == 0 and credit_balance == 0:
+            continue
+
+        total_debit += debit_balance
+        total_credit += credit_balance
+        rows.append(
+            {
+                "account_id": str(account.id),
+                "code": account.code,
+                "name": account.name,
+                "account_group": account.account_group,
+                "tenant_id": account.tenant_id,
+                "dimension_name": dimension_names.get(account.tenant_id, account.tenant_id),
+                "debit_balance": str(debit_balance),
+                "credit_balance": str(credit_balance),
+            }
+        )
+
+    total_debit = _money(total_debit)
+    total_credit = _money(total_credit)
+    difference = _money(total_debit - total_credit)
+
+    return {
+        "as_of_date": as_of_date.isoformat(),
+        "rows": rows,
+        "summary": {
+            "account_count": len(rows),
+            "total_debit": str(total_debit),
+            "total_credit": str(total_credit),
+            "difference": str(difference),
+            "is_balanced": difference == 0,
+        },
+    }
+
+
+def build_general_ledger_report(tenant_ids, from_date, to_date):
+    dimension_names = _dimension_name_map(tenant_ids)
+    show_tenant = len(tenant_ids) > 1
+    accounts = list(
+        Account.objects.filter(
+            tenant_id__in=tenant_ids,
+            deleted_at__isnull=True,
+            is_active=True,
+            is_postable=True,
+        ).order_by("code", "tenant_id", "name")
+    )
+    account_ids = [account.id for account in accounts]
+
+    opening_totals = {
+        row["account_id"]: {
+            "debit": _money(row["debit"]),
+            "credit": _money(row["credit"]),
+        }
+        for row in JournalLine.objects.filter(
+            tenant_id__in=tenant_ids,
+            deleted_at__isnull=True,
+            journal_entry__deleted_at__isnull=True,
+            journal_entry__date__lt=from_date,
+            account_id__in=account_ids,
+        )
+        .values("account_id")
+        .annotate(
+            debit=Coalesce(Sum("debit"), Decimal("0.00")),
+            credit=Coalesce(Sum("credit"), Decimal("0.00")),
+        )
+    }
+
+    period_lines = (
+        JournalLine.objects.filter(
+            tenant_id__in=tenant_ids,
+            deleted_at__isnull=True,
+            journal_entry__deleted_at__isnull=True,
+            journal_entry__date__gte=from_date,
+            journal_entry__date__lte=to_date,
+            account_id__in=account_ids,
+        )
+        .select_related("journal_entry", "account")
+        .order_by("account__code", "journal_entry__date", "journal_entry__reference", "created_at")
+    )
+
+    lines_by_account = defaultdict(list)
+    for line in period_lines:
+        lines_by_account[line.account_id].append(line)
+
+    account_sections = []
+    total_debit = Decimal("0.00")
+    total_credit = Decimal("0.00")
+
+    for account in accounts:
+        account_lines = lines_by_account.get(account.id, [])
+        opening_totals_row = opening_totals.get(
+            account.id,
+            {"debit": Decimal("0.00"), "credit": Decimal("0.00")},
+        )
+        opening_balance = _balance_for_account(
+            account,
+            opening_totals_row["debit"],
+            opening_totals_row["credit"],
+        )
+
+        if opening_balance == 0 and not account_lines:
+            continue
+
+        section_rows = []
+        if opening_balance != 0:
+            bf_debit, bf_credit = _trial_balance_columns(account, opening_balance)
+            section_rows.append(
+                {
+                    "id": "BF-OPENING",
+                    "date": from_date.isoformat(),
+                    "reference": "",
+                    "document_type": "Opening Balance",
+                    "remarks": "Brought forward",
+                    "debit": str(bf_debit),
+                    "credit": str(bf_credit),
+                    "tenant_id": account.tenant_id if show_tenant else "",
+                }
+            )
+
+        running_debit = sum((Decimal(row["debit"]) for row in section_rows), Decimal("0.00"))
+        running_credit = sum((Decimal(row["credit"]) for row in section_rows), Decimal("0.00"))
+
+        for line in account_lines:
+            entry = line.journal_entry
+            row = {
+                "id": entry.reference,
+                "date": entry.date.isoformat(),
+                "reference": entry.reference,
+                "document_type": entry.document_type,
+                "remarks": line.line_description or entry.description or "",
+                "debit": str(_money(line.debit)),
+                "credit": str(_money(line.credit)),
+            }
+            if show_tenant:
+                row["tenant_id"] = entry.tenant_id
+            section_rows.append(row)
+            running_debit += _money(line.debit)
+            running_credit += _money(line.credit)
+
+        total_debit += running_debit
+        total_credit += running_credit
+
+        account_sections.append(
+            {
+                "account_id": str(account.id),
+                "code": account.code,
+                "name": account.name,
+                "tenant_id": account.tenant_id,
+                "dimension_name": dimension_names.get(account.tenant_id, account.tenant_id),
+                "opening_balance": str(opening_balance),
+                "rows": section_rows,
+                "total_debit": str(_money(running_debit)),
+                "total_credit": str(_money(running_credit)),
+            }
+        )
+
+    return {
+        "from_date": from_date.isoformat(),
+        "to_date": to_date.isoformat(),
+        "account_sections": account_sections,
+        "summary": {
+            "account_count": len(account_sections),
+            "total_debit": str(_money(total_debit)),
+            "total_credit": str(_money(total_credit)),
+        },
+    }
+
+
+def build_day_book_report(tenant_ids, from_date, to_date):
+    dimension_names = _dimension_name_map(tenant_ids)
+    show_tenant = len(tenant_ids) > 1
+
+    entries = (
+        JournalEntry.objects.filter(
+            tenant_id__in=tenant_ids,
+            deleted_at__isnull=True,
+            date__gte=from_date,
+            date__lte=to_date,
+        )
+        .prefetch_related(
+            Prefetch(
+                "lines",
+                queryset=JournalLine.objects.filter(deleted_at__isnull=True).select_related(
+                    "account"
+                ),
+            )
+        )
+        .order_by("date", "reference", "created_at")
+    )
+
+    entry_rows = []
+    total_debit = Decimal("0.00")
+    total_credit = Decimal("0.00")
+
+    for entry in entries:
+        lines = []
+        entry_debit = Decimal("0.00")
+        entry_credit = Decimal("0.00")
+        for line in entry.lines.all():
+            entry_debit += _money(line.debit)
+            entry_credit += _money(line.credit)
+            lines.append(
+                {
+                    "account_code": line.account.code,
+                    "account_name": line.account.name,
+                    "debit": str(_money(line.debit)),
+                    "credit": str(_money(line.credit)),
+                    "line_description": line.line_description or "",
+                }
+            )
+
+        total_debit += entry_debit
+        total_credit += entry_credit
+        entry_rows.append(
+            {
+                "entry_id": str(entry.id),
+                "date": entry.date.isoformat(),
+                "reference": entry.reference,
+                "document_type": entry.document_type,
+                "description": entry.description or "",
+                "source_type": entry.source_type,
+                "tenant_id": entry.tenant_id,
+                "dimension_name": dimension_names.get(entry.tenant_id, entry.tenant_id),
+                "total_debit": str(_money(entry_debit)),
+                "total_credit": str(_money(entry_credit)),
+                "lines": lines,
+            }
+        )
+
+    return {
+        "from_date": from_date.isoformat(),
+        "to_date": to_date.isoformat(),
+        "entry_rows": entry_rows,
+        "summary": {
+            "entry_count": len(entry_rows),
+            "total_debit": str(_money(total_debit)),
+            "total_credit": str(_money(total_credit)),
+            "is_balanced": _money(total_debit) == _money(total_credit),
+            "show_tenant": show_tenant,
+        },
+    }
+
+
+def build_cash_flow_summary_report(tenant_ids, from_date, to_date):
+    dimension_names = _dimension_name_map(tenant_ids)
+    cash_accounts = list(
+        Account.objects.filter(
+            tenant_id__in=tenant_ids,
+            deleted_at__isnull=True,
+            is_active=True,
+            is_postable=True,
+            account_type__in=[Account.AccountType.BANK, Account.AccountType.CASH],
+        ).order_by("code", "tenant_id", "name")
+    )
+    account_ids = [account.id for account in cash_accounts]
+
+    opening_totals = {
+        row["account_id"]: {
+            "debit": _money(row["debit"]),
+            "credit": _money(row["credit"]),
+        }
+        for row in JournalLine.objects.filter(
+            tenant_id__in=tenant_ids,
+            deleted_at__isnull=True,
+            journal_entry__deleted_at__isnull=True,
+            journal_entry__date__lt=from_date,
+            account_id__in=account_ids,
+        )
+        .values("account_id")
+        .annotate(
+            debit=Coalesce(Sum("debit"), Decimal("0.00")),
+            credit=Coalesce(Sum("credit"), Decimal("0.00")),
+        )
+    }
+
+    period_lines = (
+        JournalLine.objects.filter(
+            tenant_id__in=tenant_ids,
+            deleted_at__isnull=True,
+            journal_entry__deleted_at__isnull=True,
+            journal_entry__date__gte=from_date,
+            journal_entry__date__lte=to_date,
+            account_id__in=account_ids,
+        )
+        .select_related("journal_entry", "account")
+        .order_by("journal_entry__date", "journal_entry__reference", "created_at")
+    )
+
+    opening_balance = Decimal("0.00")
+    total_inflow = Decimal("0.00")
+    total_outflow = Decimal("0.00")
+    account_summaries = []
+    movement_rows = []
+
+    for account in cash_accounts:
+        opening_row = opening_totals.get(
+            account.id,
+            {"debit": Decimal("0.00"), "credit": Decimal("0.00")},
+        )
+        account_opening = _balance_for_account(
+            account,
+            opening_row["debit"],
+            opening_row["credit"],
+        )
+        account_inflow = Decimal("0.00")
+        account_outflow = Decimal("0.00")
+
+        for line in period_lines:
+            if line.account_id != account.id:
+                continue
+            entry = line.journal_entry
+            debit = _money(line.debit)
+            credit = _money(line.credit)
+            account_inflow += debit
+            account_outflow += credit
+            movement_rows.append(
+                {
+                    "date": entry.date.isoformat(),
+                    "reference": entry.reference,
+                    "document_type": entry.document_type,
+                    "account_code": account.code,
+                    "account_name": account.name,
+                    "tenant_id": account.tenant_id,
+                    "dimension_name": dimension_names.get(account.tenant_id, account.tenant_id),
+                    "description": line.line_description or entry.description or "",
+                    "inflow": str(debit),
+                    "outflow": str(credit),
+                    "net": str(_money(debit - credit)),
+                }
+            )
+
+        account_closing = _money(account_opening + account_inflow - account_outflow)
+        opening_balance += account_opening
+        total_inflow += account_inflow
+        total_outflow += account_outflow
+        account_summaries.append(
+            {
+                "account_id": str(account.id),
+                "code": account.code,
+                "name": account.name,
+                "account_type": account.account_type,
+                "tenant_id": account.tenant_id,
+                "dimension_name": dimension_names.get(account.tenant_id, account.tenant_id),
+                "opening_balance": str(_money(account_opening)),
+                "inflow": str(_money(account_inflow)),
+                "outflow": str(_money(account_outflow)),
+                "closing_balance": str(account_closing),
+            }
+        )
+
+    closing_balance = _money(opening_balance + total_inflow - total_outflow)
+
+    return {
+        "from_date": from_date.isoformat(),
+        "to_date": to_date.isoformat(),
+        "account_summaries": account_summaries,
+        "movement_rows": movement_rows,
+        "summary": {
+            "opening_balance": str(_money(opening_balance)),
+            "total_inflow": str(_money(total_inflow)),
+            "total_outflow": str(_money(total_outflow)),
+            "closing_balance": str(closing_balance),
+            "net_change": str(_money(total_inflow - total_outflow)),
+        },
+    }
+
+
+def build_account_statement_report(tenant_ids, account_id, from_date, to_date):
+    account = Account.objects.get(
+        id=account_id,
+        tenant_id__in=tenant_ids,
+        deleted_at__isnull=True,
+        is_postable=True,
+    )
+    ledger = build_ledger_report(
+        tenant_ids=tenant_ids,
+        ledger_type="account",
+        ledger_key={"code": account.code},
+        from_date=from_date,
+        to_date=to_date,
+        title=f"{account.code} - {account.name}",
+    )
+
+    prior = JournalLine.objects.filter(
+        tenant_id__in=tenant_ids,
+        deleted_at__isnull=True,
+        journal_entry__deleted_at__isnull=True,
+        journal_entry__date__lt=from_date,
+        account_id=account.id,
+    ).aggregate(
+        debit=Coalesce(Sum("debit"), Decimal("0.00")),
+        credit=Coalesce(Sum("credit"), Decimal("0.00")),
+    )
+    opening_balance = _balance_for_account(
+        account,
+        _money(prior["debit"]),
+        _money(prior["credit"]),
+    )
+    period_totals = JournalLine.objects.filter(
+        tenant_id__in=tenant_ids,
+        deleted_at__isnull=True,
+        journal_entry__deleted_at__isnull=True,
+        journal_entry__date__gte=from_date,
+        journal_entry__date__lte=to_date,
+        account_id=account.id,
+    ).aggregate(
+        debit=Coalesce(Sum("debit"), Decimal("0.00")),
+        credit=Coalesce(Sum("credit"), Decimal("0.00")),
+    )
+    closing_balance = _balance_for_account(
+        account,
+        _money(prior["debit"]) + _money(period_totals["debit"]),
+        _money(prior["credit"]) + _money(period_totals["credit"]),
+    )
+
+    return {
+        "from_date": from_date.isoformat(),
+        "to_date": to_date.isoformat(),
+        "account_id": str(account.id),
+        "account_code": account.code,
+        "account_name": account.name,
+        "tenant_id": account.tenant_id,
+        "opening_balance": str(opening_balance),
+        "closing_balance": str(closing_balance),
+        "rows": ledger["rows"],
+        "total_debit": ledger["total_debit"],
+        "total_credit": ledger["total_credit"],
+    }
+
+
+def build_comparative_profit_and_loss_report(tenant_ids, from_date, to_date):
+    period_days = (to_date - from_date).days + 1
+    previous_to_date = from_date - timedelta(days=1)
+    previous_from_date = previous_to_date - timedelta(days=period_days - 1)
+
+    current = build_profit_and_loss_report(tenant_ids, from_date, to_date)
+    previous = build_profit_and_loss_report(tenant_ids, previous_from_date, previous_to_date)
+
+    def _summary_key(summary, key):
+        return _money(summary.get(key, Decimal("0.00")))
+
+    current_summary = current["summary"]
+    previous_summary = previous["summary"]
+
+    comparison_rows = [
+        {
+            "label": "Total Revenue",
+            "current": current_summary["total_revenue"],
+            "previous": previous_summary["total_revenue"],
+            "change": str(
+                _money(
+                    _summary_key(current_summary, "total_revenue")
+                    - _summary_key(previous_summary, "total_revenue")
+                )
+            ),
+        },
+        {
+            "label": "Cost of Goods Sold",
+            "current": current_summary["total_cogs"],
+            "previous": previous_summary["total_cogs"],
+            "change": str(
+                _money(
+                    _summary_key(current_summary, "total_cogs")
+                    - _summary_key(previous_summary, "total_cogs")
+                )
+            ),
+        },
+        {
+            "label": "Gross Profit",
+            "current": current_summary["gross_profit"],
+            "previous": previous_summary["gross_profit"],
+            "change": str(
+                _money(
+                    _summary_key(current_summary, "gross_profit")
+                    - _summary_key(previous_summary, "gross_profit")
+                )
+            ),
+        },
+        {
+            "label": "Operating Expenses",
+            "current": current_summary["total_expense"],
+            "previous": previous_summary["total_expense"],
+            "change": str(
+                _money(
+                    _summary_key(current_summary, "total_expense")
+                    - _summary_key(previous_summary, "total_expense")
+                )
+            ),
+        },
+        {
+            "label": "Taxation",
+            "current": current_summary["total_tax"],
+            "previous": previous_summary["total_tax"],
+            "change": str(
+                _money(
+                    _summary_key(current_summary, "total_tax")
+                    - _summary_key(previous_summary, "total_tax")
+                )
+            ),
+        },
+        {
+            "label": "Net Profit / (Loss)",
+            "current": current_summary["net_profit"],
+            "previous": previous_summary["net_profit"],
+            "change": str(
+                _money(
+                    _summary_key(current_summary, "net_profit")
+                    - _summary_key(previous_summary, "net_profit")
+                )
+            ),
+        },
+    ]
+
+    return {
+        "from_date": from_date.isoformat(),
+        "to_date": to_date.isoformat(),
+        "previous_from_date": previous_from_date.isoformat(),
+        "previous_to_date": previous_to_date.isoformat(),
+        "comparison_rows": comparison_rows,
+        "current": current,
+        "previous": previous,
+    }
+
+
+def build_expense_analysis_report(tenant_ids, from_date, to_date):
+    from accounts.models import Expense
+
+    dimension_names = _dimension_name_map(tenant_ids)
+    expenses = (
+        Expense.objects.filter(
+            tenant_id__in=tenant_ids,
+            deleted_at__isnull=True,
+            date__gte=from_date,
+            date__lte=to_date,
+        )
+        .select_related("expense_account", "bank_account")
+        .order_by("date", "expense_number")
+    )
+
+    grouped = {}
+    detail_rows = []
+    total_amount = Decimal("0.00")
+
+    for expense in expenses:
+        account = expense.expense_account
+        key = (expense.tenant_id, str(account.id))
+        amount = _money(expense.amount)
+        total_amount += amount
+
+        if key not in grouped:
+            grouped[key] = {
+                "expense_account_id": str(account.id),
+                "account_code": account.code,
+                "account_name": account.name,
+                "tenant_id": expense.tenant_id,
+                "dimension_name": dimension_names.get(expense.tenant_id, expense.tenant_id),
+                "expense_count": 0,
+                "total_amount": Decimal("0.00"),
+            }
+        grouped[key]["expense_count"] += 1
+        grouped[key]["total_amount"] += amount
+
+        detail_rows.append(
+            {
+                "expense_id": str(expense.id),
+                "expense_number": expense.expense_number,
+                "date": expense.date.isoformat(),
+                "account_code": account.code,
+                "account_name": account.name,
+                "bank_account_name": expense.bank_account.name,
+                "tenant_id": expense.tenant_id,
+                "dimension_name": dimension_names.get(expense.tenant_id, expense.tenant_id),
+                "amount": str(amount),
+                "remarks": expense.remarks or "",
+            }
+        )
+
+    category_rows = []
+    for row in grouped.values():
+        share = (
+            _money((row["total_amount"] / total_amount) * Decimal("100"))
+            if total_amount
+            else Decimal("0.00")
+        )
+        category_rows.append(
+            {
+                **row,
+                "total_amount": str(_money(row["total_amount"])),
+                "share_percent": str(share),
+            }
+        )
+
+    category_rows.sort(
+        key=lambda row: Decimal(row["total_amount"]),
+        reverse=True,
+    )
+
+    return {
+        "from_date": from_date.isoformat(),
+        "to_date": to_date.isoformat(),
+        "category_rows": category_rows,
+        "detail_rows": detail_rows,
+        "summary": {
+            "expense_count": len(detail_rows),
+            "category_count": len(category_rows),
+            "total_amount": str(_money(total_amount)),
+        },
     }

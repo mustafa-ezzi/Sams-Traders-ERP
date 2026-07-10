@@ -19,6 +19,13 @@ const PERM_HOME = {
   bank_transfers: "/bank-transfers",
   reports_balance_sheet: "/reports/balance-sheet",
   reports_profit_loss: "/reports/profit-loss",
+  reports_trial_balance: "/reports/trial-balance",
+  reports_general_ledger: "/reports/general-ledger",
+  reports_day_book: "/reports/day-book",
+  reports_cash_flow: "/reports/cash-flow",
+  reports_account_statement: "/reports/account-statement",
+  reports_comparative_profit_loss: "/reports/comparative-profit-loss",
+  reports_expense_analysis: "/reports/expense-analysis",
   reports_ledger: "/reports/ledger",
   reports_party_ledger: "/reports/party-ledger",
   reports_coa_completeness: "/reports/coa-completeness",
@@ -82,6 +89,15 @@ export function pathToPermissionKey(pathname) {
 
   if (p.startsWith("/reports/balance-sheet")) return "reports_balance_sheet";
   if (p.startsWith("/reports/profit-loss")) return "reports_profit_loss";
+  if (p.startsWith("/reports/trial-balance")) return "reports_trial_balance";
+  if (p.startsWith("/reports/general-ledger")) return "reports_general_ledger";
+  if (p.startsWith("/reports/day-book")) return "reports_day_book";
+  if (p.startsWith("/reports/cash-flow")) return "reports_cash_flow";
+  if (p.startsWith("/reports/account-statement")) return "reports_account_statement";
+  if (p.startsWith("/reports/comparative-profit-loss")) {
+    return "reports_comparative_profit_loss";
+  }
+  if (p.startsWith("/reports/expense-analysis")) return "reports_expense_analysis";
   if (p.startsWith("/reports/ledger")) return "reports_ledger";
   if (p.startsWith("/reports/party-ledger")) return "reports_party_ledger";
   if (p.startsWith("/reports/coa-completeness")) return "reports_coa_completeness";
