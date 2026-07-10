@@ -15,8 +15,12 @@ import os
 from pathlib import Path
 from datetime import timedelta
 
+from dotenv import load_dotenv
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+load_dotenv(BASE_DIR / ".env")
 
 
 # Quick-start development settings - unsuitable for production
@@ -128,26 +132,72 @@ WSGI_APPLICATION = "samspython.wsgi.application"
 
 
 # Database
-# https:
+# https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
-# DATABASES = {
-#     "default": {
-#         "ENGINE": "django.db.backends.sqlite3",
-#         "NAME": BASE_DIR / "db.sqlite3",
-#     }
-# }
+from urllib.parse import urlparse
 
 
-DATABASES = {
-    "default": {
+def _env_bool(name, default=False):
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _postgres_from_url(url):
+    parsed = urlparse(url)
+    return {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": "railway",
-        "USER": "postgres",
-        "PASSWORD": "NljhxDKeBLPdPCdtJIIcdAeEdUbxFJDj",
-        "HOST": "acela.proxy.rlwy.net",
-        "PORT": "10900",
+        "NAME": parsed.path.lstrip("/") or "railway",
+        "USER": parsed.username or "postgres",
+        "PASSWORD": parsed.password or "",
+        "HOST": parsed.hostname or "",
+        "PORT": str(parsed.port or 5432),
     }
-}
+
+
+def _build_database_config():
+    if _env_bool("USE_SQLITE"):
+        return {
+            "default": {
+                "ENGINE": "django.db.backends.sqlite3",
+                "NAME": BASE_DIR / "db.sqlite3",
+            }
+        }
+
+    database_url = (
+        os.environ.get("DATABASE_PUBLIC_URL")
+        or os.environ.get("DATABASE_URL")
+        or os.environ.get("DB_URL")
+    )
+    if database_url:
+        return {"default": _postgres_from_url(database_url)}
+
+    host = os.environ.get("PGHOST") or os.environ.get("DB_HOST")
+    if host:
+        return {
+            "default": {
+                "ENGINE": "django.db.backends.postgresql",
+                "NAME": os.environ.get("PGDATABASE")
+                or os.environ.get("DB_NAME", "railway"),
+                "USER": os.environ.get("PGUSER")
+                or os.environ.get("DB_USER", "postgres"),
+                "PASSWORD": os.environ.get("PGPASSWORD")
+                or os.environ.get("DB_PASSWORD", ""),
+                "HOST": host,
+                "PORT": os.environ.get("PGPORT")
+                or os.environ.get("DB_PORT", "5432"),
+            }
+        }
+
+    raise RuntimeError(
+        "Railway database is required. Set DATABASE_PUBLIC_URL (recommended for local dev) "
+        "or PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE in backend/.env. "
+        "Copy values from your Postgres service on Railway — use the TCP proxy port, not 5432."
+    )
+
+
+DATABASES = _build_database_config()
 
 # Password validation
 # https:

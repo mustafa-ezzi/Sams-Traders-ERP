@@ -4,6 +4,7 @@ const BASE_URL = "/inventory/party-opening-balances/";
 
 const mapRecord = (record) => ({
   ...record,
+  tenantId: record.tenant_id || record.tenantId || "",
   customerId: record.customer?.id || record.customer_id || "",
   supplierId: record.supplier?.id || record.supplier_id || "",
   partyName:
@@ -31,8 +32,12 @@ class PartyOpeningBalanceService {
     };
   }
 
-  async create(payload) {
-    const response = await axiosInstance.post(BASE_URL, payload);
+  async create(payload, tenantId = "") {
+    const response = await axiosInstance.post(BASE_URL, payload, {
+      headers: tenantId
+        ? { "x-tenant-id": tenantId, "x-tenant-ids": tenantId }
+        : {},
+    });
     return {
       data: mapRecord(response.data.data || response.data),
       message: response.data.message || "Opening balance saved successfully",

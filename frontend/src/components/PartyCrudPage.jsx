@@ -188,61 +188,45 @@ const PartyCrudPage = ({
 
   const loadOpeningPartyOptions = async () => {
     if (!partyType || isFormView) return;
-    if (!openingDimensions.length) {
-      setOpeningPartyOptions([]);
-      return;
-    }
 
     setOpeningPartyLoading(true);
     try {
-      const fetchAllPartiesForDimension = async (dimension) => {
-        const rows = [];
-        let nextPage = 1;
-        const perPage = 100;
-        let keepLoading = true;
+      const rows = [];
+      const seenIds = new Set();
+      let nextPage = 1;
+      const perPage = 100;
+      let keepLoading = true;
 
-        while (keepLoading) {
-          const response = await service.list(
-            {
-              page: nextPage,
-              limit: perPage,
-              search: "",
-            },
-            dimension.code,
-          );
+      while (keepLoading) {
+        const response = await service.list({
+          page: nextPage,
+          limit: perPage,
+          search: "",
+        });
 
-          const data = response.data || response.results || [];
-          rows.push(
-            ...data.map((row) => ({
-              ...row,
-              tenant_id: dimension.code,
-              dimension_name: dimension.name,
-            })),
-          );
+        const data = response.data || response.results || [];
+        data.forEach((row) => {
+          if (!row?.id || seenIds.has(row.id)) return;
+          seenIds.add(row.id);
+          rows.push(row);
+        });
 
-          const total =
-            Number(response.total ?? response.count ?? rows.length) || rows.length;
-          const hasNext =
-            Boolean(response.next) ||
-            (Number.isFinite(total) ? rows.length < total : data.length === perPage);
+        const total =
+          Number(response.total ?? response.count ?? rows.length) || rows.length;
+        const hasNext =
+          Boolean(response.next) ||
+          (Number.isFinite(total) ? rows.length < total : data.length === perPage);
 
-          if (!hasNext || data.length === 0) {
-            keepLoading = false;
-          } else {
-            nextPage += 1;
-          }
+        if (!hasNext || data.length === 0) {
+          keepLoading = false;
+        } else {
+          nextPage += 1;
         }
+      }
 
-        return rows;
-      };
-
-      const perDimensionRows = await Promise.all(
-        openingDimensions.map((dimension) => fetchAllPartiesForDimension(dimension)),
-      );
-
-      setOpeningPartyOptions(perDimensionRows.flat());
+      setOpeningPartyOptions(rows);
     } catch {
-      toast.error(`Failed to load all ${title.toLowerCase()} for opening accounts`);
+      toast.error(`Failed to load ${title.toLowerCase()} for opening accounts`);
       setOpeningPartyOptions([]);
     } finally {
       setOpeningPartyLoading(false);
@@ -384,7 +368,7 @@ const PartyCrudPage = ({
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
 
-  const handleSaveOpening = async (payload, openingId) => {
+  const handleSaveOpening = async (payload, openingId, dimensionCode = "") => {
     if (openingId) {
       const response = await partyOpeningBalanceService.update(openingId, {
         date: payload.date,
@@ -394,7 +378,7 @@ const PartyCrudPage = ({
       });
       toast.success(response.message || "Opening account updated");
     } else {
-      const response = await partyOpeningBalanceService.create(payload);
+      const response = await partyOpeningBalanceService.create(payload, dimensionCode);
       toast.success(response.message || "Opening account saved");
     }
     await loadOpeningBalances();
@@ -773,9 +757,11 @@ const PartyCrudPage = ({
                             {record.partyName}
                           </td>
                           <td className="px-4 py-3 text-slate-600">
-                            {openingPartyMap[
-                              String(record.customerId || record.supplierId || "")
-                            ]?.dimension_name || "—"}
+                            {openingDimensionMap[record.tenant_id || record.tenantId] ||
+                              openingPartyMap[
+                                String(record.customerId || record.supplierId || "")
+                              ]?.dimension_name ||
+                              "—"}
                           </td>
                           <td className="px-4 py-3 text-slate-600">{record.date}</td>
                           <td className="px-4 py-3 text-right font-semibold tabular-nums text-slate-900">

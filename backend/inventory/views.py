@@ -1051,7 +1051,7 @@ class SharedPartyViewSet(BasePartyViewSet):
     """Customers and suppliers shared across the user's allowed dimensions."""
 
     def get_queryset(self):
-        tenant_ids = get_user_active_dimension_codes(self.request.user)
+        tenant_ids = list(get_user_active_dimension_codes(self.request.user))
         tenant_id = getattr(self.request, "tenant_id", None) or self.request.user.tenant_id
         if tenant_id and tenant_id not in tenant_ids:
             tenant_ids.append(tenant_id)

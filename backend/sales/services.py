@@ -115,6 +115,33 @@ def get_sales_invoice_financials(sales_invoice, excluded_receipt_ids=None):
     }
 
 
+def get_customer_opening_balance_financials(opening_balance, excluded_receipt_ids=None):
+    excluded_receipt_ids = excluded_receipt_ids or []
+
+    opening_amount = quantize_money(opening_balance.amount or Decimal("0.00"))
+    received_amount = (
+        SalesBankReceipt.objects.filter(
+            tenant_id=opening_balance.tenant_id,
+            party_opening_balance=opening_balance,
+            deleted_at__isnull=True,
+        )
+        .exclude(id__in=excluded_receipt_ids)
+        .aggregate(total=Sum("amount"))["total"]
+        or Decimal("0.00")
+    )
+    received_amount = quantize_money(received_amount)
+    balance_amount = max(
+        quantize_money(opening_amount - received_amount),
+        Decimal("0.00"),
+    )
+
+    return {
+        "opening_amount": opening_amount,
+        "received_amount": received_amount,
+        "balance_amount": balance_amount,
+    }
+
+
 def get_salesman_commission_financials(
     sales_invoice,
     salesman_id=None,

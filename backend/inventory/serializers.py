@@ -758,6 +758,7 @@ class PartySerializer(serializers.ModelSerializer):
         model = Customer  # we'll dynamically switch in view
         fields = [
             "id",
+            "tenant_id",
             "name",
             "business_name",
             "email",
@@ -765,6 +766,7 @@ class PartySerializer(serializers.ModelSerializer):
             "address",
             "account",
         ]
+        read_only_fields = ["tenant_id"]
 
     def get_model(self):
         return self.context.get("party_model", self.Meta.model)
@@ -1283,11 +1285,13 @@ class PartyOpeningBalanceSerializer(serializers.ModelSerializer):
     supplier = PartyMiniSerializer(read_only=True)
     customer_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
     supplier_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
+    tenant_id = serializers.CharField(required=False, allow_blank=True)
 
     class Meta:
         model = PartyOpeningBalance
         fields = [
             "id",
+            "tenant_id",
             "party_type",
             "customer",
             "customer_id",
@@ -1310,12 +1314,28 @@ class PartyOpeningBalanceSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Opening amount must be greater than zero.")
         return amount
 
+    def _resolve_target_tenant_id(self, attrs, request, allowed_tenant_ids):
+        if self.instance:
+            return self.instance.tenant_id
+
+        target_tenant_id = (
+            (attrs.get("tenant_id") or "").strip()
+            or getattr(request, "tenant_id", None)
+            or ""
+        )
+        if not target_tenant_id:
+            raise serializers.ValidationError({"tenant_id": "Dimension is required."})
+        if target_tenant_id not in allowed_tenant_ids:
+            raise serializers.ValidationError({"tenant_id": "Invalid dimension selected."})
+        return target_tenant_id
+
     def validate(self, attrs):
         request = self.context["request"]
         tenant_ids = get_shared_tenant_ids(request)
         party_type = attrs.get("party_type") or getattr(self.instance, "party_type", None)
         customer_id = attrs.get("customer_id", getattr(self.instance, "customer_id", None))
         supplier_id = attrs.get("supplier_id", getattr(self.instance, "supplier_id", None))
+        target_tenant_id = self._resolve_target_tenant_id(attrs, request, tenant_ids)
 
         if party_type == PartyOpeningBalance.PartyType.CUSTOMER:
             if not customer_id:
@@ -1332,11 +1352,11 @@ class PartyOpeningBalanceSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({"customer_id": "Customer not found."})
             attrs["customer"] = customer
             attrs["supplier"] = None
-            attrs["_tenant_id"] = customer.tenant_id
+            attrs["_tenant_id"] = target_tenant_id
             duplicate_qs = PartyOpeningBalance.objects.filter(
-                tenant_id__in=tenant_ids,
+                tenant_id=target_tenant_id,
                 party_type=PartyOpeningBalance.PartyType.CUSTOMER,
-                customer__business_name=customer.business_name,
+                customer_id=customer.id,
                 deleted_at__isnull=True,
             )
             if self.instance:
@@ -1346,7 +1366,7 @@ class PartyOpeningBalanceSerializer(serializers.ModelSerializer):
                     {
                         "customer_id": (
                             "This customer already has an opening balance "
-                            "across your company dimensions."
+                            "for this dimension."
                         )
                     }
                 )
@@ -1365,11 +1385,11 @@ class PartyOpeningBalanceSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({"supplier_id": "Supplier not found."})
             attrs["supplier"] = supplier
             attrs["customer"] = None
-            attrs["_tenant_id"] = supplier.tenant_id
+            attrs["_tenant_id"] = target_tenant_id
             duplicate_qs = PartyOpeningBalance.objects.filter(
-                tenant_id__in=tenant_ids,
+                tenant_id=target_tenant_id,
                 party_type=PartyOpeningBalance.PartyType.SUPPLIER,
-                supplier__business_name=supplier.business_name,
+                supplier_id=supplier.id,
                 deleted_at__isnull=True,
             )
             if self.instance:
@@ -1379,7 +1399,7 @@ class PartyOpeningBalanceSerializer(serializers.ModelSerializer):
                     {
                         "supplier_id": (
                             "This supplier already has an opening balance "
-                            "across your company dimensions."
+                            "for this dimension."
                         )
                     }
                 )
@@ -1393,6 +1413,7 @@ class PartyOpeningBalanceSerializer(serializers.ModelSerializer):
         tenant_id = validated_data.pop("_tenant_id", None)
         validated_data.pop("customer_id", None)
         validated_data.pop("supplier_id", None)
+        validated_data.pop("tenant_id", None)
         opening_balance = PartyOpeningBalance.objects.create(
             tenant_id=tenant_id,
             **validated_data,

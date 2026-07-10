@@ -600,6 +600,36 @@ def _build_sales_return_lines(sales_return):
 
 def _build_sales_bank_receipt_lines(receipt):
     lines = []
+    if (
+        receipt.receipt_against == receipt.ReceiptAgainst.OPENING_BALANCE
+        and receipt.party_opening_balance_id
+    ):
+        tenant_id = receipt.party_opening_balance.tenant_id
+        customer_account = _party_control_account_for_dimension(
+            receipt.customer,
+            "Customer",
+            tenant_id,
+        )
+        bank_account = _account_for_dimension(receipt.bank_account, tenant_id)
+        return [
+            {
+                "account": bank_account,
+                "tenant_id": tenant_id,
+                "debit": receipt.amount,
+                "credit": Decimal("0.00"),
+                "line_description": "Bank Receipt",
+            },
+            {
+                "account": customer_account,
+                "tenant_id": tenant_id,
+                "debit": Decimal("0.00"),
+                "credit": receipt.amount,
+                "line_description": "Customer Opening Receipt",
+                "people_type": "Customer",
+                "people_name": receipt.customer.business_name,
+            },
+        ]
+
     allocations = _allocate_invoice_amount_by_tenant(
         receipt.sales_invoice,
         receipt.amount,
@@ -785,13 +815,24 @@ def sync_salesman_commission_payment_journal(payment):
     )
 
 
+def _resolve_opening_balance_party_account(party, field_label, tenant_id):
+    if party.account_id:
+        return _account_for_dimension(party.account, tenant_id)
+    return _party_control_account_for_dimension(party, field_label, tenant_id)
+
+
 def _build_party_opening_balance_lines(opening_balance):
     equity_account = resolve_opening_equity_account(opening_balance.tenant_id)
     amount = quantize_money(opening_balance.amount)
+    tenant_id = opening_balance.tenant_id
 
     if opening_balance.party_type == PartyOpeningBalance.PartyType.CUSTOMER:
         customer = opening_balance.customer
-        party_account = _resolve_party_account(customer, "Customer")
+        party_account = _resolve_opening_balance_party_account(
+            customer,
+            "Customer",
+            tenant_id,
+        )
         return [
             {
                 "account": party_account,
@@ -810,7 +851,11 @@ def _build_party_opening_balance_lines(opening_balance):
         ]
 
     supplier = opening_balance.supplier
-    party_account = _resolve_party_account(supplier, "Supplier")
+    party_account = _resolve_opening_balance_party_account(
+        supplier,
+        "Supplier",
+        tenant_id,
+    )
     return [
         {
             "account": equity_account,

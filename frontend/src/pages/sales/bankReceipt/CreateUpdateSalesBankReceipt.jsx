@@ -23,7 +23,9 @@ const createDefaultForm = () => ({
   date: new Date().toISOString().slice(0, 10),
   tenantId: "",
   customerId: "",
+  receiptAgainst: "INVOICE",
   salesInvoiceId: "",
+  partyOpeningBalanceId: "",
   bankAccountId: "",
   salesmanId: "",
   amount: "0",
@@ -48,6 +50,34 @@ const extractErrorMessage = (error) => {
   }
   return "Something went wrong";
 };
+
+const fetchAll = async (service, baseParams = {}, tenantId = "") => {
+  const rows = [];
+  const perPage = 100;
+  let nextPage = 1;
+  let keepLoading = true;
+  while (keepLoading) {
+    const response = await service.list(
+      {
+        ...baseParams,
+        page: nextPage,
+        limit: perPage,
+      },
+      tenantId,
+    );
+    const data = response.data || [];
+    rows.push(...data);
+    const total = Number(response.total ?? response.count ?? rows.length) || rows.length;
+    const hasNext = Boolean(response.next) || rows.length < total;
+    if (!hasNext || data.length === 0) {
+      keepLoading = false;
+    } else {
+      nextPage += 1;
+    }
+  }
+  return rows;
+};
+
 const CreateUpdateSalesBankReceipt = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -66,10 +96,31 @@ const CreateUpdateSalesBankReceipt = () => {
   const [submitting, setSubmitting] = useState(false);
   const [loadingRecord, setLoadingRecord] = useState(Boolean(id));
   const selectedInvoice = useMemo(
+    () => {
+      if (form.receiptAgainst === "OPENING_BALANCE") {
+        return (
+          invoiceOptions.find(
+            (option) =>
+              option.receipt_against === "OPENING_BALANCE" &&
+              option.id === form.partyOpeningBalanceId,
+          ) || null
+        );
+      }
+      return (
+        invoiceOptions.find(
+          (option) =>
+            option.receipt_against === "INVOICE" && option.id === form.salesInvoiceId,
+        ) || null
+      );
+    },
+    [form.partyOpeningBalanceId, form.receiptAgainst, form.salesInvoiceId, invoiceOptions],
+  );
+  const filteredReceiptOptions = useMemo(
     () =>
-      invoiceOptions.find((invoice) => invoice.id === form.salesInvoiceId) ||
-      null,
-    [form.salesInvoiceId, invoiceOptions],
+      invoiceOptions.filter(
+        (option) => option.receipt_against === (form.receiptAgainst || "INVOICE"),
+      ),
+    [invoiceOptions, form.receiptAgainst],
   );
   const selectedSalesman = useMemo(
     () => salesmen.find((salesman) => salesman.id === form.salesmanId) || null,
@@ -84,13 +135,13 @@ const CreateUpdateSalesBankReceipt = () => {
     (toNumber(form.amount) * recoveryCommissionRate) / 100;
   const loadSetupData = async () => {
     try {
-      const [dimensionItems, customerResponse, accountsResponse, salesmanResponse] =
+      const [dimensionItems, accountsResponse, salesmanResponse] =
         await Promise.all([
           dimensionService.list(),
-        customerService.list({ page: 1, limit: 100, search: "" }),
-        accountService.list(),
+          accountService.list(),
           salesmanService.list({ page: 1, limit: 200, search: "" }),
         ]);
+      const allCustomers = await fetchAll(customerService, { search: "" });
       setDimensions(dimensionItems || []);
       setForm((current) => ({
         ...current,
@@ -101,7 +152,7 @@ const CreateUpdateSalesBankReceipt = () => {
           dimensionItems?.[0]?.code ||
           "",
       }));
-      setCustomers(customerResponse.data || []);
+      setCustomers(allCustomers || []);
       setSalesmen(salesmanResponse.data || []);
       const flatAccounts = flattenAccountTree(
         Array.isArray(accountsResponse)
@@ -160,7 +211,9 @@ const CreateUpdateSalesBankReceipt = () => {
           date: receipt.date,
           tenantId: receipt.tenantId || tenantId || "",
           customerId: receipt.customerId,
+          receiptAgainst: receipt.receiptAgainst || "INVOICE",
           salesInvoiceId: receipt.salesInvoiceId,
+          partyOpeningBalanceId: receipt.partyOpeningBalanceId || "",
           bankAccountId: receipt.bankAccountId,
           salesmanId: receipt.salesmanId || "",
           amount: String(receipt.amount ?? 0),
@@ -191,19 +244,36 @@ const CreateUpdateSalesBankReceipt = () => {
       ...current,
       customerId,
       salesInvoiceId: "",
+      partyOpeningBalanceId: "",
       salesmanId: "",
       amount: "0",
     }));
   };
-  const handleInvoiceChange = (salesInvoiceId) => {
-    const invoice = invoiceOptions.find((item) => item.id === salesInvoiceId);
+  const handleReceiptAgainstChange = (receiptAgainst) => {
     setForm((current) => ({
       ...current,
-      salesInvoiceId,
-      salesmanId: invoice?.salesman?.id || "",
+      receiptAgainst,
+      salesInvoiceId: "",
+      partyOpeningBalanceId: "",
+      salesmanId: "",
+      amount: "0",
+    }));
+  };
+  const handleInvoiceChange = (selectedId) => {
+    const invoice = filteredReceiptOptions.find((item) => item.id === selectedId);
+    setForm((current) => ({
+      ...current,
+      salesInvoiceId: current.receiptAgainst === "INVOICE" ? selectedId : "",
+      partyOpeningBalanceId:
+        current.receiptAgainst === "OPENING_BALANCE" ? selectedId : "",
+      salesmanId:
+        current.receiptAgainst === "INVOICE" ? invoice?.salesman?.id || "" : "",
       amount: invoice ? String(invoice.balance_amount || 0) : "0",
     }));
-    if (invoice?.salesman && !salesmen.some((item) => item.id === invoice.salesman.id)) {
+    if (
+      invoice?.salesman &&
+      !salesmen.some((item) => item.id === invoice.salesman.id)
+    ) {
       setSalesmen((current) => [...current, invoice.salesman]);
     }
   };
@@ -233,9 +303,12 @@ const CreateUpdateSalesBankReceipt = () => {
     date: form.date,
     tenant_id: form.tenantId,
     customer_id: form.customerId,
-    sales_invoice_id: form.salesInvoiceId,
+    receipt_against: form.receiptAgainst,
+    sales_invoice_id: form.receiptAgainst === "INVOICE" ? form.salesInvoiceId : null,
+    party_opening_balance_id:
+      form.receiptAgainst === "OPENING_BALANCE" ? form.partyOpeningBalanceId : null,
     bank_account_id: form.bankAccountId,
-    salesman_id: form.salesmanId || null,
+    salesman_id: form.receiptAgainst === "INVOICE" ? form.salesmanId || null : null,
     amount: toNumber(form.amount),
     remarks: form.remarks,
   });
@@ -252,8 +325,12 @@ const CreateUpdateSalesBankReceipt = () => {
       toast.error("Please select a customer");
       return false;
     }
-    if (!form.salesInvoiceId) {
+    if (form.receiptAgainst === "INVOICE" && !form.salesInvoiceId) {
       toast.error("Please select a sales invoice");
+      return false;
+    }
+    if (form.receiptAgainst === "OPENING_BALANCE" && !form.partyOpeningBalanceId) {
+      toast.error("Please select opening balance");
       return false;
     }
     if (!form.bankAccountId) {
@@ -385,21 +462,44 @@ const CreateUpdateSalesBankReceipt = () => {
               </select>{" "}
             </div>{" "}
             <div className="space-y-1">
+              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 dark:text-slate-500">
+                Receipt Against <span className="text-rose-500">*</span>
+              </label>
+              <select
+                className={selectClassName}
+                value={form.receiptAgainst}
+                onChange={(e) => handleReceiptAgainstChange(e.target.value)}
+              >
+                <option value="INVOICE">Invoice</option>
+                <option value="OPENING_BALANCE">Opening Balance</option>
+              </select>
+            </div>{" "}
+            <div className="space-y-1">
               {" "}
               <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 dark:text-slate-500">
                 {" "}
-                Selected Customer&apos;s Invoice{" "}
+                {form.receiptAgainst === "OPENING_BALANCE"
+                  ? "Selected Customer Opening Balance"
+                  : "Selected Customer's Invoice"}{" "}
                 <span className="text-rose-500">*</span>{" "}
               </label>{" "}
               <select
                 className={selectClassName}
-                value={form.salesInvoiceId}
+                value={
+                  form.receiptAgainst === "OPENING_BALANCE"
+                    ? form.partyOpeningBalanceId
+                    : form.salesInvoiceId
+                }
                 onChange={(e) => handleInvoiceChange(e.target.value)}
                 disabled={!form.customerId}
               >
                 {" "}
-                <option value="">Select Sales Invoice</option>{" "}
-                {invoiceOptions.map((invoice) => (
+                <option value="">
+                  {form.receiptAgainst === "OPENING_BALANCE"
+                    ? "Select Opening Balance"
+                    : "Select Sales Invoice"}
+                </option>{" "}
+                {filteredReceiptOptions.map((invoice) => (
                   <option key={invoice.id} value={invoice.id}>
                     {" "}
                     {invoice.invoice_number} | Balance{" "}

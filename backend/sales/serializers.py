@@ -10,7 +10,7 @@ from accounts.access_control import user_can_access_salesman
 from common.tenancy import get_shared_tenant_ids, shared_master_exists
 from accounts.models import Account, Dimension
 from inventory.party_accounts import resolve_default_payable_account
-from inventory.models import Customer, Product, ProductStock, Salesman, Warehouse
+from inventory.models import Customer, PartyOpeningBalance, Product, ProductStock, Salesman, Warehouse
 from inventory.serializers import ProductDetailedSerializer
 from sales.models import (
     SalesBankReceipt,
@@ -23,6 +23,7 @@ from sales.models import (
     SalesmanCommissionPayment,
 )
 from sales.services import (
+    get_customer_opening_balance_financials,
     get_available_sale_quantity,
     get_sales_invoice_financials,
     get_salesman_commission_financials,
@@ -1078,8 +1079,17 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
     tenant_id = serializers.CharField(required=False)
     customer = CustomerMiniSerializer(read_only=True)
     customer_id = serializers.UUIDField(write_only=True)
+    receipt_against = serializers.ChoiceField(
+        choices=SalesBankReceipt.ReceiptAgainst.choices,
+        required=False,
+    )
     sales_invoice = SalesInvoiceMiniSerializer(read_only=True)
-    sales_invoice_id = serializers.UUIDField(write_only=True)
+    sales_invoice_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
+    party_opening_balance_id = serializers.UUIDField(
+        write_only=True,
+        required=False,
+        allow_null=True,
+    )
     bank_account = AccountMiniSerializer(read_only=True)
     bank_account_id = serializers.UUIDField(write_only=True)
     salesman = SalesmanMiniSerializer(read_only=True)
@@ -1100,8 +1110,10 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
             "date",
             "customer",
             "customer_id",
+            "receipt_against",
             "sales_invoice",
             "sales_invoice_id",
+            "party_opening_balance_id",
             "bank_account",
             "bank_account_id",
             "salesman",
@@ -1132,6 +1144,13 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
         ]
 
     def _get_financials(self, obj):
+        if not obj.sales_invoice_id:
+            return {
+                "net_amount": Decimal("0.00"),
+                "returned_amount": Decimal("0.00"),
+                "received_amount": Decimal("0.00"),
+                "balance_amount": Decimal("0.00"),
+            }
         excluded_ids = []
         if obj and obj.pk:
             excluded_ids = [obj.id]
@@ -1148,10 +1167,14 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
         return str(self._get_financials(obj)["returned_amount"])
 
     def get_invoice_received_amount(self, obj):
+        if not obj.sales_invoice_id:
+            return "0.00"
         financials = self._get_financials(obj)
         return str(quantize_money(financials["received_amount"] + obj.amount))
 
     def get_invoice_balance_amount(self, obj):
+        if not obj.sales_invoice_id:
+            return "0.00"
         financials = self._get_financials(obj)
         balance_after_receipt = max(
             quantize_money(financials["balance_amount"] - obj.amount),
@@ -1175,6 +1198,8 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
         return value
 
     def validate_sales_invoice_id(self, value):
+        if not value:
+            return value
         tenant_ids = get_shared_tenant_ids(self.context["request"])
         if not (
             SalesInvoice.objects.filter(id=value, deleted_at__isnull=True)
@@ -1183,6 +1208,20 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
             .exists()
         ):
             raise serializers.ValidationError("Sales invoice not found")
+        return value
+
+    def validate_party_opening_balance_id(self, value):
+        if not value:
+            return value
+        request = self.context["request"]
+        tenant_ids = get_shared_tenant_ids(request)
+        if not PartyOpeningBalance.objects.filter(
+            id=value,
+            tenant_id__in=tenant_ids,
+            party_type=PartyOpeningBalance.PartyType.CUSTOMER,
+            deleted_at__isnull=True,
+        ).exists():
+            raise serializers.ValidationError("Customer opening balance not found")
         return value
 
     def validate_bank_account_id(self, value):
@@ -1236,30 +1275,79 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         request = self.context["request"]
         customer_id = attrs.get("customer_id") or getattr(self.instance, "customer_id", None)
-        sales_invoice_id = attrs.get("sales_invoice_id") or getattr(self.instance, "sales_invoice_id", None)
+        receipt_against = attrs.get(
+            "receipt_against",
+            getattr(self.instance, "receipt_against", SalesBankReceipt.ReceiptAgainst.INVOICE),
+        )
+        sales_invoice_id = attrs.get(
+            "sales_invoice_id",
+            getattr(self.instance, "sales_invoice_id", None),
+        )
+        party_opening_balance_id = attrs.get(
+            "party_opening_balance_id",
+            getattr(self.instance, "party_opening_balance_id", None),
+        )
 
         tenant_ids = get_shared_tenant_ids(request)
-        sales_invoice = (
-            SalesInvoice.objects.select_related("customer")
-            .filter(id=sales_invoice_id, deleted_at__isnull=True)
-            .filter(models.Q(tenant_id__in=tenant_ids) | models.Q(lines__tenant_id__in=tenant_ids))
-            .distinct()
-            .first()
-        )
-        if not sales_invoice:
-            raise serializers.ValidationError({"sales_invoice_id": "Sales invoice not found."})
-        if not user_can_access_salesman(request.user, sales_invoice.salesman_id):
-            raise serializers.ValidationError(
-                {"sales_invoice_id": "You do not have access to this salesman's invoice."}
+        sales_invoice = None
+        opening_balance = None
+        invoice_financials = None
+        opening_financials = None
+        if receipt_against == SalesBankReceipt.ReceiptAgainst.OPENING_BALANCE:
+            if not party_opening_balance_id:
+                raise serializers.ValidationError(
+                    {"party_opening_balance_id": "Customer opening balance is required."}
+                )
+            opening_balance = PartyOpeningBalance.objects.select_related("customer").filter(
+                id=party_opening_balance_id,
+                tenant_id__in=tenant_ids,
+                party_type=PartyOpeningBalance.PartyType.CUSTOMER,
+                deleted_at__isnull=True,
+            ).first()
+            if not opening_balance:
+                raise serializers.ValidationError(
+                    {"party_opening_balance_id": "Customer opening balance not found."}
+                )
+            if opening_balance.customer_id != customer_id:
+                raise serializers.ValidationError(
+                    {
+                        "party_opening_balance_id": (
+                            "Selected opening balance does not belong to the chosen customer."
+                        )
+                    }
+                )
+            excluded_ids = [self.instance.id] if self.instance else []
+            opening_financials = get_customer_opening_balance_financials(
+                opening_balance,
+                excluded_receipt_ids=excluded_ids,
             )
+            sales_invoice_id = None
+        else:
+            if not sales_invoice_id:
+                raise serializers.ValidationError({"sales_invoice_id": "Sales invoice is required."})
+            sales_invoice = (
+                SalesInvoice.objects.select_related("customer")
+                .filter(id=sales_invoice_id, deleted_at__isnull=True)
+                .filter(models.Q(tenant_id__in=tenant_ids) | models.Q(lines__tenant_id__in=tenant_ids))
+                .distinct()
+                .first()
+            )
+            if not sales_invoice:
+                raise serializers.ValidationError({"sales_invoice_id": "Sales invoice not found."})
+            if not user_can_access_salesman(request.user, sales_invoice.salesman_id):
+                raise serializers.ValidationError(
+                    {"sales_invoice_id": "You do not have access to this salesman's invoice."}
+                )
 
-        if sales_invoice.customer_id != customer_id:
-            raise serializers.ValidationError(
-                {"sales_invoice_id": "Selected sales invoice does not belong to the chosen customer."}
-            )
+            if sales_invoice.customer_id != customer_id:
+                raise serializers.ValidationError(
+                    {"sales_invoice_id": "Selected sales invoice does not belong to the chosen customer."}
+                )
 
         salesman_id = attrs.get("salesman_id", getattr(self.instance, "salesman_id", None))
-        if not salesman_id:
+        if receipt_against == SalesBankReceipt.ReceiptAgainst.OPENING_BALANCE:
+            salesman_id = None
+        elif not salesman_id:
             salesman_id = sales_invoice.salesman_id
 
         salesman = None
@@ -1277,23 +1365,41 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
                 )
 
         amount = attrs.get("amount", getattr(self.instance, "amount", Decimal("0.00")))
-        excluded_ids = [self.instance.id] if self.instance else []
-        financials = get_sales_invoice_financials(
-            sales_invoice,
-            excluded_receipt_ids=excluded_ids,
-        )
-        if amount > financials["balance_amount"]:
-            raise serializers.ValidationError(
-                {
-                    "amount": (
-                        "Receipt amount cannot exceed invoice balance "
-                        f"({financials['balance_amount']})."
-                    )
-                }
+        if receipt_against == SalesBankReceipt.ReceiptAgainst.OPENING_BALANCE:
+            if amount > opening_financials["balance_amount"]:
+                raise serializers.ValidationError(
+                    {
+                        "amount": (
+                            "Receipt amount cannot exceed opening balance "
+                            f"({opening_financials['balance_amount']})."
+                        )
+                    }
+                )
+        else:
+            excluded_ids = [self.instance.id] if self.instance else []
+            invoice_financials = get_sales_invoice_financials(
+                sales_invoice,
+                excluded_receipt_ids=excluded_ids,
             )
+            if amount > invoice_financials["balance_amount"]:
+                raise serializers.ValidationError(
+                    {
+                        "amount": (
+                            "Receipt amount cannot exceed invoice balance "
+                            f"({invoice_financials['balance_amount']})."
+                        )
+                    }
+                )
 
         self.context["sales_invoice"] = sales_invoice
-        self.context["invoice_financials"] = financials
+        self.context["invoice_financials"] = invoice_financials
+        self.context["opening_balance"] = opening_balance
+        self.context["opening_financials"] = opening_financials
+        attrs["receipt_against"] = receipt_against
+        attrs["sales_invoice_id"] = sales_invoice_id
+        attrs["party_opening_balance_id"] = (
+            opening_balance.id if opening_balance else party_opening_balance_id
+        )
         attrs["salesman_id"] = salesman_id
         recovery_rate = quantize_money(salesman.commission_on_recovery) if salesman else Decimal("0.00")
         attrs["recovery_commission_rate"] = recovery_rate
@@ -1312,7 +1418,8 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         tenant_id = validated_data.pop("tenant_id", None) or self.context["request"].user.tenant_id
         customer_id = validated_data.pop("customer_id")
-        sales_invoice_id = validated_data.pop("sales_invoice_id")
+        sales_invoice_id = validated_data.pop("sales_invoice_id", None)
+        party_opening_balance_id = validated_data.pop("party_opening_balance_id", None)
         bank_account_id = validated_data.pop("bank_account_id")
         salesman_id = validated_data.pop("salesman_id", None)
 
@@ -1320,6 +1427,7 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
             tenant_id=tenant_id,
             customer_id=customer_id,
             sales_invoice_id=sales_invoice_id,
+            party_opening_balance_id=party_opening_balance_id,
             bank_account_id=bank_account_id,
             salesman_id=salesman_id,
             receipt_number=self._generate_receipt_number(tenant_id),
@@ -1331,6 +1439,11 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
         instance.tenant_id = validated_data.pop("tenant_id", instance.tenant_id)
         instance.customer_id = validated_data.pop("customer_id", instance.customer_id)
         instance.sales_invoice_id = validated_data.pop("sales_invoice_id", instance.sales_invoice_id)
+        instance.party_opening_balance_id = validated_data.pop(
+            "party_opening_balance_id",
+            instance.party_opening_balance_id,
+        )
+        instance.receipt_against = validated_data.pop("receipt_against", instance.receipt_against)
         instance.bank_account_id = validated_data.pop("bank_account_id", instance.bank_account_id)
         instance.salesman_id = validated_data.pop("salesman_id", instance.salesman_id)
         instance.date = validated_data.get("date", instance.date)

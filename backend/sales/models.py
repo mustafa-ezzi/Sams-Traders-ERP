@@ -2,7 +2,7 @@ from django.db import models
 
 from accounts.models import Account
 from common.models import BaseModel
-from inventory.models import Customer, Product, Salesman, Warehouse
+from inventory.models import Customer, PartyOpeningBalance, Product, Salesman, Warehouse
 
 
 class SalesOrder(BaseModel):
@@ -208,6 +208,10 @@ class SalesReturnLine(BaseModel):
 
 
 class SalesBankReceipt(BaseModel):
+    class ReceiptAgainst(models.TextChoices):
+        INVOICE = "INVOICE", "Invoice"
+        OPENING_BALANCE = "OPENING_BALANCE", "Opening Balance"
+
     receipt_number = models.CharField(max_length=50)
     date = models.DateField()
     customer = models.ForeignKey(
@@ -218,7 +222,21 @@ class SalesBankReceipt(BaseModel):
     sales_invoice = models.ForeignKey(
         SalesInvoice,
         on_delete=models.PROTECT,
+        null=True,
+        blank=True,
         related_name="bank_receipts",
+    )
+    party_opening_balance = models.ForeignKey(
+        PartyOpeningBalance,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="sales_bank_receipts",
+    )
+    receipt_against = models.CharField(
+        max_length=30,
+        choices=ReceiptAgainst.choices,
+        default=ReceiptAgainst.INVOICE,
     )
     bank_account = models.ForeignKey(
         Account,

@@ -20,6 +20,7 @@ from accounts.journal import (
 from accounts.access_control import filter_queryset_by_allowed_salesmen, user_can_access_salesman
 from accounts.models import JournalEntry
 from inventory.models import Product, ProductStock
+from inventory.models import PartyOpeningBalance
 from inventory.pagination import StandardResultsSetPagination
 from inventory.services import (
     get_current_product_average_cost,
@@ -45,6 +46,7 @@ from sales.serializers import (
     SalesmanCommissionPaymentSerializer,
 )
 from sales.services import (
+    get_customer_opening_balance_financials,
     get_sales_invoice_financials,
     get_salesman_commission_financials,
     get_sales_return_line_metrics,
@@ -804,6 +806,7 @@ class SalesBankReceiptViewSet(viewsets.ModelViewSet):
 
             payload.append(
                 {
+                    "receipt_against": SalesBankReceipt.ReceiptAgainst.INVOICE,
                     "id": str(invoice.id),
                     "invoice_number": invoice.invoice_number,
                     "date": invoice.date,
@@ -822,6 +825,41 @@ class SalesBankReceiptViewSet(viewsets.ModelViewSet):
                         if invoice.salesman
                         else None
                     ),
+                }
+            )
+
+        opening_qs = PartyOpeningBalance.objects.select_related("customer").filter(
+            tenant_id__in=shared_filter["tenant_id__in"],
+            customer_id=customer_id,
+            party_type=PartyOpeningBalance.PartyType.CUSTOMER,
+            deleted_at__isnull=True,
+        )
+        for opening in opening_qs:
+            include_current_opening = (
+                current_receipt
+                and current_receipt.receipt_against == SalesBankReceipt.ReceiptAgainst.OPENING_BALANCE
+                and current_receipt.party_opening_balance_id == opening.id
+            )
+            excluded_ids = [current_receipt.id] if current_receipt else []
+            opening_financials = get_customer_opening_balance_financials(
+                opening,
+                excluded_receipt_ids=excluded_ids,
+            )
+            if opening_financials["balance_amount"] <= Decimal("0.00") and not include_current_opening:
+                continue
+
+            payload.append(
+                {
+                    "receipt_against": SalesBankReceipt.ReceiptAgainst.OPENING_BALANCE,
+                    "id": str(opening.id),
+                    "invoice_number": "Opening Balance",
+                    "date": opening.date,
+                    "tenant_id": opening.tenant_id,
+                    "net_amount": str(opening_financials["opening_amount"]),
+                    "returned_amount": "0.00",
+                    "received_amount": str(opening_financials["received_amount"]),
+                    "balance_amount": str(opening_financials["balance_amount"]),
+                    "salesman": None,
                 }
             )
 

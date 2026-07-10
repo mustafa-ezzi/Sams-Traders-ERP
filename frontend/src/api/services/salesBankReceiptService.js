@@ -10,6 +10,9 @@ const mapReceipt = (receipt) => ({
   tenantId: receipt.tenant_id || receipt.tenantId || "",
   dimensionName: receipt.dimension_name || receipt.dimensionName || "",
   salesmanId: receipt.salesman?.id || receipt.salesman_id || "",
+  receiptAgainst: receipt.receipt_against || receipt.receiptAgainst || "INVOICE",
+  partyOpeningBalanceId:
+    receipt.party_opening_balance?.id || receipt.party_opening_balance_id || "",
   amount: receipt.amount ?? 0,
   recoveryCommissionRate:
     receipt.recovery_commission_rate ?? receipt.recoveryCommissionRate ?? 0,
@@ -80,7 +83,10 @@ class SalesBankReceiptService {
       },
     });
 
-    return response.data.data || [];
+    return (response.data.data || []).map((item) => ({
+      ...item,
+      receipt_against: item.receipt_against || "INVOICE",
+    }));
   }
 }
 

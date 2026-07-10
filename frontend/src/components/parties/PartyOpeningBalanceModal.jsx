@@ -62,12 +62,7 @@ const PartyOpeningBalanceModal = ({
     return partyOptions;
   }, [editingRecord, isCustomer, partyOptions]);
 
-  const filteredParties = useMemo(() => {
-    if (!dimensionCode) return [];
-    return availableParties.filter(
-      (party) => String(party.tenant_id || "") === String(dimensionCode),
-    );
-  }, [availableParties, dimensionCode]);
+  const filteredParties = useMemo(() => availableParties, [availableParties]);
 
   useEffect(() => {
     if (!open) return;
@@ -80,8 +75,9 @@ const PartyOpeningBalanceModal = ({
         (item) => String(item.id) === String(selectedPartyId),
       );
       setDimensionCode(
-        selectedParty?.tenant_id ||
-          editingRecord.tenant_id ||
+        editingRecord.tenant_id ||
+          editingRecord.tenantId ||
+          selectedParty?.tenant_id ||
           dimensions[0]?.code ||
           "",
       );
@@ -94,26 +90,12 @@ const PartyOpeningBalanceModal = ({
     } else {
       const defaultDimension = dimensions[0]?.code || "";
       setDimensionCode(defaultDimension);
-      const firstParty = availableParties.find(
-        (party) => String(party.tenant_id || "") === String(defaultDimension),
-      );
-      setPartyId(firstParty?.id || "");
+      setPartyId(availableParties[0]?.id || "");
       setDate(new Date().toISOString().slice(0, 10));
       setAmount("");
       setRemarks("");
     }
   }, [open, editingRecord, isCustomer, availableParties, dimensions]);
-
-  useEffect(() => {
-    if (!open || editingRecord) return;
-    if (!dimensionCode) return;
-    const stillValid = filteredParties.some(
-      (party) => String(party.id) === String(partyId),
-    );
-    if (!stillValid) {
-      setPartyId("");
-    }
-  }, [open, editingRecord, dimensionCode, filteredParties, partyId]);
 
   if (!open) return null;
 
@@ -123,6 +105,10 @@ const PartyOpeningBalanceModal = ({
 
     if (!partyId) {
       setError(`Please select a ${partyLabel.toLowerCase()}.`);
+      return;
+    }
+    if (!dimensionCode) {
+      setError("Please select a dimension.");
       return;
     }
     if (!date) {
@@ -136,6 +122,7 @@ const PartyOpeningBalanceModal = ({
 
     const payload = {
       party_type: partyTypeValue,
+      tenant_id: dimensionCode,
       date,
       amount: Number(amount),
       remarks: remarks.trim(),
@@ -148,7 +135,7 @@ const PartyOpeningBalanceModal = ({
 
     setSubmitting(true);
     try {
-      await onSubmit(payload, editingRecord?.id || "");
+      await onSubmit(payload, editingRecord?.id || "", dimensionCode);
       onClose();
     } catch (submitError) {
       setError(extractErrorMessage(submitError));
@@ -164,7 +151,7 @@ const PartyOpeningBalanceModal = ({
           {editingRecord ? "Edit" : "Add"} Opening Account
         </h3>
         <p className="mt-1 text-sm text-slate-500">
-          Posts to chart of accounts and appears on party ledger reports.
+          Pick a customer or supplier and the dimension where this opening balance should post.
         </p>
 
         <form className="mt-5 space-y-4" onSubmit={handleSubmit}>
@@ -197,18 +184,16 @@ const PartyOpeningBalanceModal = ({
               label={`${partyLabel}`}
               required
               value={partyId}
-              disabled={Boolean(editingRecord) || loadingParties || !dimensionCode}
+              disabled={Boolean(editingRecord) || loadingParties}
               showAllOptions
               options={filteredParties}
               onChange={(nextValue) => setPartyId(nextValue)}
               getOptionLabel={(party) => party.business_name || "Unnamed"}
               getOptionValue={(party) => party.id}
               placeholder={
-                !dimensionCode
-                  ? "Select dimension first"
-                  : loadingParties
-                    ? "Loading parties..."
-                    : `Type to search ${partyLabel.toLowerCase()}`
+                loadingParties
+                  ? "Loading parties..."
+                  : `Type to search ${partyLabel.toLowerCase()}`
               }
             />
           </div>
