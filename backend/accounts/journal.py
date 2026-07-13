@@ -368,6 +368,8 @@ def _build_purchase_return_lines(purchase_return):
 
 def _build_purchase_bank_payment_lines(payment):
     lines = []
+    bank_account = payment.bank_account
+    bank_tenant_id = bank_account.tenant_id
     for payment_line in payment.lines.filter(deleted_at__isnull=True).select_related(
         "supplier",
         "purchase_invoice",
@@ -383,27 +385,26 @@ def _build_purchase_bank_payment_lines(payment):
                 "Supplier",
                 tenant_id,
             )
-            bank_account = _account_for_dimension(payment.bank_account, tenant_id)
-            lines.extend(
-                [
-                    {
-                        "account": supplier_account,
-                        "tenant_id": tenant_id,
-                        "debit": amount,
-                        "credit": Decimal("0.00"),
-                        "line_description": "Supplier Payment",
-                        "people_type": "Supplier",
-                        "people_name": payment_line.supplier.business_name,
-                    },
-                    {
-                        "account": bank_account,
-                        "tenant_id": tenant_id,
-                        "debit": Decimal("0.00"),
-                        "credit": amount,
-                        "line_description": "Bank Payment",
-                    },
-                ]
+            lines.append(
+                {
+                    "account": supplier_account,
+                    "tenant_id": tenant_id,
+                    "debit": amount,
+                    "credit": Decimal("0.00"),
+                    "line_description": "Supplier Payment",
+                    "people_type": "Supplier",
+                    "people_name": payment_line.supplier.business_name,
+                }
             )
+        lines.append(
+            {
+                "account": bank_account,
+                "tenant_id": bank_tenant_id,
+                "debit": Decimal("0.00"),
+                "credit": payment_line.amount,
+                "line_description": "Bank Payment",
+            }
+        )
     return lines
 
 
@@ -604,6 +605,8 @@ def _build_sales_return_lines(sales_return):
 
 def _build_sales_bank_receipt_lines(receipt):
     lines = []
+    bank_account = receipt.bank_account
+    bank_tenant_id = bank_account.tenant_id
     for receipt_line in receipt.lines.filter(deleted_at__isnull=True).select_related(
         "customer",
         "sales_invoice",
@@ -613,25 +616,24 @@ def _build_sales_bank_receipt_lines(receipt):
             receipt_line.receipt_against == receipt_line.ReceiptAgainst.OPENING_BALANCE
             and receipt_line.party_opening_balance_id
         ):
-            tenant_id = receipt_line.party_opening_balance.tenant_id
+            ar_tenant_id = receipt_line.party_opening_balance.tenant_id
             customer_account = _party_control_account_for_dimension(
                 receipt_line.customer,
                 "Customer",
-                tenant_id,
+                ar_tenant_id,
             )
-            bank_account = _account_for_dimension(receipt.bank_account, tenant_id)
             lines.extend(
                 [
                     {
                         "account": bank_account,
-                        "tenant_id": tenant_id,
+                        "tenant_id": bank_tenant_id,
                         "debit": receipt_line.amount,
                         "credit": Decimal("0.00"),
                         "line_description": "Bank Receipt",
                     },
                     {
                         "account": customer_account,
-                        "tenant_id": tenant_id,
+                        "tenant_id": ar_tenant_id,
                         "debit": Decimal("0.00"),
                         "credit": receipt_line.amount,
                         "line_description": "Customer Opening Receipt",
@@ -647,32 +649,31 @@ def _build_sales_bank_receipt_lines(receipt):
             receipt_line.amount,
             _sales_invoice_weights(receipt_line.sales_invoice),
         )
+        lines.append(
+            {
+                "account": bank_account,
+                "tenant_id": bank_tenant_id,
+                "debit": receipt_line.amount,
+                "credit": Decimal("0.00"),
+                "line_description": "Bank Receipt",
+            }
+        )
         for tenant_id, amount in allocations.items():
             customer_account = _party_control_account_for_dimension(
                 receipt_line.customer,
                 "Customer",
                 tenant_id,
             )
-            bank_account = _account_for_dimension(receipt.bank_account, tenant_id)
-            lines.extend(
-                [
-                    {
-                        "account": bank_account,
-                        "tenant_id": tenant_id,
-                        "debit": amount,
-                        "credit": Decimal("0.00"),
-                        "line_description": "Bank Receipt",
-                    },
-                    {
-                        "account": customer_account,
-                        "tenant_id": tenant_id,
-                        "debit": Decimal("0.00"),
-                        "credit": amount,
-                        "line_description": "Customer Receipt",
-                        "people_type": "Customer",
-                        "people_name": receipt_line.customer.business_name,
-                    },
-                ]
+            lines.append(
+                {
+                    "account": customer_account,
+                    "tenant_id": tenant_id,
+                    "debit": Decimal("0.00"),
+                    "credit": amount,
+                    "line_description": "Customer Receipt",
+                    "people_type": "Customer",
+                    "people_name": receipt_line.customer.business_name,
+                }
             )
     return lines
 
