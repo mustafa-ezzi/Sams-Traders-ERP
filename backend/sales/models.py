@@ -250,6 +250,9 @@ class SalesBankReceipt(BaseModel):
             .first()
         )
         return line.sales_invoice if line else None
+
+
+class SalesBankReceiptLine(BaseModel):
     class ReceiptAgainst(models.TextChoices):
         INVOICE = "INVOICE", "Invoice"
         OPENING_BALANCE = "OPENING_BALANCE", "Opening Balance"
