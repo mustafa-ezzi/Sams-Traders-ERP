@@ -288,9 +288,9 @@ const CreateUpdatePurchaseBankPayment = () => {
               <tr>
                 <th className="px-3 py-3">Supplier</th>
                 <th className="px-3 py-3">Reference PI</th>
-                <th className="px-3 py-3 text-right">Actual Amount</th>
-                <th className="px-3 py-3 text-right">Remaining</th>
+                <th className="px-3 py-3 text-right">Actual Payment</th>
                 <th className="px-3 py-3 text-right">Amount</th>
+                <th className="px-3 py-3 text-right">Remaining Payment</th>
                 <th className="px-3 py-3" />
               </tr>
             </thead>
@@ -299,6 +299,13 @@ const CreateUpdatePurchaseBankPayment = () => {
                 const selectedInvoice = (line.invoiceOptions || []).find(
                   (invoice) => invoice.id === line.purchaseInvoiceId,
                 );
+                const actualPayment = selectedInvoice
+                  ? toNumber(selectedInvoice.balance_amount)
+                  : null;
+                const remainingPayment =
+                  actualPayment == null
+                    ? null
+                    : actualPayment - toNumber(line.amount);
                 return (
                   <tr key={line.key}>
                     <td className="px-3 py-3 min-w-[220px]">
@@ -337,14 +344,7 @@ const CreateUpdatePurchaseBankPayment = () => {
                       />
                     </td>
                     <td className="px-3 py-3 text-right tabular-nums text-slate-700 dark:text-slate-200">
-                      {selectedInvoice
-                        ? formatDecimal(selectedInvoice.net_amount)
-                        : "—"}
-                    </td>
-                    <td className="px-3 py-3 text-right tabular-nums text-slate-700 dark:text-slate-200">
-                      {selectedInvoice
-                        ? formatDecimal(selectedInvoice.balance_amount)
-                        : "—"}
+                      {actualPayment == null ? "—" : formatDecimal(actualPayment)}
                     </td>
                     <td className="px-3 py-3 min-w-[120px]">
                       <FormInput
@@ -354,6 +354,11 @@ const CreateUpdatePurchaseBankPayment = () => {
                         value={line.amount}
                         onChange={(e) => updateLine(index, { amount: e.target.value })}
                       />
+                    </td>
+                    <td className="px-3 py-3 text-right tabular-nums text-slate-700 dark:text-slate-200">
+                      {remainingPayment == null
+                        ? "—"
+                        : formatDecimal(remainingPayment)}
                     </td>
                     <td className="px-3 py-3">
                       <Button
