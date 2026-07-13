@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, Prefetch, Q, Sum
 from django.db.models.functions import Coalesce, TruncMonth
 from django.utils.timezone import now
 from rest_framework import status
@@ -49,9 +49,23 @@ from inventory.models import (
     Supplier,
     Warehouse,
 )
-from purchase.models import PurchaseBankPayment, PurchaseInvoice, PurchaseInvoiceLine, PurchaseReturn, PurchaseReturnLine
+from purchase.models import (
+    PurchaseBankPayment,
+    PurchaseBankPaymentLine,
+    PurchaseInvoice,
+    PurchaseInvoiceLine,
+    PurchaseReturn,
+    PurchaseReturnLine,
+)
 from purchase.services import get_purchase_invoice_financials
-from sales.models import SalesBankReceipt, SalesInvoice, SalesInvoiceLine, SalesReturn, SalesReturnLine
+from sales.models import (
+    SalesBankReceipt,
+    SalesBankReceiptLine,
+    SalesInvoice,
+    SalesInvoiceLine,
+    SalesReturn,
+    SalesReturnLine,
+)
 from sales.services import get_sales_invoice_financials
 
 from common.tenancy import get_request_tenant_filter, get_request_tenant_ids, get_shared_tenant_ids
@@ -439,48 +453,100 @@ class AccountViewSet(ModelViewSet):
 
     def _allocated_sales_receipt_total(self, receipt_queryset, scoped_sales_totals):
         total = Decimal("0.00")
-        for receipt in receipt_queryset.select_related("sales_invoice"):
-            scoped_total = scoped_sales_totals.get(receipt.sales_invoice_id, Decimal("0.00"))
-            total += self._allocated_invoice_amount(
-                receipt.sales_invoice,
-                receipt.amount,
-                scoped_total,
+        receipts = receipt_queryset.prefetch_related(
+            Prefetch(
+                "lines",
+                queryset=SalesBankReceiptLine.objects.filter(
+                    deleted_at__isnull=True
+                ).select_related("sales_invoice"),
             )
+        )
+        for receipt in receipts:
+            for line in receipt.lines.all():
+                if not line.sales_invoice_id:
+                    total += self._money(line.amount)
+                    continue
+                scoped_total = scoped_sales_totals.get(
+                    line.sales_invoice_id, Decimal("0.00")
+                )
+                total += self._allocated_invoice_amount(
+                    line.sales_invoice,
+                    line.amount,
+                    scoped_total,
+                )
         return self._money(total)
 
     def _allocated_purchase_payment_total(self, payment_queryset, scoped_purchase_totals):
         total = Decimal("0.00")
-        for payment in payment_queryset.select_related("purchase_invoice"):
-            scoped_total = scoped_purchase_totals.get(payment.purchase_invoice_id, Decimal("0.00"))
-            total += self._allocated_invoice_amount(
-                payment.purchase_invoice,
-                payment.amount,
-                scoped_total,
+        payments = payment_queryset.prefetch_related(
+            Prefetch(
+                "lines",
+                queryset=PurchaseBankPaymentLine.objects.filter(
+                    deleted_at__isnull=True
+                ).select_related("purchase_invoice"),
             )
+        )
+        for payment in payments:
+            for line in payment.lines.all():
+                scoped_total = scoped_purchase_totals.get(
+                    line.purchase_invoice_id, Decimal("0.00")
+                )
+                total += self._allocated_invoice_amount(
+                    line.purchase_invoice,
+                    line.amount,
+                    scoped_total,
+                )
         return self._money(total)
 
     def _monthly_allocated_receipt_totals(self, receipt_queryset, scoped_sales_totals):
         totals = {}
-        for receipt in receipt_queryset.select_related("sales_invoice"):
-            month = receipt.date.replace(day=1)
-            scoped_total = scoped_sales_totals.get(receipt.sales_invoice_id, Decimal("0.00"))
-            totals[month] = totals.get(month, Decimal("0.00")) + self._allocated_invoice_amount(
-                receipt.sales_invoice,
-                receipt.amount,
-                scoped_total,
+        receipts = receipt_queryset.prefetch_related(
+            Prefetch(
+                "lines",
+                queryset=SalesBankReceiptLine.objects.filter(
+                    deleted_at__isnull=True
+                ).select_related("sales_invoice"),
             )
+        )
+        for receipt in receipts:
+            month = receipt.date.replace(day=1)
+            for line in receipt.lines.all():
+                if not line.sales_invoice_id:
+                    totals[month] = totals.get(month, Decimal("0.00")) + self._money(
+                        line.amount
+                    )
+                    continue
+                scoped_total = scoped_sales_totals.get(
+                    line.sales_invoice_id, Decimal("0.00")
+                )
+                totals[month] = totals.get(month, Decimal("0.00")) + self._allocated_invoice_amount(
+                    line.sales_invoice,
+                    line.amount,
+                    scoped_total,
+                )
         return totals.items()
 
     def _monthly_allocated_payment_totals(self, payment_queryset, scoped_purchase_totals):
         totals = {}
-        for payment in payment_queryset.select_related("purchase_invoice"):
-            month = payment.date.replace(day=1)
-            scoped_total = scoped_purchase_totals.get(payment.purchase_invoice_id, Decimal("0.00"))
-            totals[month] = totals.get(month, Decimal("0.00")) + self._allocated_invoice_amount(
-                payment.purchase_invoice,
-                payment.amount,
-                scoped_total,
+        payments = payment_queryset.prefetch_related(
+            Prefetch(
+                "lines",
+                queryset=PurchaseBankPaymentLine.objects.filter(
+                    deleted_at__isnull=True
+                ).select_related("purchase_invoice"),
             )
+        )
+        for payment in payments:
+            month = payment.date.replace(day=1)
+            for line in payment.lines.all():
+                scoped_total = scoped_purchase_totals.get(
+                    line.purchase_invoice_id, Decimal("0.00")
+                )
+                totals[month] = totals.get(month, Decimal("0.00")) + self._allocated_invoice_amount(
+                    line.purchase_invoice,
+                    line.amount,
+                    scoped_total,
+                )
         return totals.items()
 
     def _allocated_sales_outstanding(self, invoice_queryset, scoped_sales_totals):
@@ -1566,7 +1632,10 @@ class AccountViewSet(ModelViewSet):
         )
         receipt_queryset = (
             SalesBankReceipt.objects.filter(deleted_at__isnull=True)
-            .filter(Q(tenant_id=tenant_id) | Q(sales_invoice__lines__tenant_id=tenant_id))
+            .filter(
+                Q(tenant_id=tenant_id)
+                | Q(lines__sales_invoice__lines__tenant_id=tenant_id)
+            )
             .distinct()
         )
         has_salesman_scope = bool(get_user_allowed_salesman_ids(request.user))
@@ -1574,11 +1643,14 @@ class AccountViewSet(ModelViewSet):
         receipt_queryset = filter_queryset_by_allowed_salesmen(
             receipt_queryset,
             request.user,
-            field_name="sales_invoice__salesman_id",
+            field_name="lines__sales_invoice__salesman_id",
         )
         payment_queryset = (
             PurchaseBankPayment.objects.filter(deleted_at__isnull=True)
-            .filter(Q(tenant_id=tenant_id) | Q(purchase_invoice__lines__tenant_id=tenant_id))
+            .filter(
+                Q(tenant_id=tenant_id)
+                | Q(lines__purchase_invoice__lines__tenant_id=tenant_id)
+            )
             .distinct()
         )
         journal_queryset = JournalLine.objects.filter(

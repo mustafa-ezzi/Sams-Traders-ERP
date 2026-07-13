@@ -97,10 +97,11 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
             .values("total")[:1]
         )
         received_amount_subquery = (
-            SalesBankReceipt.objects.filter(
-                tenant_id=OuterRef("tenant_id"),
+            SalesBankReceiptLine.objects.filter(
+                receipt__tenant_id=OuterRef("tenant_id"),
                 sales_invoice_id=OuterRef("pk"),
                 deleted_at__isnull=True,
+                receipt__deleted_at__isnull=True,
             )
             .values("sales_invoice_id")
             .annotate(total=Sum("amount"))

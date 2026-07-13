@@ -130,10 +130,9 @@ const CreateUpdateSalesBankReceipt = () => {
   useEffect(() => {
     const loadSetup = async () => {
       try {
-        const [dimensionItems, accountsResponse, salesmanResponse, allCustomers] =
+        const [dimensionItems, salesmanResponse, allCustomers] =
           await Promise.all([
             dimensionService.list(),
-            accountService.list(),
             salesmanService.list({ page: 1, limit: 200, search: "" }),
             fetchAll(customerService, { search: "" }),
           ]);
@@ -148,26 +147,63 @@ const CreateUpdateSalesBankReceipt = () => {
         }));
         setCustomers(allCustomers || []);
         setSalesmen(salesmanResponse.data || []);
-        const flatAccounts = flattenAccountTree(
-          Array.isArray(accountsResponse)
-            ? accountsResponse
-            : accountsResponse.data || [],
-        );
-        setBankAccounts(
-          flatAccounts.filter(
-            (account) =>
-              account.is_postable &&
-              account.account_group === "ASSET" &&
-              account.is_active &&
-              account.account_type === "BANK",
-          ),
-        );
       } catch {
         toast.error("Failed to load receipt setup options");
       }
     };
     loadSetup();
   }, [tenantId, toast]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadBanksForDimension = async () => {
+      if (!form.tenantId) {
+        setBankAccounts([]);
+        return;
+      }
+      try {
+        const accountsResponse = await accountService.list(
+          undefined,
+          form.tenantId,
+        );
+        if (cancelled) return;
+        const flatAccounts = flattenAccountTree(
+          Array.isArray(accountsResponse)
+            ? accountsResponse
+            : accountsResponse.data || [],
+        );
+        const banks = flatAccounts.filter(
+          (account) =>
+            account.is_postable &&
+            account.account_group === "ASSET" &&
+            account.is_active &&
+            account.account_type === "BANK",
+        );
+        setBankAccounts(banks);
+        setForm((current) => {
+          if (current.tenantId !== form.tenantId) {
+            return current;
+          }
+          if (
+            !current.bankAccountId ||
+            banks.some((bank) => bank.id === current.bankAccountId)
+          ) {
+            return current;
+          }
+          return { ...current, bankAccountId: "" };
+        });
+      } catch {
+        if (!cancelled) {
+          toast.error("Failed to load bank accounts for dimension");
+          setBankAccounts([]);
+        }
+      }
+    };
+    loadBanksForDimension();
+    return () => {
+      cancelled = true;
+    };
+  }, [form.tenantId, toast]);
 
   useEffect(() => {
     if (!id) {
@@ -318,7 +354,13 @@ const CreateUpdateSalesBankReceipt = () => {
             <select
               className={selectClassName}
               value={form.tenantId}
-              onChange={(e) => setForm((c) => ({ ...c, tenantId: e.target.value }))}
+              onChange={(e) =>
+                setForm((c) => ({
+                  ...c,
+                  tenantId: e.target.value,
+                  bankAccountId: "",
+                }))
+              }
               required
             >
               <option value="">Select dimension</option>

@@ -231,8 +231,25 @@ class SalesBankReceipt(BaseModel):
     def __str__(self):
         return self.receipt_number
 
+    @property
+    def customer(self):
+        """Compatibility shim: customer lives on receipt lines after multi-line refactor."""
+        line = (
+            self.lines.filter(deleted_at__isnull=True)
+            .select_related("customer")
+            .first()
+        )
+        return line.customer if line else None
 
-class SalesBankReceiptLine(BaseModel):
+    @property
+    def sales_invoice(self):
+        """Compatibility shim: invoice lives on receipt lines after multi-line refactor."""
+        line = (
+            self.lines.filter(deleted_at__isnull=True)
+            .select_related("sales_invoice")
+            .first()
+        )
+        return line.sales_invoice if line else None
     class ReceiptAgainst(models.TextChoices):
         INVOICE = "INVOICE", "Invoice"
         OPENING_BALANCE = "OPENING_BALANCE", "Opening Balance"

@@ -156,6 +156,26 @@ class PurchaseBankPayment(BaseModel):
     def __str__(self):
         return self.payment_number
 
+    @property
+    def supplier(self):
+        """Compatibility shim: supplier lives on payment lines after multi-line refactor."""
+        line = (
+            self.lines.filter(deleted_at__isnull=True)
+            .select_related("supplier")
+            .first()
+        )
+        return line.supplier if line else None
+
+    @property
+    def purchase_invoice(self):
+        """Compatibility shim: invoice lives on payment lines after multi-line refactor."""
+        line = (
+            self.lines.filter(deleted_at__isnull=True)
+            .select_related("purchase_invoice")
+            .first()
+        )
+        return line.purchase_invoice if line else None
+
 
 class PurchaseBankPaymentLine(BaseModel):
     payment = models.ForeignKey(

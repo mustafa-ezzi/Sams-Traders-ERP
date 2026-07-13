@@ -5,13 +5,9 @@ import Button from "../../../components/ui/Button";
 import FormInput from "../../../components/ui/FormInput";
 import SearchableSelect from "../../../components/ui/SearchableSelect";
 import supplierService from "../../../api/services/supplierService";
-import accountService from "../../../api/services/accountService";
+import bankTransferService from "../../../api/services/bankTransferService";
 import purchaseBankPaymentService from "../../../api/services/purchaseBankPaymentService";
 import { formatDecimal } from "../../../utils/format";
-import {
-  flattenAccountTree,
-  formatAccountLabel,
-} from "../../../utils/accounts";
 import { useToast } from "../../../context/ToastContext";
 
 const selectClassName =
@@ -95,25 +91,12 @@ const CreateUpdatePurchaseBankPayment = () => {
   useEffect(() => {
     const loadSetup = async () => {
       try {
-        const [supplierResponse, accountsResponse] = await Promise.all([
+        const [supplierResponse, banks] = await Promise.all([
           supplierService.list({ page: 1, limit: 200, search: "" }),
-          accountService.list(),
+          bankTransferService.listBankAccounts(),
         ]);
         setSuppliers(supplierResponse.data || []);
-        const flatAccounts = flattenAccountTree(
-          Array.isArray(accountsResponse)
-            ? accountsResponse
-            : accountsResponse.data || [],
-        );
-        setBankAccounts(
-          flatAccounts.filter(
-            (account) =>
-              account.is_postable &&
-              account.account_group === "ASSET" &&
-              account.is_active &&
-              account.account_type === "BANK",
-          ),
-        );
+        setBankAccounts(banks || []);
       } catch {
         toast.error("Failed to load payment setup options");
       }
@@ -248,7 +231,10 @@ const CreateUpdatePurchaseBankPayment = () => {
             value={form.bankAccountId}
             options={bankAccounts}
             onChange={(bankAccountId) => setForm((c) => ({ ...c, bankAccountId }))}
-            getOptionLabel={(account) => formatAccountLabel(account)}
+            getOptionLabel={(account) =>
+              account.label ||
+              `${account.dimension_name || ""} - ${account.code || ""} - ${account.name || ""}`
+            }
             placeholder="Select bank account…"
           />
           <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 dark:border-emerald-800 dark:bg-emerald-950/40 xl:col-span-2">

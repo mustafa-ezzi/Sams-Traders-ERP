@@ -747,6 +747,36 @@ def sync_purchase_return_journal(purchase_return):
     )
 
 
+def _receipt_people_name(receipt):
+    names = []
+    seen = set()
+    for line in receipt.lines.filter(deleted_at__isnull=True).select_related("customer"):
+        name = (line.customer.business_name or line.customer.name or "").strip()
+        if name and name not in seen:
+            seen.add(name)
+            names.append(name)
+    if not names:
+        return ""
+    if len(names) == 1:
+        return names[0]
+    return f"{names[0]} +{len(names) - 1}"
+
+
+def _payment_people_name(payment):
+    names = []
+    seen = set()
+    for line in payment.lines.filter(deleted_at__isnull=True).select_related("supplier"):
+        name = (line.supplier.business_name or "").strip()
+        if name and name not in seen:
+            seen.add(name)
+            names.append(name)
+    if not names:
+        return ""
+    if len(names) == 1:
+        return names[0]
+    return f"{names[0]} +{len(names) - 1}"
+
+
 @transaction.atomic
 def sync_purchase_bank_payment_journal(payment):
     return _upsert_journal_entry(
@@ -758,7 +788,7 @@ def sync_purchase_bank_payment_journal(payment):
         document_type="Bank Payment",
         description=payment.remarks,
         people_type="Supplier",
-        people_name=payment.supplier.business_name,
+        people_name=_payment_people_name(payment),
         lines=_build_purchase_bank_payment_lines(payment),
     )
 
@@ -806,7 +836,7 @@ def sync_sales_bank_receipt_journal(receipt):
         document_type="Bank Receipt",
         description=receipt.remarks,
         people_type="Customer",
-        people_name=receipt.customer.business_name,
+        people_name=_receipt_people_name(receipt),
         lines=_build_sales_bank_receipt_lines(receipt),
     )
 

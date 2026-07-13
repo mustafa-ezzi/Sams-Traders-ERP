@@ -27,6 +27,7 @@ from inventory.services import (
 )
 from purchase.models import (
     PurchaseBankPayment,
+    PurchaseBankPaymentLine,
     PurchaseInvoice,
     PurchaseInvoiceLine,
     PurchaseReturn,
@@ -75,10 +76,11 @@ class PurchaseInvoiceViewSet(viewsets.ModelViewSet):
             .values("total")[:1]
         )
         paid_amount_subquery = (
-            PurchaseBankPayment.objects.filter(
-                tenant_id=OuterRef("tenant_id"),
+            PurchaseBankPaymentLine.objects.filter(
+                payment__tenant_id=OuterRef("tenant_id"),
                 purchase_invoice_id=OuterRef("pk"),
                 deleted_at__isnull=True,
+                payment__deleted_at__isnull=True,
             )
             .values("purchase_invoice_id")
             .annotate(total=Sum("amount"))
