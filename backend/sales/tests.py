@@ -5,7 +5,7 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 
 from accounts.models import Account, User
 from inventory.models import Category, Customer, Product, ProductStock, Salesman, Unit, Warehouse
-from sales.models import SalesBankReceipt, SalesInvoice, SalesReturn
+from sales.models import SalesBankReceipt, SalesBankReceiptLine, SalesInvoice, SalesReturn
 from sales.serializers import SalesBankReceiptSerializer, SalesInvoiceSerializer
 from sales.views import SalesInvoiceViewSet
 from sales.services import get_sales_invoice_financials
@@ -88,13 +88,19 @@ class SalesBankReceiptTests(TestCase):
             sales_invoice=self.invoice,
             gross_amount=Decimal("300.00"),
         )
-        SalesBankReceipt.objects.create(
+        receipt = SalesBankReceipt.objects.create(
             tenant_id=self.tenant_id,
             receipt_number="SBR-00001",
             date="2026-04-20",
+            bank_account=self.bank_account,
+            amount=Decimal("700.00"),
+        )
+        SalesBankReceiptLine.objects.create(
+            tenant_id=self.tenant_id,
+            receipt=receipt,
             customer=self.customer,
             sales_invoice=self.invoice,
-            bank_account=self.bank_account,
+            receipt_against="INVOICE",
             amount=Decimal("700.00"),
         )
 
@@ -106,30 +112,41 @@ class SalesBankReceiptTests(TestCase):
         self.assertEqual(financials["balance_amount"], Decimal("1000.00"))
 
     def test_serializer_blocks_receipt_above_remaining_balance(self):
-        SalesBankReceipt.objects.create(
+        receipt = SalesBankReceipt.objects.create(
             tenant_id=self.tenant_id,
             receipt_number="SBR-00001",
             date="2026-04-20",
+            bank_account=self.bank_account,
+            amount=Decimal("1000.00"),
+        )
+        SalesBankReceiptLine.objects.create(
+            tenant_id=self.tenant_id,
+            receipt=receipt,
             customer=self.customer,
             sales_invoice=self.invoice,
-            bank_account=self.bank_account,
+            receipt_against="INVOICE",
             amount=Decimal("1000.00"),
         )
 
         serializer = SalesBankReceiptSerializer(
             data={
                 "date": "2026-04-20",
-                "customer_id": str(self.customer.id),
-                "sales_invoice_id": str(self.invoice.id),
                 "bank_account_id": str(self.bank_account.id),
-                "amount": "1500.00",
                 "remarks": "Second receipt",
+                "lines": [
+                    {
+                        "customer_id": str(self.customer.id),
+                        "receipt_against": "INVOICE",
+                        "sales_invoice_id": str(self.invoice.id),
+                        "amount": "1500.00",
+                    }
+                ],
             },
             context={"request": self._get_request()},
         )
 
         self.assertFalse(serializer.is_valid())
-        self.assertIn("amount", serializer.errors)
+        self.assertIn("lines", serializer.errors)
 
     def test_serializer_requires_bank_account_type_bank(self):
         cash_account = Account.objects.create(
@@ -148,11 +165,16 @@ class SalesBankReceiptTests(TestCase):
         serializer = SalesBankReceiptSerializer(
             data={
                 "date": "2026-04-20",
-                "customer_id": str(self.customer.id),
-                "sales_invoice_id": str(self.invoice.id),
                 "bank_account_id": str(cash_account.id),
-                "amount": "500.00",
                 "remarks": "Cash is not valid here",
+                "lines": [
+                    {
+                        "customer_id": str(self.customer.id),
+                        "receipt_against": "INVOICE",
+                        "sales_invoice_id": str(self.invoice.id),
+                        "amount": "500.00",
+                    }
+                ],
             },
             context={"request": self._get_request()},
         )

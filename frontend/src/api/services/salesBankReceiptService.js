@@ -4,27 +4,16 @@ const BASE_URL = "/sales/sales-bank-receipts/";
 
 const mapReceipt = (receipt) => ({
   ...receipt,
-  customerId: receipt.customer?.id || receipt.customer_id || "",
-  salesInvoiceId: receipt.sales_invoice?.id || receipt.sales_invoice_id || "",
   bankAccountId: receipt.bank_account?.id || receipt.bank_account_id || "",
   tenantId: receipt.tenant_id || receipt.tenantId || "",
   dimensionName: receipt.dimension_name || receipt.dimensionName || "",
-  salesmanId: receipt.salesman?.id || receipt.salesman_id || "",
-  receiptAgainst: receipt.receipt_against || receipt.receiptAgainst || "INVOICE",
-  partyOpeningBalanceId:
-    receipt.party_opening_balance?.id || receipt.party_opening_balance_id || "",
   amount: receipt.amount ?? 0,
-  recoveryCommissionRate:
-    receipt.recovery_commission_rate ?? receipt.recoveryCommissionRate ?? 0,
+  lineCount: receipt.line_count ?? receipt.lines?.length ?? 0,
+  customerSummary: receipt.customer_summary || "",
+  referenceSummary: receipt.reference_summary || "",
   recoveryCommissionAmount:
     receipt.recovery_commission_amount ?? receipt.recoveryCommissionAmount ?? 0,
-  invoiceNetAmount: receipt.invoice_net_amount ?? receipt.invoiceNetAmount ?? 0,
-  invoiceReturnedAmount:
-    receipt.invoice_returned_amount ?? receipt.invoiceReturnedAmount ?? 0,
-  invoiceReceivedAmount:
-    receipt.invoice_received_amount ?? receipt.invoiceReceivedAmount ?? 0,
-  invoiceBalanceAmount:
-    receipt.invoice_balance_amount ?? receipt.invoiceBalanceAmount ?? 0,
+  lines: receipt.lines || [],
 });
 
 class SalesBankReceiptService {
@@ -44,7 +33,7 @@ class SalesBankReceiptService {
 
   async getById(id) {
     const response = await axiosInstance.get(`${BASE_URL}${id}/`);
-    return mapReceipt(response.data);
+    return mapReceipt(response.data.data || response.data);
   }
 
   async create(payload) {

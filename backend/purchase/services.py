@@ -3,7 +3,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from django.db.models import Sum
 
 from inventory.models import ProductStock
-from purchase.models import PurchaseBankPayment, PurchaseReturn, PurchaseReturnLine
+from purchase.models import PurchaseBankPaymentLine, PurchaseReturn, PurchaseReturnLine
 
 
 TWO_PLACES = Decimal("0.01")
@@ -71,12 +71,12 @@ def get_purchase_invoice_financials(purchase_invoice, excluded_payment_ids=None)
     )
 
     paid_amount = (
-        PurchaseBankPayment.objects.filter(
-            tenant_id=purchase_invoice.tenant_id,
+        PurchaseBankPaymentLine.objects.filter(
             purchase_invoice=purchase_invoice,
             deleted_at__isnull=True,
+            payment__deleted_at__isnull=True,
         )
-        .exclude(id__in=excluded_payment_ids)
+        .exclude(payment_id__in=excluded_payment_ids)
         .aggregate(total=Sum("amount"))["total"]
         or Decimal("0.00")
     )

@@ -3,7 +3,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from django.db.models import Sum
 
 from sales.models import (
-    SalesBankReceipt,
+    SalesBankReceiptLine,
     SalesInvoiceLine,
     SalesmanCommissionPayment,
     SalesReturn,
@@ -90,11 +90,12 @@ def get_sales_invoice_financials(sales_invoice, excluded_receipt_ids=None):
     )
 
     received_amount = (
-        SalesBankReceipt.objects.filter(
+        SalesBankReceiptLine.objects.filter(
             sales_invoice=sales_invoice,
             deleted_at__isnull=True,
+            receipt__deleted_at__isnull=True,
         )
-        .exclude(id__in=excluded_receipt_ids)
+        .exclude(receipt_id__in=excluded_receipt_ids)
         .aggregate(total=Sum("amount"))["total"]
         or Decimal("0.00")
     )
@@ -120,12 +121,12 @@ def get_customer_opening_balance_financials(opening_balance, excluded_receipt_id
 
     opening_amount = quantize_money(opening_balance.amount or Decimal("0.00"))
     received_amount = (
-        SalesBankReceipt.objects.filter(
-            tenant_id=opening_balance.tenant_id,
+        SalesBankReceiptLine.objects.filter(
             party_opening_balance=opening_balance,
             deleted_at__isnull=True,
+            receipt__deleted_at__isnull=True,
         )
-        .exclude(id__in=excluded_receipt_ids)
+        .exclude(receipt_id__in=excluded_receipt_ids)
         .aggregate(total=Sum("amount"))["total"]
         or Decimal("0.00")
     )
@@ -153,10 +154,10 @@ def get_salesman_commission_financials(
     if salesman_id is None or str(sales_invoice.salesman_id or "") == str(salesman_id):
         sales_commission_amount = sales_invoice.salesman_commission_amount or Decimal("0.00")
 
-    recovery_receipts = SalesBankReceipt.objects.filter(
-        tenant_id=sales_invoice.tenant_id,
+    recovery_receipts = SalesBankReceiptLine.objects.filter(
         sales_invoice=sales_invoice,
         deleted_at__isnull=True,
+        receipt__deleted_at__isnull=True,
     )
     if salesman_id is not None:
         recovery_receipts = recovery_receipts.filter(salesman_id=salesman_id)

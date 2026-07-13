@@ -4,17 +4,12 @@ const BASE_URL = "/purchase/purchase-bank-payments/";
 
 const mapPayment = (payment) => ({
   ...payment,
-  supplierId: payment.supplier?.id || payment.supplier_id || "",
-  purchaseInvoiceId:
-    payment.purchase_invoice?.id || payment.purchase_invoice_id || "",
   bankAccountId: payment.bank_account?.id || payment.bank_account_id || "",
   amount: payment.amount ?? 0,
-  invoiceNetAmount: payment.invoice_net_amount ?? payment.invoiceNetAmount ?? 0,
-  invoiceReturnedAmount:
-    payment.invoice_returned_amount ?? payment.invoiceReturnedAmount ?? 0,
-  invoicePaidAmount: payment.invoice_paid_amount ?? payment.invoicePaidAmount ?? 0,
-  invoiceBalanceAmount:
-    payment.invoice_balance_amount ?? payment.invoiceBalanceAmount ?? 0,
+  lineCount: payment.line_count ?? payment.lines?.length ?? 0,
+  supplierSummary: payment.supplier_summary || "",
+  referenceSummary: payment.reference_summary || "",
+  lines: payment.lines || [],
 });
 
 class PurchaseBankPaymentService {
@@ -34,7 +29,7 @@ class PurchaseBankPaymentService {
 
   async getById(id) {
     const response = await axiosInstance.get(`${BASE_URL}${id}/`);
-    return mapPayment(response.data);
+    return mapPayment(response.data.data || response.data);
   }
 
   async create(payload) {

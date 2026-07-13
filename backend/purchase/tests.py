@@ -5,7 +5,7 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 
 from accounts.models import Account, User
 from inventory.models import Product, Supplier, Unit, Warehouse
-from purchase.models import PurchaseBankPayment, PurchaseInvoice, PurchaseReturn
+from purchase.models import PurchaseBankPayment, PurchaseBankPaymentLine, PurchaseInvoice, PurchaseReturn
 from purchase.serializers import PurchaseBankPaymentSerializer
 from purchase.views import PurchaseInvoiceViewSet
 from purchase.services import get_purchase_invoice_financials
@@ -90,13 +90,18 @@ class PurchaseBankPaymentTests(TestCase):
             purchase_invoice=self.invoice,
             gross_amount=Decimal("300.00"),
         )
-        PurchaseBankPayment.objects.create(
+        payment = PurchaseBankPayment.objects.create(
             tenant_id=self.tenant_id,
             payment_number="PBP-00001",
             date="2026-04-20",
+            bank_account=self.bank_account,
+            amount=Decimal("700.00"),
+        )
+        PurchaseBankPaymentLine.objects.create(
+            tenant_id=self.tenant_id,
+            payment=payment,
             supplier=self.supplier,
             purchase_invoice=self.invoice,
-            bank_account=self.bank_account,
             amount=Decimal("700.00"),
         )
 
@@ -108,30 +113,39 @@ class PurchaseBankPaymentTests(TestCase):
         self.assertEqual(financials["balance_amount"], Decimal("1000.00"))
 
     def test_serializer_blocks_payment_above_remaining_balance(self):
-        PurchaseBankPayment.objects.create(
+        payment = PurchaseBankPayment.objects.create(
             tenant_id=self.tenant_id,
             payment_number="PBP-00001",
             date="2026-04-20",
+            bank_account=self.bank_account,
+            amount=Decimal("1000.00"),
+        )
+        PurchaseBankPaymentLine.objects.create(
+            tenant_id=self.tenant_id,
+            payment=payment,
             supplier=self.supplier,
             purchase_invoice=self.invoice,
-            bank_account=self.bank_account,
             amount=Decimal("1000.00"),
         )
 
         serializer = PurchaseBankPaymentSerializer(
             data={
                 "date": "2026-04-20",
-                "supplier_id": str(self.supplier.id),
-                "purchase_invoice_id": str(self.invoice.id),
                 "bank_account_id": str(self.bank_account.id),
-                "amount": "1500.00",
                 "remarks": "Second payment",
+                "lines": [
+                    {
+                        "supplier_id": str(self.supplier.id),
+                        "purchase_invoice_id": str(self.invoice.id),
+                        "amount": "1500.00",
+                    }
+                ],
             },
             context={"request": self._get_request()},
         )
 
         self.assertFalse(serializer.is_valid())
-        self.assertIn("amount", serializer.errors)
+        self.assertIn("lines", serializer.errors)
 
     def test_serializer_requires_bank_account_type_bank(self):
         cash_account = Account.objects.create(
@@ -150,11 +164,15 @@ class PurchaseBankPaymentTests(TestCase):
         serializer = PurchaseBankPaymentSerializer(
             data={
                 "date": "2026-04-20",
-                "supplier_id": str(self.supplier.id),
-                "purchase_invoice_id": str(self.invoice.id),
                 "bank_account_id": str(cash_account.id),
-                "amount": "500.00",
                 "remarks": "Cash is not valid here",
+                "lines": [
+                    {
+                        "supplier_id": str(self.supplier.id),
+                        "purchase_invoice_id": str(self.invoice.id),
+                        "amount": "500.00",
+                    }
+                ],
             },
             context={"request": self._get_request()},
         )

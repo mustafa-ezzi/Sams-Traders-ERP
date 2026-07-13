@@ -131,14 +131,13 @@ const GetAllSalesBankReceipt = () => {
                     {" "}
                     <th className="px-4 py-3">Receipt</th>{" "}
                     <th className="px-4 py-3">Date</th>{" "}
-                    <th className="px-4 py-3">Customer</th>{" "}
+                    <th className="px-4 py-3">Customer(s)</th>{" "}
                     <th className="px-4 py-3">Dimension</th>{" "}
-                    <th className="px-4 py-3">Invoice</th>{" "}
-                    <th className="px-4 py-3">Salesman</th>{" "}
+                    <th className="px-4 py-3">Reference(s)</th>{" "}
+                    <th className="px-4 py-3">Lines</th>{" "}
                     <th className="px-4 py-3">Bank</th>{" "}
                     <th className="px-4 py-3">Total</th>{" "}
                     <th className="px-4 py-3">Recovery Comm.</th>{" "}
-                    <th className="px-4 py-3">Balance After</th>{" "}
                     <th className="px-4 py-3">Actions</th>{" "}
                   </tr>{" "}
                 </thead>{" "}
@@ -156,7 +155,7 @@ const GetAllSalesBankReceipt = () => {
                       </td>{" "}
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
                         {" "}
-                        {record.customer?.business_name}{" "}
+                        {record.customerSummary || "-"}{" "}
                       </td>{" "}
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
                         {" "}
@@ -164,13 +163,11 @@ const GetAllSalesBankReceipt = () => {
                       </td>{" "}
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
                         {" "}
-                        {record.sales_invoice?.invoice_number}{" "}
+                        {record.referenceSummary || "-"}{" "}
                       </td>{" "}
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
                         {" "}
-                        {record.salesman
-                          ? `${record.salesman.code || ""} ${record.salesman.name || ""}`.trim()
-                          : "-"}{" "}
+                        {record.lineCount || 0}{" "}
                       </td>{" "}
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
                         {" "}
@@ -184,10 +181,6 @@ const GetAllSalesBankReceipt = () => {
                       <td className="px-4 py-3 font-semibold text-amber-600 dark:text-amber-400">
                         {" "}
                         {formatDecimal(record.recoveryCommissionAmount)}{" "}
-                      </td>{" "}
-                      <td className="px-4 py-3 font-semibold text-blue-600 dark:text-blue-400">
-                        {" "}
-                        {formatDecimal(record.invoiceBalanceAmount)}{" "}
                       </td>{" "}
                       <td className="px-4 py-3">
                         {" "}
@@ -247,7 +240,7 @@ const GetAllSalesBankReceipt = () => {
       <ConfirmModal
         open={Boolean(deleteId)}
         title="Delete Bank Receipt"
-        description="This will remove the bank receipt and increase the remaining balance of the linked sales invoice."
+        description="This will remove the bank receipt and restore balances on the linked invoices or opening balances."
         onCancel={() => setDeleteId("")}
         onConfirm={confirmDelete}
       />{" "}

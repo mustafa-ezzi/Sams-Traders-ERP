@@ -30,8 +30,8 @@ from inventory.models import (
     Unit,
     Warehouse,
 )
-from purchase.models import PurchaseBankPayment, PurchaseInvoice, PurchaseInvoiceLine
-from sales.models import SalesBankReceipt, SalesInvoice, SalesInvoiceLine
+from purchase.models import PurchaseBankPayment, PurchaseBankPaymentLine, PurchaseInvoice, PurchaseInvoiceLine
+from sales.models import SalesBankReceipt, SalesBankReceiptLine, SalesInvoice, SalesInvoiceLine
 
 
 class LedgerReportTests(TestCase):
@@ -227,13 +227,18 @@ class LedgerReportTests(TestCase):
             discount=Decimal("0.00"),
             total_amount=Decimal("2000.00"),
         )
-        PurchaseBankPayment.objects.create(
+        payment = PurchaseBankPayment.objects.create(
             tenant_id=self.tenant_id,
             payment_number="PBP-00001",
             date="2026-04-02",
+            bank_account=self.bank,
+            amount=Decimal("1000.00"),
+        )
+        PurchaseBankPaymentLine.objects.create(
+            tenant_id=self.tenant_id,
+            payment=payment,
             supplier=self.supplier,
             purchase_invoice=invoice,
-            bank_account=self.bank,
             amount=Decimal("1000.00"),
         )
         sync_purchase_invoice_journal(invoice)
@@ -279,13 +284,19 @@ class LedgerReportTests(TestCase):
             discount=Decimal("0.00"),
             total_amount=Decimal("1200.00"),
         )
-        SalesBankReceipt.objects.create(
+        receipt = SalesBankReceipt.objects.create(
             tenant_id=self.tenant_id,
             receipt_number="SBR-00001",
             date="2026-04-03",
+            bank_account=self.bank,
+            amount=Decimal("500.00"),
+        )
+        SalesBankReceiptLine.objects.create(
+            tenant_id=self.tenant_id,
+            receipt=receipt,
             customer=self.customer,
             sales_invoice=invoice,
-            bank_account=self.bank,
+            receipt_against="INVOICE",
             amount=Decimal("500.00"),
         )
         sync_sales_invoice_journal(invoice)
@@ -860,13 +871,18 @@ class AccountSoftDeleteProtectionTests(TestCase):
             net_amount=Decimal("2000.00"),
             gross_amount=Decimal("2000.00"),
         )
-        PurchaseBankPayment.objects.create(
+        payment = PurchaseBankPayment.objects.create(
             tenant_id=self.tenant_id,
             payment_number="PBP-00001",
             date="2026-04-02",
+            bank_account=self.bank,
+            amount=Decimal("1000.00"),
+        )
+        PurchaseBankPaymentLine.objects.create(
+            tenant_id=self.tenant_id,
+            payment=payment,
             supplier=self.supplier,
             purchase_invoice=invoice,
-            bank_account=self.bank,
             amount=Decimal("1000.00"),
         )
 
@@ -883,13 +899,19 @@ class AccountSoftDeleteProtectionTests(TestCase):
             net_amount=Decimal("1200.00"),
             gross_amount=Decimal("1200.00"),
         )
-        SalesBankReceipt.objects.create(
+        receipt = SalesBankReceipt.objects.create(
             tenant_id=self.tenant_id,
             receipt_number="SBR-00001",
             date="2026-04-03",
+            bank_account=self.bank,
+            amount=Decimal("500.00"),
+        )
+        SalesBankReceiptLine.objects.create(
+            tenant_id=self.tenant_id,
+            receipt=receipt,
             customer=self.customer,
             sales_invoice=invoice,
-            bank_account=self.bank,
+            receipt_against="INVOICE",
             amount=Decimal("500.00"),
         )
 

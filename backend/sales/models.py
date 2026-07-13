@@ -208,51 +208,14 @@ class SalesReturnLine(BaseModel):
 
 
 class SalesBankReceipt(BaseModel):
-    class ReceiptAgainst(models.TextChoices):
-        INVOICE = "INVOICE", "Invoice"
-        OPENING_BALANCE = "OPENING_BALANCE", "Opening Balance"
-
     receipt_number = models.CharField(max_length=50)
     date = models.DateField()
-    customer = models.ForeignKey(
-        Customer,
-        on_delete=models.PROTECT,
-        related_name="sales_bank_receipts",
-    )
-    sales_invoice = models.ForeignKey(
-        SalesInvoice,
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        related_name="bank_receipts",
-    )
-    party_opening_balance = models.ForeignKey(
-        PartyOpeningBalance,
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        related_name="sales_bank_receipts",
-    )
-    receipt_against = models.CharField(
-        max_length=30,
-        choices=ReceiptAgainst.choices,
-        default=ReceiptAgainst.INVOICE,
-    )
     bank_account = models.ForeignKey(
         Account,
         on_delete=models.PROTECT,
         related_name="sales_bank_receipts",
     )
-    salesman = models.ForeignKey(
-        Salesman,
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        related_name="recovery_bank_receipts",
-    )
     amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
-    recovery_commission_rate = models.DecimalField(max_digits=5, decimal_places=2, default=0)
-    recovery_commission_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     remarks = models.TextField(blank=True, default="")
 
     class Meta:
@@ -267,6 +230,58 @@ class SalesBankReceipt(BaseModel):
 
     def __str__(self):
         return self.receipt_number
+
+
+class SalesBankReceiptLine(BaseModel):
+    class ReceiptAgainst(models.TextChoices):
+        INVOICE = "INVOICE", "Invoice"
+        OPENING_BALANCE = "OPENING_BALANCE", "Opening Balance"
+
+    receipt = models.ForeignKey(
+        SalesBankReceipt,
+        on_delete=models.CASCADE,
+        related_name="lines",
+    )
+    customer = models.ForeignKey(
+        Customer,
+        on_delete=models.PROTECT,
+        related_name="sales_bank_receipt_lines",
+    )
+    receipt_against = models.CharField(
+        max_length=30,
+        choices=ReceiptAgainst.choices,
+        default=ReceiptAgainst.INVOICE,
+    )
+    sales_invoice = models.ForeignKey(
+        SalesInvoice,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="bank_receipt_lines",
+    )
+    party_opening_balance = models.ForeignKey(
+        PartyOpeningBalance,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="sales_bank_receipt_lines",
+    )
+    salesman = models.ForeignKey(
+        Salesman,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="recovery_bank_receipt_lines",
+    )
+    amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    recovery_commission_rate = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    recovery_commission_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+
+    class Meta:
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"{self.receipt.receipt_number} - {self.customer.business_name}"
 
 
 class SalesmanCommissionPayment(BaseModel):

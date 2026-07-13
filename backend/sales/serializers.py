@@ -14,6 +14,7 @@ from inventory.models import Customer, PartyOpeningBalance, Product, ProductStoc
 from inventory.serializers import ProductDetailedSerializer
 from sales.models import (
     SalesBankReceipt,
+    SalesBankReceiptLine,
     SalesInvoice,
     SalesInvoiceLine,
     SalesOrder,
@@ -1075,30 +1076,77 @@ class SalesReturnSerializer(serializers.ModelSerializer):
         return instance
 
 
-class SalesBankReceiptSerializer(serializers.ModelSerializer):
-    tenant_id = serializers.CharField(required=False)
-    customer = CustomerMiniSerializer(read_only=True)
+class SalesBankReceiptLineSerializer(serializers.Serializer):
+    id = serializers.UUIDField(read_only=True, required=False)
+    customer = CustomerMiniSerializer(read_only=True, required=False)
     customer_id = serializers.UUIDField(write_only=True)
     receipt_against = serializers.ChoiceField(
-        choices=SalesBankReceipt.ReceiptAgainst.choices,
+        choices=SalesBankReceiptLine.ReceiptAgainst.choices,
         required=False,
+        default=SalesBankReceiptLine.ReceiptAgainst.INVOICE,
     )
-    sales_invoice = SalesInvoiceMiniSerializer(read_only=True)
+    sales_invoice = SalesInvoiceMiniSerializer(read_only=True, required=False)
     sales_invoice_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
     party_opening_balance_id = serializers.UUIDField(
         write_only=True,
         required=False,
         allow_null=True,
     )
+    salesman = SalesmanMiniSerializer(read_only=True, required=False)
+    salesman_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
+    amount = serializers.DecimalField(max_digits=12, decimal_places=2)
+    recovery_commission_rate = serializers.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        read_only=True,
+        required=False,
+    )
+    recovery_commission_amount = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        read_only=True,
+        required=False,
+    )
+    reference_label = serializers.SerializerMethodField()
+
+    def get_reference_label(self, obj):
+        if getattr(obj, "receipt_against", None) == SalesBankReceiptLine.ReceiptAgainst.OPENING_BALANCE:
+            return "Opening Balance"
+        invoice = getattr(obj, "sales_invoice", None)
+        return invoice.invoice_number if invoice else ""
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data["customer_id"] = str(instance.customer_id)
+        data["sales_invoice_id"] = (
+            str(instance.sales_invoice_id) if instance.sales_invoice_id else None
+        )
+        data["party_opening_balance_id"] = (
+            str(instance.party_opening_balance_id)
+            if instance.party_opening_balance_id
+            else None
+        )
+        data["salesman_id"] = str(instance.salesman_id) if instance.salesman_id else None
+        data["recovery_commission_rate"] = str(instance.recovery_commission_rate)
+        data["recovery_commission_amount"] = str(instance.recovery_commission_amount)
+        return data
+
+    def validate_amount(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("Line amount must be greater than 0")
+        return quantize_money(value)
+
+
+class SalesBankReceiptSerializer(serializers.ModelSerializer):
+    tenant_id = serializers.CharField(required=False)
     bank_account = AccountMiniSerializer(read_only=True)
     bank_account_id = serializers.UUIDField(write_only=True)
-    salesman = SalesmanMiniSerializer(read_only=True)
-    salesman_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
     dimension_name = serializers.SerializerMethodField()
-    invoice_net_amount = serializers.SerializerMethodField()
-    invoice_returned_amount = serializers.SerializerMethodField()
-    invoice_received_amount = serializers.SerializerMethodField()
-    invoice_balance_amount = serializers.SerializerMethodField()
+    lines = SalesBankReceiptLineSerializer(many=True)
+    line_count = serializers.SerializerMethodField()
+    customer_summary = serializers.SerializerMethodField()
+    reference_summary = serializers.SerializerMethodField()
+    recovery_commission_amount = serializers.SerializerMethodField()
 
     class Meta:
         model = SalesBankReceipt
@@ -1108,24 +1156,15 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
             "tenant_id",
             "dimension_name",
             "date",
-            "customer",
-            "customer_id",
-            "receipt_against",
-            "sales_invoice",
-            "sales_invoice_id",
-            "party_opening_balance_id",
             "bank_account",
             "bank_account_id",
-            "salesman",
-            "salesman_id",
             "amount",
-            "recovery_commission_rate",
-            "recovery_commission_amount",
             "remarks",
-            "invoice_net_amount",
-            "invoice_returned_amount",
-            "invoice_received_amount",
-            "invoice_balance_amount",
+            "lines",
+            "line_count",
+            "customer_summary",
+            "reference_summary",
+            "recovery_commission_amount",
             "created_at",
             "updated_at",
         ]
@@ -1133,59 +1172,64 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
             "id",
             "receipt_number",
             "dimension_name",
-            "recovery_commission_rate",
+            "amount",
+            "line_count",
+            "customer_summary",
+            "reference_summary",
             "recovery_commission_amount",
-            "invoice_net_amount",
-            "invoice_returned_amount",
-            "invoice_received_amount",
-            "invoice_balance_amount",
             "created_at",
             "updated_at",
         ]
-
-    def _get_financials(self, obj):
-        if not obj.sales_invoice_id:
-            return {
-                "net_amount": Decimal("0.00"),
-                "returned_amount": Decimal("0.00"),
-                "received_amount": Decimal("0.00"),
-                "balance_amount": Decimal("0.00"),
-            }
-        excluded_ids = []
-        if obj and obj.pk:
-            excluded_ids = [obj.id]
-        return get_sales_invoice_financials(obj.sales_invoice, excluded_receipt_ids=excluded_ids)
 
     def get_dimension_name(self, obj):
         dimension = Dimension.objects.filter(code=obj.tenant_id).first()
         return dimension.name if dimension else obj.tenant_id
 
-    def get_invoice_net_amount(self, obj):
-        return str(self._get_financials(obj)["net_amount"])
+    def get_line_count(self, obj):
+        if hasattr(obj, "_prefetched_objects_cache") and "lines" in obj._prefetched_objects_cache:
+            return len([line for line in obj.lines.all() if line.deleted_at is None])
+        return obj.lines.filter(deleted_at__isnull=True).count()
 
-    def get_invoice_returned_amount(self, obj):
-        return str(self._get_financials(obj)["returned_amount"])
+    def get_customer_summary(self, obj):
+        names = []
+        seen = set()
+        for line in obj.lines.filter(deleted_at__isnull=True).select_related("customer"):
+            name = line.customer.business_name or line.customer.name
+            if name not in seen:
+                seen.add(name)
+                names.append(name)
+        if not names:
+            return ""
+        if len(names) == 1:
+            return names[0]
+        return f"{names[0]} +{len(names) - 1}"
 
-    def get_invoice_received_amount(self, obj):
-        if not obj.sales_invoice_id:
-            return "0.00"
-        financials = self._get_financials(obj)
-        return str(quantize_money(financials["received_amount"] + obj.amount))
+    def get_reference_summary(self, obj):
+        labels = []
+        for line in obj.lines.filter(deleted_at__isnull=True).select_related("sales_invoice"):
+            if line.receipt_against == SalesBankReceiptLine.ReceiptAgainst.OPENING_BALANCE:
+                labels.append("Opening Balance")
+            elif line.sales_invoice_id:
+                labels.append(line.sales_invoice.invoice_number)
+        if not labels:
+            return ""
+        if len(labels) == 1:
+            return labels[0]
+        return f"{labels[0]} +{len(labels) - 1}"
 
-    def get_invoice_balance_amount(self, obj):
-        if not obj.sales_invoice_id:
-            return "0.00"
-        financials = self._get_financials(obj)
-        balance_after_receipt = max(
-            quantize_money(financials["balance_amount"] - obj.amount),
-            Decimal("0.00"),
-        )
-        return str(balance_after_receipt)
+    def get_recovery_commission_amount(self, obj):
+        total = Decimal("0.00")
+        for line in obj.lines.filter(deleted_at__isnull=True):
+            total += quantize_money(line.recovery_commission_amount)
+        return str(quantize_money(total))
 
-    def validate_customer_id(self, value):
-        if not shared_master_exists(Customer, self.context["request"], value):
-            raise serializers.ValidationError("Customer not found")
-        return value
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data["lines"] = SalesBankReceiptLineSerializer(
+            instance.lines.filter(deleted_at__isnull=True),
+            many=True,
+        ).data
+        return data
 
     def validate_tenant_id(self, value):
         request = self.context["request"]
@@ -1197,36 +1241,7 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Dimension not found")
         return value
 
-    def validate_sales_invoice_id(self, value):
-        if not value:
-            return value
-        tenant_ids = get_shared_tenant_ids(self.context["request"])
-        if not (
-            SalesInvoice.objects.filter(id=value, deleted_at__isnull=True)
-            .filter(models.Q(tenant_id__in=tenant_ids) | models.Q(lines__tenant_id__in=tenant_ids))
-            .distinct()
-            .exists()
-        ):
-            raise serializers.ValidationError("Sales invoice not found")
-        return value
-
-    def validate_party_opening_balance_id(self, value):
-        if not value:
-            return value
-        request = self.context["request"]
-        tenant_ids = get_shared_tenant_ids(request)
-        if not PartyOpeningBalance.objects.filter(
-            id=value,
-            tenant_id__in=tenant_ids,
-            party_type=PartyOpeningBalance.PartyType.CUSTOMER,
-            deleted_at__isnull=True,
-        ).exists():
-            raise serializers.ValidationError("Customer opening balance not found")
-        return value
-
     def validate_bank_account_id(self, value):
-        # COA is shared across every dimension the user owns, so a bank
-        # account belonging to any of them is a valid choice for a receipt.
         request = self.context["request"]
         tenant_ids = get_user_active_dimension_codes(request.user)
         current = getattr(request, "tenant_id", "") or request.user.tenant_id
@@ -1249,164 +1264,198 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Selected bank account must belong to asset group")
         if account.account_type != Account.AccountType.BANK:
             raise serializers.ValidationError("Selected account must have account type BANK")
-
         return value
 
-    def validate_salesman_id(self, value):
-        if not value:
-            return value
+    def _validate_lines(self, lines_data):
         request = self.context["request"]
-        salesman = Salesman.objects.filter(
-            id=value,
-            tenant_id__in=get_shared_tenant_ids(request),
-            deleted_at__isnull=True,
-        ).first()
-        if not salesman:
-            raise serializers.ValidationError("Salesman not found")
-        if not user_can_access_salesman(request.user, salesman.id):
-            raise serializers.ValidationError("You do not have access to this salesman.")
-        return value
+        tenant_ids = get_shared_tenant_ids(request)
+        excluded_receipt_ids = [self.instance.id] if self.instance else []
+        invoice_allocated = {}
+        opening_allocated = {}
+        prepared_lines = []
 
-    def validate_amount(self, value):
-        if value <= 0:
-            raise serializers.ValidationError("Receipt amount must be greater than 0")
-        return quantize_money(value)
+        if not lines_data:
+            raise serializers.ValidationError({"lines": "At least one payment line is required."})
+
+        for index, line in enumerate(lines_data):
+            customer_id = line.get("customer_id")
+            if not shared_master_exists(Customer, request, customer_id):
+                raise serializers.ValidationError(
+                    {"lines": {index: {"customer_id": "Customer not found"}}}
+                )
+
+            receipt_against = line.get(
+                "receipt_against",
+                SalesBankReceiptLine.ReceiptAgainst.INVOICE,
+            )
+            sales_invoice_id = line.get("sales_invoice_id")
+            party_opening_balance_id = line.get("party_opening_balance_id")
+            salesman_id = line.get("salesman_id")
+            amount = quantize_money(line.get("amount", Decimal("0.00")))
+
+            sales_invoice = None
+            opening_balance = None
+
+            if receipt_against == SalesBankReceiptLine.ReceiptAgainst.OPENING_BALANCE:
+                if not party_opening_balance_id:
+                    raise serializers.ValidationError(
+                        {"lines": {index: {"party_opening_balance_id": "Opening balance is required."}}}
+                    )
+                opening_balance = PartyOpeningBalance.objects.select_related("customer").filter(
+                    id=party_opening_balance_id,
+                    tenant_id__in=tenant_ids,
+                    party_type=PartyOpeningBalance.PartyType.CUSTOMER,
+                    deleted_at__isnull=True,
+                ).first()
+                if not opening_balance:
+                    raise serializers.ValidationError(
+                        {"lines": {index: {"party_opening_balance_id": "Opening balance not found."}}}
+                    )
+                if opening_balance.customer_id != customer_id:
+                    raise serializers.ValidationError(
+                        {
+                            "lines": {
+                                index: {
+                                    "party_opening_balance_id": (
+                                        "Opening balance does not belong to the chosen customer."
+                                    )
+                                }
+                            }
+                        }
+                    )
+                financials = get_customer_opening_balance_financials(
+                    opening_balance,
+                    excluded_receipt_ids=excluded_receipt_ids,
+                )
+                already = opening_allocated.get(str(opening_balance.id), Decimal("0.00"))
+                if amount + already > financials["balance_amount"]:
+                    raise serializers.ValidationError(
+                        {
+                            "lines": {
+                                index: {
+                                    "amount": (
+                                        "Receipt amount cannot exceed opening balance "
+                                        f"({financials['balance_amount']})."
+                                    )
+                                }
+                            }
+                        }
+                    )
+                opening_allocated[str(opening_balance.id)] = already + amount
+                salesman_id = None
+                sales_invoice_id = None
+            else:
+                if not sales_invoice_id:
+                    raise serializers.ValidationError(
+                        {"lines": {index: {"sales_invoice_id": "Sales invoice is required."}}}
+                    )
+                sales_invoice = (
+                    SalesInvoice.objects.select_related("customer", "salesman")
+                    .filter(id=sales_invoice_id, deleted_at__isnull=True)
+                    .filter(
+                        models.Q(tenant_id__in=tenant_ids) | models.Q(lines__tenant_id__in=tenant_ids)
+                    )
+                    .distinct()
+                    .first()
+                )
+                if not sales_invoice:
+                    raise serializers.ValidationError(
+                        {"lines": {index: {"sales_invoice_id": "Sales invoice not found."}}}
+                    )
+                if sales_invoice.customer_id != customer_id:
+                    raise serializers.ValidationError(
+                        {
+                            "lines": {
+                                index: {
+                                    "sales_invoice_id": (
+                                        "Selected sales invoice does not belong to the chosen customer."
+                                    )
+                                }
+                            }
+                        }
+                    )
+                if not user_can_access_salesman(request.user, sales_invoice.salesman_id):
+                    raise serializers.ValidationError(
+                        {
+                            "lines": {
+                                index: {
+                                    "sales_invoice_id": (
+                                        "You do not have access to this salesman's invoice."
+                                    )
+                                }
+                            }
+                        }
+                    )
+                financials = get_sales_invoice_financials(
+                    sales_invoice,
+                    excluded_receipt_ids=excluded_receipt_ids,
+                )
+                already = invoice_allocated.get(str(sales_invoice.id), Decimal("0.00"))
+                if amount + already > financials["balance_amount"]:
+                    raise serializers.ValidationError(
+                        {
+                            "lines": {
+                                index: {
+                                    "amount": (
+                                        "Receipt amount cannot exceed invoice balance "
+                                        f"({financials['balance_amount']})."
+                                    )
+                                }
+                            }
+                        }
+                    )
+                invoice_allocated[str(sales_invoice.id)] = already + amount
+                if not salesman_id:
+                    salesman_id = sales_invoice.salesman_id
+                party_opening_balance_id = None
+
+            salesman = None
+            if salesman_id:
+                salesman = Salesman.objects.filter(
+                    id=salesman_id,
+                    tenant_id__in=tenant_ids,
+                    deleted_at__isnull=True,
+                ).first()
+                if not salesman:
+                    raise serializers.ValidationError(
+                        {"lines": {index: {"salesman_id": "Salesman not found."}}}
+                    )
+                if not user_can_access_salesman(request.user, salesman.id):
+                    raise serializers.ValidationError(
+                        {"lines": {index: {"salesman_id": "You do not have access to this salesman."}}}
+                    )
+
+            recovery_rate = (
+                quantize_money(salesman.commission_on_recovery) if salesman else Decimal("0.00")
+            )
+            recovery_amount = (
+                quantize_money((amount * recovery_rate) / Decimal("100"))
+                if recovery_rate > 0
+                else Decimal("0.00")
+            )
+
+            prepared_lines.append(
+                {
+                    "customer_id": customer_id,
+                    "receipt_against": receipt_against,
+                    "sales_invoice_id": sales_invoice_id,
+                    "party_opening_balance_id": party_opening_balance_id,
+                    "salesman_id": salesman_id,
+                    "amount": amount,
+                    "recovery_commission_rate": recovery_rate,
+                    "recovery_commission_amount": recovery_amount,
+                }
+            )
+
+        return prepared_lines
 
     def validate(self, attrs):
-        request = self.context["request"]
-        customer_id = attrs.get("customer_id") or getattr(self.instance, "customer_id", None)
-        receipt_against = attrs.get(
-            "receipt_against",
-            getattr(self.instance, "receipt_against", SalesBankReceipt.ReceiptAgainst.INVOICE),
-        )
-        sales_invoice_id = attrs.get(
-            "sales_invoice_id",
-            getattr(self.instance, "sales_invoice_id", None),
-        )
-        party_opening_balance_id = attrs.get(
-            "party_opening_balance_id",
-            getattr(self.instance, "party_opening_balance_id", None),
-        )
-
-        tenant_ids = get_shared_tenant_ids(request)
-        sales_invoice = None
-        opening_balance = None
-        invoice_financials = None
-        opening_financials = None
-        if receipt_against == SalesBankReceipt.ReceiptAgainst.OPENING_BALANCE:
-            if not party_opening_balance_id:
-                raise serializers.ValidationError(
-                    {"party_opening_balance_id": "Customer opening balance is required."}
-                )
-            opening_balance = PartyOpeningBalance.objects.select_related("customer").filter(
-                id=party_opening_balance_id,
-                tenant_id__in=tenant_ids,
-                party_type=PartyOpeningBalance.PartyType.CUSTOMER,
-                deleted_at__isnull=True,
-            ).first()
-            if not opening_balance:
-                raise serializers.ValidationError(
-                    {"party_opening_balance_id": "Customer opening balance not found."}
-                )
-            if opening_balance.customer_id != customer_id:
-                raise serializers.ValidationError(
-                    {
-                        "party_opening_balance_id": (
-                            "Selected opening balance does not belong to the chosen customer."
-                        )
-                    }
-                )
-            excluded_ids = [self.instance.id] if self.instance else []
-            opening_financials = get_customer_opening_balance_financials(
-                opening_balance,
-                excluded_receipt_ids=excluded_ids,
-            )
-            sales_invoice_id = None
-        else:
-            if not sales_invoice_id:
-                raise serializers.ValidationError({"sales_invoice_id": "Sales invoice is required."})
-            sales_invoice = (
-                SalesInvoice.objects.select_related("customer")
-                .filter(id=sales_invoice_id, deleted_at__isnull=True)
-                .filter(models.Q(tenant_id__in=tenant_ids) | models.Q(lines__tenant_id__in=tenant_ids))
-                .distinct()
-                .first()
-            )
-            if not sales_invoice:
-                raise serializers.ValidationError({"sales_invoice_id": "Sales invoice not found."})
-            if not user_can_access_salesman(request.user, sales_invoice.salesman_id):
-                raise serializers.ValidationError(
-                    {"sales_invoice_id": "You do not have access to this salesman's invoice."}
-                )
-
-            if sales_invoice.customer_id != customer_id:
-                raise serializers.ValidationError(
-                    {"sales_invoice_id": "Selected sales invoice does not belong to the chosen customer."}
-                )
-
-        salesman_id = attrs.get("salesman_id", getattr(self.instance, "salesman_id", None))
-        if receipt_against == SalesBankReceipt.ReceiptAgainst.OPENING_BALANCE:
-            salesman_id = None
-        elif not salesman_id:
-            salesman_id = sales_invoice.salesman_id
-
-        salesman = None
-        if salesman_id:
-            salesman = Salesman.objects.filter(
-                id=salesman_id,
-                tenant_id__in=get_shared_tenant_ids(request),
-                deleted_at__isnull=True,
-            ).first()
-            if not salesman:
-                raise serializers.ValidationError({"salesman_id": "Salesman not found."})
-            if not user_can_access_salesman(request.user, salesman.id):
-                raise serializers.ValidationError(
-                    {"salesman_id": "You do not have access to this salesman."}
-                )
-
-        amount = attrs.get("amount", getattr(self.instance, "amount", Decimal("0.00")))
-        if receipt_against == SalesBankReceipt.ReceiptAgainst.OPENING_BALANCE:
-            if amount > opening_financials["balance_amount"]:
-                raise serializers.ValidationError(
-                    {
-                        "amount": (
-                            "Receipt amount cannot exceed opening balance "
-                            f"({opening_financials['balance_amount']})."
-                        )
-                    }
-                )
-        else:
-            excluded_ids = [self.instance.id] if self.instance else []
-            invoice_financials = get_sales_invoice_financials(
-                sales_invoice,
-                excluded_receipt_ids=excluded_ids,
-            )
-            if amount > invoice_financials["balance_amount"]:
-                raise serializers.ValidationError(
-                    {
-                        "amount": (
-                            "Receipt amount cannot exceed invoice balance "
-                            f"({invoice_financials['balance_amount']})."
-                        )
-                    }
-                )
-
-        self.context["sales_invoice"] = sales_invoice
-        self.context["invoice_financials"] = invoice_financials
-        self.context["opening_balance"] = opening_balance
-        self.context["opening_financials"] = opening_financials
-        attrs["receipt_against"] = receipt_against
-        attrs["sales_invoice_id"] = sales_invoice_id
-        attrs["party_opening_balance_id"] = (
-            opening_balance.id if opening_balance else party_opening_balance_id
-        )
-        attrs["salesman_id"] = salesman_id
-        recovery_rate = quantize_money(salesman.commission_on_recovery) if salesman else Decimal("0.00")
-        attrs["recovery_commission_rate"] = recovery_rate
-        attrs["recovery_commission_amount"] = (
-            quantize_money((amount * recovery_rate) / Decimal("100"))
-            if recovery_rate > 0
-            else Decimal("0.00")
+        lines_data = attrs.get("lines")
+        if lines_data is None and self.instance:
+            raise serializers.ValidationError({"lines": "Payment lines are required."})
+        attrs["lines"] = self._validate_lines(lines_data or [])
+        attrs["amount"] = quantize_money(
+            sum((line["amount"] for line in attrs["lines"]), Decimal("0.00"))
         )
         return attrs
 
@@ -1414,50 +1463,39 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
         count = SalesBankReceipt.objects.filter(tenant_id=tenant_id).count() + 1
         return f"SBR-{count:05d}"
 
+    def _create_lines(self, receipt, lines_data):
+        for line_data in lines_data:
+            SalesBankReceiptLine.objects.create(
+                tenant_id=receipt.tenant_id,
+                receipt=receipt,
+                **line_data,
+            )
+
     @transaction.atomic
     def create(self, validated_data):
+        lines_data = validated_data.pop("lines")
         tenant_id = validated_data.pop("tenant_id", None) or self.context["request"].user.tenant_id
-        customer_id = validated_data.pop("customer_id")
-        sales_invoice_id = validated_data.pop("sales_invoice_id", None)
-        party_opening_balance_id = validated_data.pop("party_opening_balance_id", None)
         bank_account_id = validated_data.pop("bank_account_id")
-        salesman_id = validated_data.pop("salesman_id", None)
-
-        return SalesBankReceipt.objects.create(
+        receipt = SalesBankReceipt.objects.create(
             tenant_id=tenant_id,
-            customer_id=customer_id,
-            sales_invoice_id=sales_invoice_id,
-            party_opening_balance_id=party_opening_balance_id,
             bank_account_id=bank_account_id,
-            salesman_id=salesman_id,
             receipt_number=self._generate_receipt_number(tenant_id),
             **validated_data,
         )
+        self._create_lines(receipt, lines_data)
+        return receipt
 
     @transaction.atomic
     def update(self, instance, validated_data):
+        lines_data = validated_data.pop("lines")
         instance.tenant_id = validated_data.pop("tenant_id", instance.tenant_id)
-        instance.customer_id = validated_data.pop("customer_id", instance.customer_id)
-        instance.sales_invoice_id = validated_data.pop("sales_invoice_id", instance.sales_invoice_id)
-        instance.party_opening_balance_id = validated_data.pop(
-            "party_opening_balance_id",
-            instance.party_opening_balance_id,
-        )
-        instance.receipt_against = validated_data.pop("receipt_against", instance.receipt_against)
         instance.bank_account_id = validated_data.pop("bank_account_id", instance.bank_account_id)
-        instance.salesman_id = validated_data.pop("salesman_id", instance.salesman_id)
         instance.date = validated_data.get("date", instance.date)
         instance.amount = validated_data.get("amount", instance.amount)
-        instance.recovery_commission_rate = validated_data.get(
-            "recovery_commission_rate",
-            instance.recovery_commission_rate,
-        )
-        instance.recovery_commission_amount = validated_data.get(
-            "recovery_commission_amount",
-            instance.recovery_commission_amount,
-        )
         instance.remarks = validated_data.get("remarks", instance.remarks)
         instance.save()
+        instance.lines.filter(deleted_at__isnull=True).update(deleted_at=now())
+        self._create_lines(instance, lines_data)
         return instance
 
 

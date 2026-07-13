@@ -11,6 +11,7 @@ from inventory.models import Product, ProductStock, RawMaterial, Stock, Supplier
 from inventory.serializers import ProductDetailedSerializer, RawMaterialDetailedSerializer
 from purchase.models import (
     PurchaseBankPayment,
+    PurchaseBankPaymentLine,
     PurchaseInvoice,
     PurchaseInvoiceLine,
     PurchaseReturn,
@@ -641,17 +642,33 @@ class PurchaseReturnSerializer(serializers.ModelSerializer):
         return instance
 
 
-class PurchaseBankPaymentSerializer(serializers.ModelSerializer):
-    supplier = SupplierMiniSerializer(read_only=True)
+class PurchaseBankPaymentLineSerializer(serializers.Serializer):
+    id = serializers.UUIDField(read_only=True, required=False)
+    supplier = SupplierMiniSerializer(read_only=True, required=False)
     supplier_id = serializers.UUIDField(write_only=True)
-    purchase_invoice = PurchaseInvoiceMiniSerializer(read_only=True)
+    purchase_invoice = PurchaseInvoiceMiniSerializer(read_only=True, required=False)
     purchase_invoice_id = serializers.UUIDField(write_only=True)
+    amount = serializers.DecimalField(max_digits=12, decimal_places=2)
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data["supplier_id"] = str(instance.supplier_id)
+        data["purchase_invoice_id"] = str(instance.purchase_invoice_id)
+        return data
+
+    def validate_amount(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("Line amount must be greater than 0")
+        return quantize_money(value)
+
+
+class PurchaseBankPaymentSerializer(serializers.ModelSerializer):
     bank_account = AccountMiniSerializer(read_only=True)
     bank_account_id = serializers.UUIDField(write_only=True)
-    invoice_net_amount = serializers.SerializerMethodField()
-    invoice_returned_amount = serializers.SerializerMethodField()
-    invoice_paid_amount = serializers.SerializerMethodField()
-    invoice_balance_amount = serializers.SerializerMethodField()
+    lines = PurchaseBankPaymentLineSerializer(many=True)
+    line_count = serializers.SerializerMethodField()
+    supplier_summary = serializers.SerializerMethodField()
+    reference_summary = serializers.SerializerMethodField()
 
     class Meta:
         model = PurchaseBankPayment
@@ -659,75 +676,65 @@ class PurchaseBankPaymentSerializer(serializers.ModelSerializer):
             "id",
             "payment_number",
             "date",
-            "supplier",
-            "supplier_id",
-            "purchase_invoice",
-            "purchase_invoice_id",
             "bank_account",
             "bank_account_id",
             "amount",
             "remarks",
-            "invoice_net_amount",
-            "invoice_returned_amount",
-            "invoice_paid_amount",
-            "invoice_balance_amount",
+            "lines",
+            "line_count",
+            "supplier_summary",
+            "reference_summary",
             "created_at",
             "updated_at",
         ]
         read_only_fields = [
             "id",
             "payment_number",
-            "invoice_net_amount",
-            "invoice_returned_amount",
-            "invoice_paid_amount",
-            "invoice_balance_amount",
+            "amount",
+            "line_count",
+            "supplier_summary",
+            "reference_summary",
             "created_at",
             "updated_at",
         ]
 
-    def _get_financials(self, obj):
-        excluded_ids = []
-        if obj and obj.pk:
-            excluded_ids = [obj.id]
-        return get_purchase_invoice_financials(obj.purchase_invoice, excluded_payment_ids=excluded_ids)
+    def get_line_count(self, obj):
+        return obj.lines.filter(deleted_at__isnull=True).count()
 
-    def get_invoice_net_amount(self, obj):
-        return str(self._get_financials(obj)["net_amount"])
+    def get_supplier_summary(self, obj):
+        names = []
+        seen = set()
+        for line in obj.lines.filter(deleted_at__isnull=True).select_related("supplier"):
+            name = line.supplier.business_name
+            if name not in seen:
+                seen.add(name)
+                names.append(name)
+        if not names:
+            return ""
+        if len(names) == 1:
+            return names[0]
+        return f"{names[0]} +{len(names) - 1}"
 
-    def get_invoice_returned_amount(self, obj):
-        return str(self._get_financials(obj)["returned_amount"])
+    def get_reference_summary(self, obj):
+        labels = [
+            line.purchase_invoice.invoice_number
+            for line in obj.lines.filter(deleted_at__isnull=True).select_related("purchase_invoice")
+        ]
+        if not labels:
+            return ""
+        if len(labels) == 1:
+            return labels[0]
+        return f"{labels[0]} +{len(labels) - 1}"
 
-    def get_invoice_paid_amount(self, obj):
-        financials = self._get_financials(obj)
-        return str(quantize_money(financials["paid_amount"] + obj.amount))
-
-    def get_invoice_balance_amount(self, obj):
-        financials = self._get_financials(obj)
-        balance_after_payment = max(
-            quantize_money(financials["balance_amount"] - obj.amount),
-            Decimal("0.00"),
-        )
-        return str(balance_after_payment)
-
-    def validate_supplier_id(self, value):
-        if not shared_master_exists(Supplier, self.context["request"], value):
-            raise serializers.ValidationError("Supplier not found")
-        return value
-
-    def validate_purchase_invoice_id(self, value):
-        tenant_ids = get_shared_tenant_ids(self.context["request"])
-        if not (
-            PurchaseInvoice.objects.filter(id=value, deleted_at__isnull=True)
-            .filter(models.Q(tenant_id__in=tenant_ids) | models.Q(lines__tenant_id__in=tenant_ids))
-            .distinct()
-            .exists()
-        ):
-            raise serializers.ValidationError("Purchase invoice not found for this tenant")
-        return value
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data["lines"] = PurchaseBankPaymentLineSerializer(
+            instance.lines.filter(deleted_at__isnull=True),
+            many=True,
+        ).data
+        return data
 
     def validate_bank_account_id(self, value):
-        # COA is shared across every dimension the user owns, so a bank
-        # account belonging to any of them is a valid choice for a payment.
         request = self.context["request"]
         tenant_ids = get_user_active_dimension_codes(request.user)
         current = getattr(request, "tenant_id", "") or request.user.tenant_id
@@ -744,91 +751,131 @@ class PurchaseBankPaymentSerializer(serializers.ModelSerializer):
 
         if not account.is_active:
             raise serializers.ValidationError("Selected bank account is inactive")
-
         if not account.is_postable:
             raise serializers.ValidationError("Selected bank account must be postable")
-
         if account.account_group != Account.AccountGroup.ASSET:
             raise serializers.ValidationError("Selected bank account must belong to asset group")
-
         if account.account_type != Account.AccountType.BANK:
             raise serializers.ValidationError("Selected account must have account type BANK")
-
         return value
 
-    def validate_amount(self, value):
-        if value <= 0:
-            raise serializers.ValidationError("Payment amount must be greater than 0")
-        return quantize_money(value)
+    def _validate_lines(self, lines_data):
+        request = self.context["request"]
+        tenant_ids = get_shared_tenant_ids(request)
+        excluded_payment_ids = [self.instance.id] if self.instance else []
+        invoice_allocated = {}
+        prepared_lines = []
 
-    def validate(self, attrs):
-        tenant_ids = get_shared_tenant_ids(self.context["request"])
-        supplier_id = attrs.get("supplier_id") or getattr(self.instance, "supplier_id", None)
-        purchase_invoice_id = attrs.get("purchase_invoice_id") or getattr(self.instance, "purchase_invoice_id", None)
+        if not lines_data:
+            raise serializers.ValidationError({"lines": "At least one payment line is required."})
 
-        purchase_invoice = (
-            PurchaseInvoice.objects.select_related("supplier")
-            .filter(id=purchase_invoice_id, deleted_at__isnull=True)
-            .filter(models.Q(tenant_id__in=tenant_ids) | models.Q(lines__tenant_id__in=tenant_ids))
-            .distinct()
-            .get()
-        )
+        for index, line in enumerate(lines_data):
+            supplier_id = line.get("supplier_id")
+            purchase_invoice_id = line.get("purchase_invoice_id")
+            amount = quantize_money(line.get("amount", Decimal("0.00")))
 
-        if purchase_invoice.supplier_id != supplier_id:
-            raise serializers.ValidationError(
-                {"purchase_invoice_id": "Selected purchase invoice does not belong to the chosen supplier."}
+            if not shared_master_exists(Supplier, request, supplier_id):
+                raise serializers.ValidationError(
+                    {"lines": {index: {"supplier_id": "Supplier not found"}}}
+                )
+
+            purchase_invoice = (
+                PurchaseInvoice.objects.select_related("supplier")
+                .filter(id=purchase_invoice_id, deleted_at__isnull=True)
+                .filter(models.Q(tenant_id__in=tenant_ids) | models.Q(lines__tenant_id__in=tenant_ids))
+                .distinct()
+                .first()
             )
+            if not purchase_invoice:
+                raise serializers.ValidationError(
+                    {"lines": {index: {"purchase_invoice_id": "Purchase invoice not found."}}}
+                )
+            if purchase_invoice.supplier_id != supplier_id:
+                raise serializers.ValidationError(
+                    {
+                        "lines": {
+                            index: {
+                                "purchase_invoice_id": (
+                                    "Selected purchase invoice does not belong to the chosen supplier."
+                                )
+                            }
+                        }
+                    }
+                )
 
-        amount = attrs.get("amount", getattr(self.instance, "amount", Decimal("0.00")))
-        excluded_ids = [self.instance.id] if self.instance else []
-        financials = get_purchase_invoice_financials(
-            purchase_invoice,
-            excluded_payment_ids=excluded_ids,
-        )
-        if amount > financials["balance_amount"]:
-            raise serializers.ValidationError(
+            financials = get_purchase_invoice_financials(
+                purchase_invoice,
+                excluded_payment_ids=excluded_payment_ids,
+            )
+            already = invoice_allocated.get(str(purchase_invoice.id), Decimal("0.00"))
+            if amount + already > financials["balance_amount"]:
+                raise serializers.ValidationError(
+                    {
+                        "lines": {
+                            index: {
+                                "amount": (
+                                    "Payment amount cannot exceed invoice balance "
+                                    f"({financials['balance_amount']})."
+                                )
+                            }
+                        }
+                    }
+                )
+            invoice_allocated[str(purchase_invoice.id)] = already + amount
+            prepared_lines.append(
                 {
-                    "amount": (
-                        "Payment amount cannot exceed invoice balance "
-                        f"({financials['balance_amount']})."
-                    )
+                    "supplier_id": supplier_id,
+                    "purchase_invoice_id": purchase_invoice_id,
+                    "amount": amount,
                 }
             )
 
-        self.context["purchase_invoice"] = purchase_invoice
-        self.context["invoice_financials"] = financials
+        return prepared_lines
+
+    def validate(self, attrs):
+        lines_data = attrs.get("lines")
+        if lines_data is None and self.instance:
+            raise serializers.ValidationError({"lines": "Payment lines are required."})
+        attrs["lines"] = self._validate_lines(lines_data or [])
+        attrs["amount"] = quantize_money(
+            sum((line["amount"] for line in attrs["lines"]), Decimal("0.00"))
+        )
         return attrs
 
     def _generate_payment_number(self, tenant_id):
         count = PurchaseBankPayment.objects.filter(tenant_id=tenant_id).count() + 1
         return f"PBP-{count:05d}"
 
+    def _create_lines(self, payment, lines_data):
+        for line_data in lines_data:
+            PurchaseBankPaymentLine.objects.create(
+                tenant_id=payment.tenant_id,
+                payment=payment,
+                **line_data,
+            )
+
     @transaction.atomic
     def create(self, validated_data):
+        lines_data = validated_data.pop("lines")
         tenant_id = self.context["request"].user.tenant_id
-        supplier_id = validated_data.pop("supplier_id")
-        purchase_invoice_id = validated_data.pop("purchase_invoice_id")
         bank_account_id = validated_data.pop("bank_account_id")
-
-        return PurchaseBankPayment.objects.create(
+        payment = PurchaseBankPayment.objects.create(
             tenant_id=tenant_id,
-            supplier_id=supplier_id,
-            purchase_invoice_id=purchase_invoice_id,
             bank_account_id=bank_account_id,
             payment_number=self._generate_payment_number(tenant_id),
             **validated_data,
         )
+        self._create_lines(payment, lines_data)
+        return payment
 
     @transaction.atomic
     def update(self, instance, validated_data):
-        instance.supplier_id = validated_data.pop("supplier_id", instance.supplier_id)
-        instance.purchase_invoice_id = validated_data.pop(
-            "purchase_invoice_id",
-            instance.purchase_invoice_id,
-        )
+        lines_data = validated_data.pop("lines")
         instance.bank_account_id = validated_data.pop("bank_account_id", instance.bank_account_id)
         instance.date = validated_data.get("date", instance.date)
         instance.amount = validated_data.get("amount", instance.amount)
         instance.remarks = validated_data.get("remarks", instance.remarks)
         instance.save()
+        instance.lines.filter(deleted_at__isnull=True).update(deleted_at=now())
+        self._create_lines(instance, lines_data)
         return instance

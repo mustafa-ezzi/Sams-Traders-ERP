@@ -132,11 +132,11 @@ const GetAllPurchaseBankPayment = () => {
                     {" "}
                     <th className="px-4 py-3">Payment</th>{" "}
                     <th className="px-4 py-3">Date</th>{" "}
-                    <th className="px-4 py-3">Supplier</th>{" "}
-                    <th className="px-4 py-3">Reference PI</th>{" "}
+                    <th className="px-4 py-3">Supplier(s)</th>{" "}
+                    <th className="px-4 py-3">Reference PI(s)</th>{" "}
+                    <th className="px-4 py-3">Lines</th>{" "}
                     <th className="px-4 py-3">Bank</th>{" "}
                     <th className="px-4 py-3">Amount</th>{" "}
-                    <th className="px-4 py-3">Balance After</th>{" "}
                     <th className="px-4 py-3">Actions</th>{" "}
                   </tr>{" "}
                 </thead>{" "}
@@ -154,11 +154,15 @@ const GetAllPurchaseBankPayment = () => {
                       </td>{" "}
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
                         {" "}
-                        {record.supplier?.business_name}{" "}
+                        {record.supplierSummary || "-"}{" "}
                       </td>{" "}
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
                         {" "}
-                        {record.purchase_invoice?.invoice_number}{" "}
+                        {record.referenceSummary || "-"}{" "}
+                      </td>{" "}
+                      <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
+                        {" "}
+                        {record.lineCount || 0}{" "}
                       </td>{" "}
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
                         {" "}
@@ -168,10 +172,6 @@ const GetAllPurchaseBankPayment = () => {
                       <td className="px-4 py-3 font-semibold text-slate-800 dark:text-slate-100">
                         {" "}
                         {formatDecimal(record.amount)}{" "}
-                      </td>{" "}
-                      <td className="px-4 py-3 font-semibold text-blue-600 dark:text-blue-400">
-                        {" "}
-                        {formatDecimal(record.invoiceBalanceAmount)}{" "}
                       </td>{" "}
                       <td className="px-4 py-3">
                         {" "}
@@ -233,7 +233,7 @@ const GetAllPurchaseBankPayment = () => {
       <ConfirmModal
         open={Boolean(deleteId)}
         title="Delete Bank Payment"
-        description="This will remove the bank payment and increase the remaining balance of the linked purchase invoice."
+        description="This will remove the bank payment and restore balances on the linked purchase invoices."
         onCancel={() => setDeleteId("")}
         onConfirm={confirmDelete}
       />{" "}

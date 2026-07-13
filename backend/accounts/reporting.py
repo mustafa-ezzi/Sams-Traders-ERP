@@ -806,7 +806,7 @@ def build_sales_report(
     salesman_ids=None,
     warehouse_id=None,
 ):
-    from sales.models import SalesBankReceipt, SalesInvoice, SalesInvoiceLine, SalesReturn
+    from sales.models import SalesBankReceiptLine, SalesInvoice, SalesInvoiceLine, SalesReturn
     from sales.services import get_sales_invoice_financials
 
     dimension_names = _dimension_name_map(tenant_ids)
@@ -1113,13 +1113,20 @@ def build_sales_report(
             .order_by("date", "return_number")
         )
         receipts = (
-            SalesBankReceipt.objects.filter(
-                tenant_id__in=tenant_ids,
+            SalesBankReceiptLine.objects.filter(
+                receipt__tenant_id__in=tenant_ids,
                 sales_invoice_id__in=invoice_ids,
                 deleted_at__isnull=True,
+                receipt__deleted_at__isnull=True,
             )
-            .select_related("customer", "sales_invoice", "bank_account", "salesman")
-            .order_by("date", "receipt_number")
+            .select_related(
+                "customer",
+                "sales_invoice",
+                "salesman",
+                "receipt",
+                "receipt__bank_account",
+            )
+            .order_by("receipt__date", "receipt__receipt_number", "created_at")
         )
         for item in returns:
             return_rows.append(
@@ -1136,19 +1143,23 @@ def build_sales_report(
         for item in receipts:
             receipt_rows.append(
                 {
-                    "receipt_id": str(item.id),
-                    "receipt_number": item.receipt_number,
-                    "date": item.date.isoformat(),
+                    "receipt_id": str(item.receipt_id),
+                    "receipt_number": item.receipt.receipt_number,
+                    "date": item.receipt.date.isoformat(),
                     "invoice_number": item.sales_invoice.invoice_number,
                     "customer_name": item.customer.business_name or item.customer.name,
-                    "tenant_id": item.tenant_id,
-                    "dimension_name": dimension_names.get(item.tenant_id, item.tenant_id),
+                    "tenant_id": item.receipt.tenant_id,
+                    "dimension_name": dimension_names.get(
+                        item.receipt.tenant_id, item.receipt.tenant_id
+                    ),
                     "salesman_name": item.salesman.name if item.salesman else "",
-                    "bank_account": item.bank_account.name if item.bank_account else "",
+                    "bank_account": (
+                        item.receipt.bank_account.name if item.receipt.bank_account else ""
+                    ),
                     "amount": str(_money(item.amount)),
                     "recovery_commission_rate": str(_money(item.recovery_commission_rate)),
                     "recovery_commission_amount": str(_money(item.recovery_commission_amount)),
-                    "remarks": item.remarks,
+                    "remarks": item.receipt.remarks,
                 }
             )
 
@@ -1258,7 +1269,7 @@ def build_salesman_performance_report(
     Amounts are allocated to dimensions from invoice line tenant_id (product dimension),
     not only the invoice header tenant_id.
     """
-    from sales.models import SalesBankReceipt, SalesInvoice, SalesInvoiceLine
+    from sales.models import SalesBankReceiptLine, SalesInvoice, SalesInvoiceLine
     from sales.services import get_sales_invoice_financials
 
     dimension_names = _dimension_name_map(tenant_ids)
@@ -1282,13 +1293,14 @@ def build_salesman_performance_report(
     elif salesman_ids:
         invoices = invoices.filter(salesman_id__in=salesman_ids)
 
-    receipts = (
-        SalesBankReceipt.objects.filter(
+    receipt_lines = (
+        SalesBankReceiptLine.objects.filter(
             deleted_at__isnull=True,
-            date__gte=from_date,
-            date__lte=to_date,
-            sales_invoice__deleted_at__isnull=True,
+            receipt__deleted_at__isnull=True,
+            receipt__date__gte=from_date,
+            receipt__date__lte=to_date,
             sales_invoice__isnull=False,
+            sales_invoice__deleted_at__isnull=True,
         )
         .filter(
             Q(sales_invoice__tenant_id__in=tenant_ids)
@@ -1298,20 +1310,26 @@ def build_salesman_performance_report(
             )
         )
         .filter(Q(salesman_id__isnull=False) | Q(sales_invoice__salesman_id__isnull=False))
-        .select_related("salesman", "sales_invoice", "sales_invoice__salesman", "customer")
+        .select_related(
+            "salesman",
+            "customer",
+            "sales_invoice",
+            "sales_invoice__salesman",
+            "receipt",
+        )
         .prefetch_related(
             Prefetch("sales_invoice__lines", queryset=all_lines_queryset),
         )
         .distinct()
-        .order_by("date", "receipt_number")
+        .order_by("receipt__date", "receipt__receipt_number", "created_at")
     )
     if salesman_id:
-        receipts = receipts.filter(
+        receipt_lines = receipt_lines.filter(
             Q(salesman_id=salesman_id)
             | Q(salesman_id__isnull=True, sales_invoice__salesman_id=salesman_id)
         )
     elif salesman_ids:
-        receipts = receipts.filter(
+        receipt_lines = receipt_lines.filter(
             Q(salesman_id__in=salesman_ids)
             | Q(salesman_id__isnull=True, sales_invoice__salesman_id__in=salesman_ids)
         )
@@ -1403,9 +1421,9 @@ def build_salesman_performance_report(
                 }
             )
 
-    for receipt in receipts:
-        invoice = receipt.sales_invoice
-        salesman = receipt.salesman or invoice.salesman
+    for receipt_line in receipt_lines:
+        invoice = receipt_line.sales_invoice
+        salesman = receipt_line.salesman or invoice.salesman
         if not salesman:
             continue
 
@@ -1413,16 +1431,16 @@ def build_salesman_performance_report(
         if not dimension_totals:
             continue
 
-        counted_receipt_ids.add(receipt.id)
+        counted_receipt_ids.add(receipt_line.receipt_id)
 
         for dimension_tenant_id, line_total in dimension_totals.items():
             row = _ensure_salesman_row(salesman, dimension_tenant_id)
-            receipt_amount = _allocated_invoice_amount(invoice, receipt.amount, line_total)
-            if receipt.salesman_id:
-                recovery_rate = _money(receipt.recovery_commission_rate)
+            receipt_amount = _allocated_invoice_amount(invoice, receipt_line.amount, line_total)
+            if receipt_line.salesman_id:
+                recovery_rate = _money(receipt_line.recovery_commission_rate)
                 recovery_commission = _allocated_invoice_amount(
                     invoice,
-                    receipt.recovery_commission_amount,
+                    receipt_line.recovery_commission_amount,
                     line_total,
                 )
             else:
@@ -1442,16 +1460,18 @@ def build_salesman_performance_report(
 
             receipt_detail_rows.append(
                 {
-                    "receipt_id": str(receipt.id),
-                    "receipt_number": receipt.receipt_number,
-                    "receipt_date": receipt.date.isoformat(),
+                    "receipt_id": str(receipt_line.receipt_id),
+                    "receipt_number": receipt_line.receipt.receipt_number,
+                    "receipt_date": receipt_line.receipt.date.isoformat(),
                     "invoice_id": str(invoice.id),
                     "invoice_number": invoice.invoice_number,
                     "invoice_date": invoice.date.isoformat(),
                     "salesman_id": str(salesman.id),
                     "salesman_code": salesman.code,
                     "salesman_name": salesman.name,
-                    "customer_name": receipt.customer.business_name or receipt.customer.name or "",
+                    "customer_name": (
+                        receipt_line.customer.business_name or receipt_line.customer.name or ""
+                    ),
                     "tenant_id": dimension_tenant_id,
                     "dimension_name": row["dimension_name"],
                     "receipt_amount": str(receipt_amount),

@@ -19,22 +19,23 @@ import { useAuth } from "../../../context/AuthContext";
 
 const selectClassName =
   "w-full rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/90 px-4 py-3 text-sm text-slate-800 dark:text-slate-100 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/40";
-const createDefaultForm = () => ({
-  date: new Date().toISOString().slice(0, 10),
-  tenantId: "",
+
+const createEmptyLine = () => ({
+  key: `${Date.now()}-${Math.random()}`,
   customerId: "",
   receiptAgainst: "INVOICE",
   salesInvoiceId: "",
   partyOpeningBalanceId: "",
-  bankAccountId: "",
   salesmanId: "",
   amount: "0",
-  remarks: "",
+  invoiceOptions: [],
 });
+
 const toNumber = (value) => {
   const parsedValue = Number(value);
   return Number.isFinite(parsedValue) ? parsedValue : 0;
 };
+
 const extractErrorMessage = (error) => {
   const data = error?.response?.data;
   if (!data) return "Something went wrong";
@@ -58,22 +59,16 @@ const fetchAll = async (service, baseParams = {}, tenantId = "") => {
   let keepLoading = true;
   while (keepLoading) {
     const response = await service.list(
-      {
-        ...baseParams,
-        page: nextPage,
-        limit: perPage,
-      },
+      { ...baseParams, page: nextPage, limit: perPage },
       tenantId,
     );
     const data = response.data || [];
     rows.push(...data);
-    const total = Number(response.total ?? response.count ?? rows.length) || rows.length;
+    const total =
+      Number(response.total ?? response.count ?? rows.length) || rows.length;
     const hasNext = Boolean(response.next) || rows.length < total;
-    if (!hasNext || data.length === 0) {
-      keepLoading = false;
-    } else {
-      nextPage += 1;
-    }
+    if (!hasNext || data.length === 0) keepLoading = false;
+    else nextPage += 1;
   }
   return rows;
 };
@@ -84,548 +79,448 @@ const CreateUpdateSalesBankReceipt = () => {
   const toast = useToast();
   const { tenantId } = useAuth();
   const editingId = id || "";
+
   const [dimensions, setDimensions] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [bankAccounts, setBankAccounts] = useState([]);
   const [salesmen, setSalesmen] = useState([]);
-  const [invoiceOptions, setInvoiceOptions] = useState([]);
-  const [form, setForm] = useState(() => ({
-    ...createDefaultForm(),
+  const [form, setForm] = useState({
+    date: new Date().toISOString().slice(0, 10),
     tenantId: tenantId || "",
-  }));
+    bankAccountId: "",
+    remarks: "",
+  });
+  const [lines, setLines] = useState([createEmptyLine()]);
   const [submitting, setSubmitting] = useState(false);
   const [loadingRecord, setLoadingRecord] = useState(Boolean(id));
-  const selectedInvoice = useMemo(
-    () => {
-      if (form.receiptAgainst === "OPENING_BALANCE") {
-        return (
-          invoiceOptions.find(
-            (option) =>
-              option.receipt_against === "OPENING_BALANCE" &&
-              option.id === form.partyOpeningBalanceId,
-          ) || null
-        );
-      }
-      return (
-        invoiceOptions.find(
-          (option) =>
-            option.receipt_against === "INVOICE" && option.id === form.salesInvoiceId,
-        ) || null
-      );
-    },
-    [form.partyOpeningBalanceId, form.receiptAgainst, form.salesInvoiceId, invoiceOptions],
+
+  const grandTotal = useMemo(
+    () => lines.reduce((sum, line) => sum + toNumber(line.amount), 0),
+    [lines],
   );
-  const filteredReceiptOptions = useMemo(
-    () =>
-      invoiceOptions.filter(
-        (option) => option.receipt_against === (form.receiptAgainst || "INVOICE"),
-      ),
-    [invoiceOptions, form.receiptAgainst],
-  );
-  const selectedSalesman = useMemo(
-    () => salesmen.find((salesman) => salesman.id === form.salesmanId) || null,
-    [form.salesmanId, salesmen],
-  );
-  const recoveryCommissionRate = toNumber(
-    selectedSalesman?.commission_on_recovery ??
-      selectedSalesman?.commissionOnRecovery ??
-      0,
-  );
-  const recoveryCommissionAmount =
-    (toNumber(form.amount) * recoveryCommissionRate) / 100;
-  const loadSetupData = async () => {
-    try {
-      const [dimensionItems, accountsResponse, salesmanResponse] =
-        await Promise.all([
-          dimensionService.list(),
-          accountService.list(),
-          salesmanService.list({ page: 1, limit: 200, search: "" }),
-        ]);
-      const allCustomers = await fetchAll(customerService, { search: "" });
-      setDimensions(dimensionItems || []);
-      setForm((current) => ({
-        ...current,
-        tenantId:
-          current.tenantId ||
-          tenantId ||
-          dimensionItems?.find((dimension) => dimension.is_active)?.code ||
-          dimensionItems?.[0]?.code ||
-          "",
-      }));
-      setCustomers(allCustomers || []);
-      setSalesmen(salesmanResponse.data || []);
-      const flatAccounts = flattenAccountTree(
-        Array.isArray(accountsResponse)
-          ? accountsResponse
-          : accountsResponse.data || [],
-      );
-      const bankTypeAccounts = flatAccounts.filter(
-        (account) =>
-          account.is_postable &&
-          account.account_group === "ASSET" &&
-          account.is_active &&
-          account.account_type === "BANK",
-      );
-      setBankAccounts(bankTypeAccounts);
-    } catch {
-      toast.error("Failed to load receipt setup options");
-    }
+
+  const updateLine = (index, patch) => {
+    setLines((current) =>
+      current.map((line, i) => (i === index ? { ...line, ...patch } : line)),
+    );
   };
-  const loadInvoiceOptions = async (customerId, receiptId = editingId) => {
+
+  const loadInvoiceOptionsForLine = async (index, customerId) => {
     if (!customerId) {
-      setInvoiceOptions([]);
+      updateLine(index, {
+        invoiceOptions: [],
+        salesInvoiceId: "",
+        partyOpeningBalanceId: "",
+      });
       return;
     }
     try {
       const options = await salesBankReceiptService.getInvoiceOptions(
         customerId,
-        receiptId,
+        editingId,
       );
-      setInvoiceOptions(options);
+      updateLine(index, { invoiceOptions: options || [] });
     } catch (loadError) {
       toast.error(
-        extractErrorMessage(loadError) || "Failed to load sales invoices",
+        extractErrorMessage(loadError) || "Failed to load invoice options",
       );
     }
   };
+
   useEffect(() => {
-    loadSetupData();
-  }, [toast]);
-  useEffect(() => {
-    loadInvoiceOptions(form.customerId, editingId);
-  }, [form.customerId, editingId]);
+    const loadSetup = async () => {
+      try {
+        const [dimensionItems, accountsResponse, salesmanResponse, allCustomers] =
+          await Promise.all([
+            dimensionService.list(),
+            accountService.list(),
+            salesmanService.list({ page: 1, limit: 200, search: "" }),
+            fetchAll(customerService, { search: "" }),
+          ]);
+        setDimensions(dimensionItems || []);
+        setForm((current) => ({
+          ...current,
+          tenantId:
+            current.tenantId ||
+            tenantId ||
+            dimensionItems?.[0]?.code ||
+            "",
+        }));
+        setCustomers(allCustomers || []);
+        setSalesmen(salesmanResponse.data || []);
+        const flatAccounts = flattenAccountTree(
+          Array.isArray(accountsResponse)
+            ? accountsResponse
+            : accountsResponse.data || [],
+        );
+        setBankAccounts(
+          flatAccounts.filter(
+            (account) =>
+              account.is_postable &&
+              account.account_group === "ASSET" &&
+              account.is_active &&
+              account.account_type === "BANK",
+          ),
+        );
+      } catch {
+        toast.error("Failed to load receipt setup options");
+      }
+    };
+    loadSetup();
+  }, [tenantId, toast]);
+
   useEffect(() => {
     if (!id) {
       setLoadingRecord(false);
       return;
     }
-    let cancelled = false;
-    const load = async () => {
+    const loadRecord = async () => {
       setLoadingRecord(true);
       try {
         const receipt = await salesBankReceiptService.getById(id);
-        if (cancelled) return;
-        await loadInvoiceOptions(receipt.customerId, receipt.id);
-        if (cancelled) return;
         setForm({
           date: receipt.date,
-          tenantId: receipt.tenantId || tenantId || "",
-          customerId: receipt.customerId,
-          receiptAgainst: receipt.receiptAgainst || "INVOICE",
-          salesInvoiceId: receipt.salesInvoiceId,
-          partyOpeningBalanceId: receipt.partyOpeningBalanceId || "",
-          bankAccountId: receipt.bankAccountId,
-          salesmanId: receipt.salesmanId || "",
-          amount: String(receipt.amount ?? 0),
+          tenantId: receipt.tenant_id || tenantId || "",
+          bankAccountId: receipt.bank_account?.id || "",
           remarks: receipt.remarks || "",
         });
-      } catch (editError) {
-        if (!cancelled) {
-          toast.error(
-            extractErrorMessage(editError) ||
-              "Failed to load sales bank receipt",
-          );
-          navigate("/sales-bank-receipts", { replace: true });
-        }
+        const loadedLines = await Promise.all(
+          (receipt.lines || []).map(async (line) => {
+            const customerId = line.customer_id || line.customer?.id || "";
+            let invoiceOptions = [];
+            if (customerId) {
+              try {
+                invoiceOptions = await salesBankReceiptService.getInvoiceOptions(
+                  customerId,
+                  id,
+                );
+              } catch {
+                invoiceOptions = [];
+              }
+            }
+            return {
+              key: line.id || `${Date.now()}-${Math.random()}`,
+              customerId,
+              receiptAgainst: line.receipt_against || "INVOICE",
+              salesInvoiceId: line.sales_invoice_id || line.sales_invoice?.id || "",
+              partyOpeningBalanceId: line.party_opening_balance_id || "",
+              salesmanId: line.salesman_id || line.salesman?.id || "",
+              amount: String(line.amount ?? "0"),
+              invoiceOptions: invoiceOptions || [],
+            };
+          }),
+        );
+        setLines(loadedLines.length ? loadedLines : [createEmptyLine()]);
+      } catch (loadError) {
+        toast.error(extractErrorMessage(loadError) || "Failed to load receipt");
+        navigate("/sales-bank-receipts", { replace: true });
       } finally {
-        if (!cancelled) setLoadingRecord(false);
+        setLoadingRecord(false);
       }
     };
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [id, navigate, toast]);
-  const handleChange = (field, value) => {
-    setForm((current) => ({ ...current, [field]: value }));
-  };
-  const handleCustomerChange = (customerId) => {
-    setForm((current) => ({
-      ...current,
-      customerId,
-      salesInvoiceId: "",
-      partyOpeningBalanceId: "",
-      salesmanId: "",
-      amount: "0",
-    }));
-  };
-  const handleReceiptAgainstChange = (receiptAgainst) => {
-    setForm((current) => ({
-      ...current,
-      receiptAgainst,
-      salesInvoiceId: "",
-      partyOpeningBalanceId: "",
-      salesmanId: "",
-      amount: "0",
-    }));
-  };
-  const handleInvoiceChange = (selectedId) => {
-    const invoice = filteredReceiptOptions.find((item) => item.id === selectedId);
-    setForm((current) => ({
-      ...current,
-      salesInvoiceId: current.receiptAgainst === "INVOICE" ? selectedId : "",
-      partyOpeningBalanceId:
-        current.receiptAgainst === "OPENING_BALANCE" ? selectedId : "",
-      salesmanId:
-        current.receiptAgainst === "INVOICE" ? invoice?.salesman?.id || "" : "",
-      amount: invoice ? String(invoice.balance_amount || 0) : "0",
-    }));
-    if (
-      invoice?.salesman &&
-      !salesmen.some((item) => item.id === invoice.salesman.id)
-    ) {
-      setSalesmen((current) => [...current, invoice.salesman]);
-    }
-  };
-  const searchSalesmen = async (query) => {
-    const response = await salesmanService.list({
-      page: 1,
-      limit: 20,
-      search: query,
-    });
-    return response.data || [];
-  };
-  const resolveSalesman = async (salesmanId) => {
-    const existing = salesmen.find((salesman) => salesman.id === salesmanId);
-    if (existing) return existing;
-    const response = await salesmanService.list({ page: 1, limit: 200, search: "" });
-    const match = (response.data || []).find((salesman) => salesman.id === salesmanId);
-    if (match) {
-      setSalesmen((current) =>
-        current.some((salesman) => salesman.id === match.id)
-          ? current
-          : [...current, match],
-      );
-    }
-    return match || null;
-  };
-  const buildPayload = () => ({
-    date: form.date,
-    tenant_id: form.tenantId,
-    customer_id: form.customerId,
-    receipt_against: form.receiptAgainst,
-    sales_invoice_id: form.receiptAgainst === "INVOICE" ? form.salesInvoiceId : null,
-    party_opening_balance_id:
-      form.receiptAgainst === "OPENING_BALANCE" ? form.partyOpeningBalanceId : null,
-    bank_account_id: form.bankAccountId,
-    salesman_id: form.receiptAgainst === "INVOICE" ? form.salesmanId || null : null,
-    amount: toNumber(form.amount),
-    remarks: form.remarks,
-  });
-  const validateBeforeSubmit = () => {
-    if (!form.date) {
-      toast.error("Please select a receipt date");
-      return false;
-    }
-    if (!form.tenantId) {
-      toast.error("Please select a dimension");
-      return false;
-    }
-    if (!form.customerId) {
-      toast.error("Please select a customer");
-      return false;
-    }
-    if (form.receiptAgainst === "INVOICE" && !form.salesInvoiceId) {
-      toast.error("Please select a sales invoice");
-      return false;
-    }
-    if (form.receiptAgainst === "OPENING_BALANCE" && !form.partyOpeningBalanceId) {
-      toast.error("Please select opening balance");
-      return false;
-    }
-    if (!form.bankAccountId) {
-      toast.error("Please select a bank account");
-      return false;
-    }
-    if (toNumber(form.amount) <= 0) {
-      toast.error("Receipt amount must be greater than zero");
-      return false;
-    }
-    if (
-      selectedInvoice &&
-      toNumber(form.amount) > toNumber(selectedInvoice.balance_amount)
-    ) {
-      toast.error("Receipt amount cannot exceed the invoice balance");
-      return false;
-    }
-    return true;
-  };
+    loadRecord();
+  }, [id, navigate, tenantId, toast]);
+
   const handleSubmit = async (event) => {
     event.preventDefault();
-    if (!validateBeforeSubmit()) return;
+    if (!form.tenantId || !form.bankAccountId || !form.date) {
+      toast.error("Date, dimension, and bank are required");
+      return;
+    }
+    if (!lines.length) {
+      toast.error("Add at least one payment line");
+      return;
+    }
+    for (const [index, line] of lines.entries()) {
+      if (!line.customerId) {
+        toast.error(`Row ${index + 1}: customer is required`);
+        return;
+      }
+      if (line.receiptAgainst === "OPENING_BALANCE" && !line.partyOpeningBalanceId) {
+        toast.error(`Row ${index + 1}: opening balance is required`);
+        return;
+      }
+      if (line.receiptAgainst === "INVOICE" && !line.salesInvoiceId) {
+        toast.error(`Row ${index + 1}: invoice is required`);
+        return;
+      }
+      if (toNumber(line.amount) <= 0) {
+        toast.error(`Row ${index + 1}: amount must be greater than 0`);
+        return;
+      }
+    }
+
+    const payload = {
+      tenant_id: form.tenantId,
+      date: form.date,
+      bank_account_id: form.bankAccountId,
+      remarks: form.remarks,
+      lines: lines.map((line) => ({
+        customer_id: line.customerId,
+        receipt_against: line.receiptAgainst,
+        sales_invoice_id:
+          line.receiptAgainst === "INVOICE" ? line.salesInvoiceId || null : null,
+        party_opening_balance_id:
+          line.receiptAgainst === "OPENING_BALANCE"
+            ? line.partyOpeningBalanceId || null
+            : null,
+        salesman_id:
+          line.receiptAgainst === "INVOICE" ? line.salesmanId || null : null,
+        amount: toNumber(line.amount).toFixed(2),
+      })),
+    };
+
     setSubmitting(true);
     try {
-      const payload = buildPayload();
       if (editingId) {
-        const response = await salesBankReceiptService.update(
-          editingId,
-          payload,
-        );
-        toast.success(
-          response.message || "Sales bank receipt updated successfully",
-        );
+        const response = await salesBankReceiptService.update(editingId, payload);
+        toast.success(response.message || "Bank receipt updated successfully");
       } else {
         const response = await salesBankReceiptService.create(payload);
-        toast.success(
-          response.message || "Sales bank receipt created successfully",
-        );
+        toast.success(response.message || "Bank receipt created successfully");
       }
       navigate("/sales-bank-receipts");
     } catch (submitError) {
-      toast.error(extractErrorMessage(submitError));
+      toast.error(extractErrorMessage(submitError) || "Failed to save receipt");
     } finally {
       setSubmitting(false);
     }
   };
-  const title = editingId ? "Edit Bank Receipt" : "Bank Receipt";
+
   if (loadingRecord) {
-    return (
-      <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-8 text-center text-slate-600 dark:text-slate-300">
-        {" "}
-        Loading receipt…{" "}
-      </div>
-    );
+    return <Card>Loading receipt…</Card>;
   }
+
   return (
-    <div className="space-y-6">
-      {" "}
-      <Card className="space-y-6">
-        {" "}
-        <div className="flex items-center justify-between gap-4">
-          {" "}
-          <div>
-            {" "}
-            <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
-              {title}
-            </h2>{" "}
-          </div>{" "}
+    <form className="space-y-6" onSubmit={handleSubmit}>
+      <Card className="space-y-5">
+        <div>
+          <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
+            {editingId ? "Edit Bank Receipt" : "Bank Receipt"}
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            One bank deposit with multiple customer / invoice allocations.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <FormInput
+            label="Date"
+            type="date"
+            required
+            value={form.date}
+            onChange={(e) => setForm((c) => ({ ...c, date: e.target.value }))}
+          />
+          <div className="space-y-1">
+            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Dimension
+            </label>
+            <select
+              className={selectClassName}
+              value={form.tenantId}
+              onChange={(e) => setForm((c) => ({ ...c, tenantId: e.target.value }))}
+              required
+            >
+              <option value="">Select dimension</option>
+              {dimensions.map((dimension) => (
+                <option key={dimension.code} value={dimension.code}>
+                  {dimension.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <SearchableSelect
+            label="Bank"
+            value={form.bankAccountId}
+            options={bankAccounts}
+            onChange={(bankAccountId) => setForm((c) => ({ ...c, bankAccountId }))}
+            getOptionLabel={(account) => formatAccountLabel(account)}
+            placeholder="Select bank account…"
+          />
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 dark:border-emerald-800 dark:bg-emerald-950/40">
+            <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+              Grand Total
+            </p>
+            <p className="mt-1 text-2xl font-bold text-emerald-900 dark:text-emerald-200">
+              {formatDecimal(grandTotal)}
+            </p>
+          </div>
+        </div>
+
+        <FormInput
+          label="Remarks"
+          value={form.remarks}
+          onChange={(e) => setForm((c) => ({ ...c, remarks: e.target.value }))}
+        />
+      </Card>
+
+      <Card className="space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+            Payment Lines
+          </h3>
           <Button
-            variant="secondary"
             type="button"
-            onClick={() => navigate("/sales-bank-receipts")}
+            variant="secondary"
+            onClick={() => setLines((current) => [...current, createEmptyLine()])}
           >
-            {" "}
-            Back to list{" "}
-          </Button>{" "}
-        </div>{" "}
-        <form className="space-y-5" onSubmit={handleSubmit}>
-          {" "}
-          <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
-            {" "}
-            <FormInput
-              label="Date *"
-              type="date"
-              required
-              value={form.date}
-              onChange={(e) => handleChange("date", e.target.value)}
-            />{" "}
-            <div className="space-y-1">
-              {" "}
-              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 dark:text-slate-500">
-                {" "}
-                Dimension <span className="text-rose-500">*</span>{" "}
-              </label>{" "}
-              <select
-                className={selectClassName}
-                value={form.tenantId}
-                onChange={(e) => handleChange("tenantId", e.target.value)}
-              >
-                {" "}
-                <option value="">Select Dimension</option>{" "}
-                {dimensions.map((dimension) => (
-                  <option key={dimension.code} value={dimension.code}>
-                    {" "}
-                    {dimension.name}{" "}
-                  </option>
-                ))}{" "}
-              </select>{" "}
-            </div>{" "}
-            <div className="space-y-1">
-              {" "}
-              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 dark:text-slate-500">
-                {" "}
-                Customer <span className="text-rose-500">*</span>{" "}
-              </label>{" "}
-              <select
-                className={selectClassName}
-                value={form.customerId}
-                onChange={(e) => handleCustomerChange(e.target.value)}
-              >
-                {" "}
-                <option value="">Select Customer</option>{" "}
-                {customers.map((customer) => (
-                  <option key={customer.id} value={customer.id}>
-                    {" "}
-                    {customer.business_name}{" "}
-                  </option>
-                ))}{" "}
-              </select>{" "}
-            </div>{" "}
-            <div className="space-y-1">
-              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 dark:text-slate-500">
-                Receipt Against <span className="text-rose-500">*</span>
-              </label>
-              <select
-                className={selectClassName}
-                value={form.receiptAgainst}
-                onChange={(e) => handleReceiptAgainstChange(e.target.value)}
-              >
-                <option value="INVOICE">Invoice</option>
-                <option value="OPENING_BALANCE">Opening Balance</option>
-              </select>
-            </div>{" "}
-            <div className="space-y-1">
-              {" "}
-              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 dark:text-slate-500">
-                {" "}
-                {form.receiptAgainst === "OPENING_BALANCE"
-                  ? "Selected Customer Opening Balance"
-                  : "Selected Customer's Invoice"}{" "}
-                <span className="text-rose-500">*</span>{" "}
-              </label>{" "}
-              <select
-                className={selectClassName}
-                value={
-                  form.receiptAgainst === "OPENING_BALANCE"
-                    ? form.partyOpeningBalanceId
-                    : form.salesInvoiceId
-                }
-                onChange={(e) => handleInvoiceChange(e.target.value)}
-                disabled={!form.customerId}
-              >
-                {" "}
-                <option value="">
-                  {form.receiptAgainst === "OPENING_BALANCE"
-                    ? "Select Opening Balance"
-                    : "Select Sales Invoice"}
-                </option>{" "}
-                {filteredReceiptOptions.map((invoice) => (
-                  <option key={invoice.id} value={invoice.id}>
-                    {" "}
-                    {invoice.invoice_number} | Balance{" "}
-                    {formatDecimal(invoice.balance_amount)}{" "}
-                  </option>
-                ))}{" "}
-              </select>{" "}
-            </div>{" "}
-            <div className="space-y-1">
-              {" "}
-              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 dark:text-slate-500">
-                {" "}
-                Bank <span className="text-rose-500">*</span>{" "}
-              </label>{" "}
-              <select
-                className={selectClassName}
-                value={form.bankAccountId}
-                onChange={(e) => handleChange("bankAccountId", e.target.value)}
-              >
-                {" "}
-                <option value="">Select Bank Account</option>{" "}
-                {bankAccounts.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {" "}
-                    {formatAccountLabel(account)}{" "}
-                  </option>
-                ))}{" "}
-              </select>{" "}
-            </div>{" "}
-            <SearchableSelect
-              label="Salesman"
-              value={form.salesmanId}
-              onChange={(salesmanId) => handleChange("salesmanId", salesmanId)}
-              onSearch={searchSalesmen}
-              resolveValue={resolveSalesman}
-              getOptionLabel={(salesman) =>
-                `${salesman.code ? `${salesman.code} - ` : ""}${salesman.name || "Salesman"}`
-              }
-              placeholder="Type to search salesman"
-            />{" "}
-            <FormInput
-              label="Total *"
-              type="number"
-              min="0.01"
-              step="0.01"
-              required
-              value={form.amount}
-              onChange={(e) => handleChange("amount", e.target.value)}
-            />{" "}
-            <FormInput
-              label="Remarks"
-              placeholder="Optional notes for this receipt"
-              value={form.remarks}
-              onChange={(e) => handleChange("remarks", e.target.value)}
-            />{" "}
-          </div>{" "}
-          <div className="grid gap-3 grid-cols-1 md:grid-cols-4">
-            {" "}
-            <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 px-4 py-4">
-              {" "}
-              <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                Invoice Net
-              </p>{" "}
-              <p className="mt-1 text-lg font-bold text-slate-800 dark:text-slate-100">
-                {" "}
-                {formatDecimal(selectedInvoice?.net_amount || 0)}{" "}
-              </p>{" "}
-            </div>{" "}
-            <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 px-4 py-4">
-              {" "}
-              <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                Returned
-              </p>{" "}
-              <p className="mt-1 text-lg font-bold text-slate-800 dark:text-slate-100">
-                {" "}
-                {formatDecimal(selectedInvoice?.returned_amount || 0)}{" "}
-              </p>{" "}
-            </div>{" "}
-            <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 px-4 py-4">
-              {" "}
-              <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                Already Received
-              </p>{" "}
-              <p className="mt-1 text-lg font-bold text-slate-800 dark:text-slate-100">
-                {" "}
-                {formatDecimal(selectedInvoice?.received_amount || 0)}{" "}
-              </p>{" "}
-            </div>{" "}
-            <div className="rounded-2xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/40 px-4 py-4">
-              {" "}
-              <p className="text-xs uppercase tracking-wide text-blue-500">
-                Invoice Balance
-              </p>{" "}
-              <p className="mt-1 text-xl font-extrabold text-blue-700 dark:text-blue-300">
-                {" "}
-                {formatDecimal(selectedInvoice?.balance_amount || 0)}{" "}
-              </p>{" "}
-            </div>{" "}
-            <div className="rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-4 py-4">
-              {" "}
-              <p className="text-xs uppercase tracking-wide text-amber-600 dark:text-amber-300">
-                Recovery Commission
-              </p>{" "}
-              <p className="mt-1 text-xl font-extrabold text-amber-700 dark:text-amber-300">
-                {" "}
-                {formatDecimal(recoveryCommissionAmount)}{" "}
-              </p>{" "}
-              <p className="mt-1 text-xs text-amber-700/80 dark:text-amber-200/80">
-                {formatDecimal(recoveryCommissionRate)}% of receipt amount
-              </p>
-            </div>{" "}
-          </div>{" "}
-          <div className="flex justify-end border-t border-slate-100 dark:border-slate-700 pt-4">
-            {" "}
-            <Button type="submit" disabled={submitting}>
-              {" "}
-              {submitting
-                ? "Saving..."
-                : editingId
-                  ? "Update Bank Receipt"
-                  : "Save Bank Receipt"}{" "}
-            </Button>{" "}
-          </div>{" "}
-        </form>{" "}
-      </Card>{" "}
-    </div>
+            Add Row
+          </Button>
+        </div>
+
+        <div className="overflow-x-auto rounded-[24px] border border-slate-200 dark:border-slate-700">
+          <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-700">
+            <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-900/60">
+              <tr>
+                <th className="px-3 py-3">Customer</th>
+                <th className="px-3 py-3">Against</th>
+                <th className="px-3 py-3">Invoice / Opening</th>
+                <th className="px-3 py-3">Salesman</th>
+                <th className="px-3 py-3 text-right">Actual Amount</th>
+                <th className="px-3 py-3 text-right">Remaining</th>
+                <th className="px-3 py-3 text-right">Amount</th>
+                <th className="px-3 py-3" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white dark:divide-slate-700 dark:bg-slate-800">
+              {lines.map((line, index) => {
+                const filteredOptions = (line.invoiceOptions || []).filter(
+                  (option) =>
+                    option.receipt_against === (line.receiptAgainst || "INVOICE"),
+                );
+                const selectedOption = filteredOptions.find((option) =>
+                  line.receiptAgainst === "OPENING_BALANCE"
+                    ? option.id === line.partyOpeningBalanceId
+                    : option.id === line.salesInvoiceId,
+                );
+                return (
+                  <tr key={line.key}>
+                    <td className="px-3 py-3 min-w-[200px]">
+                      <SearchableSelect
+                        value={line.customerId}
+                        options={customers}
+                        onChange={(customerId) => {
+                          updateLine(index, {
+                            customerId,
+                            salesInvoiceId: "",
+                            partyOpeningBalanceId: "",
+                            salesmanId: "",
+                            amount: "0",
+                          });
+                          loadInvoiceOptionsForLine(index, customerId);
+                        }}
+                        getOptionLabel={(customer) =>
+                          customer.business_name || customer.name || "Customer"
+                        }
+                        placeholder="Customer…"
+                      />
+                    </td>
+                    <td className="px-3 py-3 min-w-[140px]">
+                      <select
+                        className={selectClassName}
+                        value={line.receiptAgainst}
+                        onChange={(e) =>
+                          updateLine(index, {
+                            receiptAgainst: e.target.value,
+                            salesInvoiceId: "",
+                            partyOpeningBalanceId: "",
+                            salesmanId: "",
+                            amount: "0",
+                          })
+                        }
+                      >
+                        <option value="INVOICE">Invoice</option>
+                        <option value="OPENING_BALANCE">Opening Balance</option>
+                      </select>
+                    </td>
+                    <td className="px-3 py-3 min-w-[220px]">
+                      <SearchableSelect
+                        value={
+                          line.receiptAgainst === "OPENING_BALANCE"
+                            ? line.partyOpeningBalanceId
+                            : line.salesInvoiceId
+                        }
+                        options={filteredOptions}
+                        onChange={(optionId) => {
+                          const option = filteredOptions.find((item) => item.id === optionId);
+                          updateLine(index, {
+                            salesInvoiceId:
+                              line.receiptAgainst === "INVOICE" ? optionId : "",
+                            partyOpeningBalanceId:
+                              line.receiptAgainst === "OPENING_BALANCE" ? optionId : "",
+                            salesmanId: option?.salesman?.id || "",
+                            amount: String(option?.balance_amount ?? "0"),
+                          });
+                        }}
+                        getOptionLabel={(option) => option.invoice_number}
+                        placeholder="Select reference…"
+                      />
+                    </td>
+                    <td className="px-3 py-3 min-w-[180px]">
+                      <SearchableSelect
+                        value={line.salesmanId}
+                        disabled={line.receiptAgainst === "OPENING_BALANCE"}
+                        options={salesmen}
+                        onChange={(salesmanId) => updateLine(index, { salesmanId })}
+                        getOptionLabel={(salesman) =>
+                          `${salesman.code ? `${salesman.code} — ` : ""}${salesman.name}`
+                        }
+                        placeholder="Salesman…"
+                      />
+                    </td>
+                    <td className="px-3 py-3 text-right tabular-nums text-slate-700 dark:text-slate-200">
+                      {selectedOption
+                        ? formatDecimal(selectedOption.net_amount)
+                        : "—"}
+                    </td>
+                    <td className="px-3 py-3 text-right tabular-nums text-slate-700 dark:text-slate-200">
+                      {selectedOption
+                        ? formatDecimal(selectedOption.balance_amount)
+                        : "—"}
+                    </td>
+                    <td className="px-3 py-3 min-w-[120px]">
+                      <FormInput
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={line.amount}
+                        onChange={(e) => updateLine(index, { amount: e.target.value })}
+                      />
+                    </td>
+                    <td className="px-3 py-3">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        disabled={lines.length === 1}
+                        onClick={() =>
+                          setLines((current) => current.filter((_, i) => i !== index))
+                        }
+                      >
+                        Remove
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      <div className="flex justify-end gap-3">
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => navigate("/sales-bank-receipts")}
+        >
+          Cancel
+        </Button>
+        <Button type="submit" disabled={submitting}>
+          {submitting ? "Saving…" : editingId ? "Update Receipt" : "Save Receipt"}
+        </Button>
+      </div>
+    </form>
   );
 };
+
 export default CreateUpdateSalesBankReceipt;

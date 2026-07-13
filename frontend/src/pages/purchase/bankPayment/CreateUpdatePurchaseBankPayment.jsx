@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import Card from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
 import FormInput from "../../../components/ui/FormInput";
+import SearchableSelect from "../../../components/ui/SearchableSelect";
 import supplierService from "../../../api/services/supplierService";
 import accountService from "../../../api/services/accountService";
 import purchaseBankPaymentService from "../../../api/services/purchaseBankPaymentService";
@@ -12,20 +13,23 @@ import {
   formatAccountLabel,
 } from "../../../utils/accounts";
 import { useToast } from "../../../context/ToastContext";
+
 const selectClassName =
   "w-full rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/90 px-4 py-3 text-sm text-slate-800 dark:text-slate-100 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/40";
-const createDefaultForm = () => ({
-  date: new Date().toISOString().slice(0, 10),
+
+const createEmptyLine = () => ({
+  key: `${Date.now()}-${Math.random()}`,
   supplierId: "",
   purchaseInvoiceId: "",
-  bankAccountId: "",
   amount: "0",
-  remarks: "",
+  invoiceOptions: [],
 });
+
 const toNumber = (value) => {
   const parsedValue = Number(value);
   return Number.isFinite(parsedValue) ? parsedValue : 0;
 };
+
 const extractErrorMessage = (error) => {
   const data = error?.response?.data;
   if (!data) return "Something went wrong";
@@ -41,374 +45,350 @@ const extractErrorMessage = (error) => {
   }
   return "Something went wrong";
 };
+
 const CreateUpdatePurchaseBankPayment = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
   const editingId = id || "";
+
   const [suppliers, setSuppliers] = useState([]);
   const [bankAccounts, setBankAccounts] = useState([]);
-  const [invoiceOptions, setInvoiceOptions] = useState([]);
-  const [form, setForm] = useState(createDefaultForm());
+  const [form, setForm] = useState({
+    date: new Date().toISOString().slice(0, 10),
+    bankAccountId: "",
+    remarks: "",
+  });
+  const [lines, setLines] = useState([createEmptyLine()]);
   const [submitting, setSubmitting] = useState(false);
   const [loadingRecord, setLoadingRecord] = useState(Boolean(id));
-  const selectedInvoice = useMemo(
-    () =>
-      invoiceOptions.find((invoice) => invoice.id === form.purchaseInvoiceId) ||
-      null,
-    [form.purchaseInvoiceId, invoiceOptions],
+
+  const grandTotal = useMemo(
+    () => lines.reduce((sum, line) => sum + toNumber(line.amount), 0),
+    [lines],
   );
-  const loadSetupData = async () => {
-    try {
-      const [supplierResponse, accountsResponse] = await Promise.all([
-        supplierService.list({ page: 1, limit: 100, search: "" }),
-        accountService.list(),
-      ]);
-      setSuppliers(supplierResponse.data || []);
-      const flatAccounts = flattenAccountTree(
-        Array.isArray(accountsResponse)
-          ? accountsResponse
-          : accountsResponse.data || [],
-      );
-      const bankTypeAccounts = flatAccounts.filter(
-        (account) =>
-          account.is_postable &&
-          account.account_group === "ASSET" &&
-          account.is_active &&
-          account.account_type === "BANK",
-      );
-      setBankAccounts(bankTypeAccounts);
-    } catch {
-      toast.error("Failed to load supplier and bank account options");
-    }
+
+  const updateLine = (index, patch) => {
+    setLines((current) =>
+      current.map((line, i) => (i === index ? { ...line, ...patch } : line)),
+    );
   };
-  const loadInvoiceOptions = async (supplierId, paymentId = editingId) => {
+
+  const loadInvoiceOptionsForLine = async (index, supplierId) => {
     if (!supplierId) {
-      setInvoiceOptions([]);
+      updateLine(index, { invoiceOptions: [], purchaseInvoiceId: "", amount: "0" });
       return;
     }
     try {
       const options = await purchaseBankPaymentService.getInvoiceOptions(
         supplierId,
-        paymentId,
+        editingId,
       );
-      setInvoiceOptions(options);
+      updateLine(index, { invoiceOptions: options || [] });
     } catch (loadError) {
       toast.error(
         extractErrorMessage(loadError) || "Failed to load purchase invoices",
       );
     }
   };
+
   useEffect(() => {
-    loadSetupData();
+    const loadSetup = async () => {
+      try {
+        const [supplierResponse, accountsResponse] = await Promise.all([
+          supplierService.list({ page: 1, limit: 200, search: "" }),
+          accountService.list(),
+        ]);
+        setSuppliers(supplierResponse.data || []);
+        const flatAccounts = flattenAccountTree(
+          Array.isArray(accountsResponse)
+            ? accountsResponse
+            : accountsResponse.data || [],
+        );
+        setBankAccounts(
+          flatAccounts.filter(
+            (account) =>
+              account.is_postable &&
+              account.account_group === "ASSET" &&
+              account.is_active &&
+              account.account_type === "BANK",
+          ),
+        );
+      } catch {
+        toast.error("Failed to load payment setup options");
+      }
+    };
+    loadSetup();
   }, [toast]);
-  useEffect(() => {
-    loadInvoiceOptions(form.supplierId, editingId);
-  }, [form.supplierId, editingId]);
+
   useEffect(() => {
     if (!id) {
       setLoadingRecord(false);
       return;
     }
-    let cancelled = false;
-    const load = async () => {
+    const loadRecord = async () => {
       setLoadingRecord(true);
       try {
         const payment = await purchaseBankPaymentService.getById(id);
-        if (cancelled) return;
-        await loadInvoiceOptions(payment.supplierId, payment.id);
-        if (cancelled) return;
         setForm({
           date: payment.date,
-          supplierId: payment.supplierId,
-          purchaseInvoiceId: payment.purchaseInvoiceId,
-          bankAccountId: payment.bankAccountId,
-          amount: String(payment.amount ?? 0),
+          bankAccountId: payment.bank_account?.id || "",
           remarks: payment.remarks || "",
         });
-      } catch (editError) {
-        if (!cancelled) {
-          toast.error(
-            extractErrorMessage(editError) ||
-              "Failed to load purchase bank payment",
-          );
-          navigate("/purchase-bank-payments", { replace: true });
-        }
+        const loadedLines = await Promise.all(
+          (payment.lines || []).map(async (line) => {
+            const supplierId = line.supplier_id || line.supplier?.id || "";
+            let invoiceOptions = [];
+            if (supplierId) {
+              try {
+                invoiceOptions = await purchaseBankPaymentService.getInvoiceOptions(
+                  supplierId,
+                  id,
+                );
+              } catch {
+                invoiceOptions = [];
+              }
+            }
+            return {
+              key: line.id || `${Date.now()}-${Math.random()}`,
+              supplierId,
+              purchaseInvoiceId:
+                line.purchase_invoice_id || line.purchase_invoice?.id || "",
+              amount: String(line.amount ?? "0"),
+              invoiceOptions: invoiceOptions || [],
+            };
+          }),
+        );
+        setLines(loadedLines.length ? loadedLines : [createEmptyLine()]);
+      } catch (loadError) {
+        toast.error(extractErrorMessage(loadError) || "Failed to load payment");
+        navigate("/purchase-bank-payments", { replace: true });
       } finally {
-        if (!cancelled) setLoadingRecord(false);
+        setLoadingRecord(false);
       }
     };
-    load();
-    return () => {
-      cancelled = true;
-    };
+    loadRecord();
   }, [id, navigate, toast]);
-  const handleChange = (field, value) => {
-    setForm((current) => ({ ...current, [field]: value }));
-  };
-  const handleSupplierChange = (supplierId) => {
-    setForm((current) => ({
-      ...current,
-      supplierId,
-      purchaseInvoiceId: "",
-      amount: "0",
-    }));
-  };
-  const handleInvoiceChange = (purchaseInvoiceId) => {
-    const invoice = invoiceOptions.find(
-      (item) => item.id === purchaseInvoiceId,
-    );
-    setForm((current) => ({
-      ...current,
-      purchaseInvoiceId,
-      amount: invoice ? String(invoice.balance_amount || 0) : "0",
-    }));
-  };
-  const buildPayload = () => ({
-    date: form.date,
-    supplier_id: form.supplierId,
-    purchase_invoice_id: form.purchaseInvoiceId,
-    bank_account_id: form.bankAccountId,
-    amount: toNumber(form.amount),
-    remarks: form.remarks,
-  });
-  const validateBeforeSubmit = () => {
-    if (!form.date) {
-      toast.error("Please select a payment date");
-      return false;
-    }
-    if (!form.supplierId) {
-      toast.error("Please select a supplier");
-      return false;
-    }
-    if (!form.purchaseInvoiceId) {
-      toast.error("Please select a purchase invoice");
-      return false;
-    }
-    if (!form.bankAccountId) {
-      toast.error("Please select a bank account");
-      return false;
-    }
-    if (toNumber(form.amount) <= 0) {
-      toast.error("Payment amount must be greater than zero");
-      return false;
-    }
-    if (
-      selectedInvoice &&
-      toNumber(form.amount) > toNumber(selectedInvoice.balance_amount)
-    ) {
-      toast.error("Payment amount cannot exceed the invoice balance");
-      return false;
-    }
-    return true;
-  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
-    if (!validateBeforeSubmit()) return;
+    if (!form.date || !form.bankAccountId) {
+      toast.error("Date and bank are required");
+      return;
+    }
+    for (const [index, line] of lines.entries()) {
+      if (!line.supplierId) {
+        toast.error(`Row ${index + 1}: supplier is required`);
+        return;
+      }
+      if (!line.purchaseInvoiceId) {
+        toast.error(`Row ${index + 1}: purchase invoice is required`);
+        return;
+      }
+      if (toNumber(line.amount) <= 0) {
+        toast.error(`Row ${index + 1}: amount must be greater than 0`);
+        return;
+      }
+    }
+
+    const payload = {
+      date: form.date,
+      bank_account_id: form.bankAccountId,
+      remarks: form.remarks,
+      lines: lines.map((line) => ({
+        supplier_id: line.supplierId,
+        purchase_invoice_id: line.purchaseInvoiceId,
+        amount: toNumber(line.amount).toFixed(2),
+      })),
+    };
+
     setSubmitting(true);
     try {
-      const payload = buildPayload();
       if (editingId) {
-        const response = await purchaseBankPaymentService.update(
-          editingId,
-          payload,
-        );
-        toast.success(
-          response.message || "Purchase bank payment updated successfully",
-        );
+        const response = await purchaseBankPaymentService.update(editingId, payload);
+        toast.success(response.message || "Bank payment updated successfully");
       } else {
         const response = await purchaseBankPaymentService.create(payload);
-        toast.success(
-          response.message || "Purchase bank payment created successfully",
-        );
+        toast.success(response.message || "Bank payment created successfully");
       }
       navigate("/purchase-bank-payments");
     } catch (submitError) {
-      toast.error(extractErrorMessage(submitError));
+      toast.error(extractErrorMessage(submitError) || "Failed to save payment");
     } finally {
       setSubmitting(false);
     }
   };
-  const title = editingId ? "Edit Bank Payment" : "Bank Payment";
+
   if (loadingRecord) {
-    return (
-      <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-8 text-center text-slate-600 dark:text-slate-300">
-        {" "}
-        Loading payment…{" "}
-      </div>
-    );
+    return <Card>Loading payment…</Card>;
   }
+
   return (
-    <div className="space-y-6">
-      {" "}
-      <Card className="space-y-6">
-        {" "}
-        <div className="flex items-center justify-between gap-4">
-          {" "}
-          <div>
-            {" "}
-            <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
-              {title}
-            </h2>{" "}
-          </div>{" "}
+    <form className="space-y-6" onSubmit={handleSubmit}>
+      <Card className="space-y-5">
+        <div>
+          <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
+            {editingId ? "Edit Bank Payment" : "Bank Payment"}
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            One bank payment with multiple supplier / invoice allocations.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <FormInput
+            label="Date"
+            type="date"
+            required
+            value={form.date}
+            onChange={(e) => setForm((c) => ({ ...c, date: e.target.value }))}
+          />
+          <SearchableSelect
+            label="Bank"
+            value={form.bankAccountId}
+            options={bankAccounts}
+            onChange={(bankAccountId) => setForm((c) => ({ ...c, bankAccountId }))}
+            getOptionLabel={(account) => formatAccountLabel(account)}
+            placeholder="Select bank account…"
+          />
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 dark:border-emerald-800 dark:bg-emerald-950/40 xl:col-span-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+              Grand Total
+            </p>
+            <p className="mt-1 text-2xl font-bold text-emerald-900 dark:text-emerald-200">
+              {formatDecimal(grandTotal)}
+            </p>
+          </div>
+        </div>
+
+        <FormInput
+          label="Remarks"
+          value={form.remarks}
+          onChange={(e) => setForm((c) => ({ ...c, remarks: e.target.value }))}
+        />
+      </Card>
+
+      <Card className="space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+            Payment Lines
+          </h3>
           <Button
-            variant="secondary"
             type="button"
-            onClick={() => navigate("/purchase-bank-payments")}
+            variant="secondary"
+            onClick={() => setLines((current) => [...current, createEmptyLine()])}
           >
-            {" "}
-            Back to list{" "}
-          </Button>{" "}
-        </div>{" "}
-        <form className="space-y-5" onSubmit={handleSubmit}>
-          {" "}
-          <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
-            {" "}
-            <FormInput
-              label="Date *"
-              type="date"
-              required
-              value={form.date}
-              onChange={(e) => handleChange("date", e.target.value)}
-            />{" "}
-            <div className="space-y-1">
-              {" "}
-              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 dark:text-slate-500">
-                {" "}
-                Supplier <span className="text-rose-500">*</span>{" "}
-              </label>{" "}
-              <select
-                className={selectClassName}
-                value={form.supplierId}
-                onChange={(e) => handleSupplierChange(e.target.value)}
-              >
-                {" "}
-                <option value="">Select Supplier</option>{" "}
-                {suppliers.map((supplier) => (
-                  <option key={supplier.id} value={supplier.id}>
-                    {" "}
-                    {supplier.business_name}{" "}
-                  </option>
-                ))}{" "}
-              </select>{" "}
-            </div>{" "}
-            <div className="space-y-1">
-              {" "}
-              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 dark:text-slate-500">
-                {" "}
-                Reference PI <span className="text-rose-500">*</span>{" "}
-              </label>{" "}
-              <select
-                className={selectClassName}
-                value={form.purchaseInvoiceId}
-                onChange={(e) => handleInvoiceChange(e.target.value)}
-                disabled={!form.supplierId}
-              >
-                {" "}
-                <option value="">Select Purchase Invoice</option>{" "}
-                {invoiceOptions.map((invoice) => (
-                  <option key={invoice.id} value={invoice.id}>
-                    {" "}
-                    {invoice.invoice_number} | Balance{" "}
-                    {formatDecimal(invoice.balance_amount)}{" "}
-                  </option>
-                ))}{" "}
-              </select>{" "}
-            </div>{" "}
-            <div className="space-y-1">
-              {" "}
-              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 dark:text-slate-500">
-                {" "}
-                COA Bank <span className="text-rose-500">*</span>{" "}
-              </label>{" "}
-              <select
-                className={selectClassName}
-                value={form.bankAccountId}
-                onChange={(e) => handleChange("bankAccountId", e.target.value)}
-              >
-                {" "}
-                <option value="">Select Bank Account</option>{" "}
-                {bankAccounts.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {" "}
-                    {formatAccountLabel(account)}{" "}
-                  </option>
-                ))}{" "}
-              </select>{" "}
-            </div>{" "}
-            <FormInput
-              label="Net Amount *"
-              type="number"
-              min="0.01"
-              step="0.01"
-              required
-              value={form.amount}
-              onChange={(e) => handleChange("amount", e.target.value)}
-            />{" "}
-            <FormInput
-              label="Remarks"
-              placeholder="Optional notes for this payment"
-              value={form.remarks}
-              onChange={(e) => handleChange("remarks", e.target.value)}
-            />{" "}
-          </div>{" "}
-          <div className="grid gap-3 grid-cols-1 md:grid-cols-4">
-            {" "}
-            <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 px-4 py-4">
-              {" "}
-              <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                Invoice Net
-              </p>{" "}
-              <p className="mt-1 text-lg font-bold text-slate-800 dark:text-slate-100">
-                {" "}
-                {formatDecimal(selectedInvoice?.net_amount || 0)}{" "}
-              </p>{" "}
-            </div>{" "}
-            <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 px-4 py-4">
-              {" "}
-              <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                Returned
-              </p>{" "}
-              <p className="mt-1 text-lg font-bold text-slate-800 dark:text-slate-100">
-                {" "}
-                {formatDecimal(selectedInvoice?.returned_amount || 0)}{" "}
-              </p>{" "}
-            </div>{" "}
-            <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 px-4 py-4">
-              {" "}
-              <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                Already Paid
-              </p>{" "}
-              <p className="mt-1 text-lg font-bold text-slate-800 dark:text-slate-100">
-                {" "}
-                {formatDecimal(selectedInvoice?.paid_amount || 0)}{" "}
-              </p>{" "}
-            </div>{" "}
-            <div className="rounded-2xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/40 px-4 py-4">
-              {" "}
-              <p className="text-xs uppercase tracking-wide text-blue-500">
-                Invoice Balance
-              </p>{" "}
-              <p className="mt-1 text-xl font-extrabold text-blue-700 dark:text-blue-300">
-                {" "}
-                {formatDecimal(selectedInvoice?.balance_amount || 0)}{" "}
-              </p>{" "}
-            </div>{" "}
-          </div>{" "}
-          <div className="flex justify-end border-t border-slate-100 dark:border-slate-700 pt-4">
-            {" "}
-            <Button type="submit" disabled={submitting}>
-              {" "}
-              {submitting
-                ? "Saving..."
-                : editingId
-                  ? "Update Bank Payment"
-                  : "Save Bank Payment"}{" "}
-            </Button>{" "}
-          </div>{" "}
-        </form>{" "}
-      </Card>{" "}
-    </div>
+            Add Row
+          </Button>
+        </div>
+
+        <div className="overflow-x-auto rounded-[24px] border border-slate-200 dark:border-slate-700">
+          <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-700">
+            <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-900/60">
+              <tr>
+                <th className="px-3 py-3">Supplier</th>
+                <th className="px-3 py-3">Reference PI</th>
+                <th className="px-3 py-3 text-right">Actual Amount</th>
+                <th className="px-3 py-3 text-right">Remaining</th>
+                <th className="px-3 py-3 text-right">Amount</th>
+                <th className="px-3 py-3" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white dark:divide-slate-700 dark:bg-slate-800">
+              {lines.map((line, index) => {
+                const selectedInvoice = (line.invoiceOptions || []).find(
+                  (invoice) => invoice.id === line.purchaseInvoiceId,
+                );
+                return (
+                  <tr key={line.key}>
+                    <td className="px-3 py-3 min-w-[220px]">
+                      <SearchableSelect
+                        value={line.supplierId}
+                        options={suppliers}
+                        onChange={(supplierId) => {
+                          updateLine(index, {
+                            supplierId,
+                            purchaseInvoiceId: "",
+                            amount: "0",
+                          });
+                          loadInvoiceOptionsForLine(index, supplierId);
+                        }}
+                        getOptionLabel={(supplier) =>
+                          supplier.business_name || "Supplier"
+                        }
+                        placeholder="Supplier…"
+                      />
+                    </td>
+                    <td className="px-3 py-3 min-w-[240px]">
+                      <SearchableSelect
+                        value={line.purchaseInvoiceId}
+                        options={line.invoiceOptions || []}
+                        onChange={(purchaseInvoiceId) => {
+                          const invoice = (line.invoiceOptions || []).find(
+                            (item) => item.id === purchaseInvoiceId,
+                          );
+                          updateLine(index, {
+                            purchaseInvoiceId,
+                            amount: String(invoice?.balance_amount ?? "0"),
+                          });
+                        }}
+                        getOptionLabel={(invoice) => invoice.invoice_number}
+                        placeholder="Select PI…"
+                      />
+                    </td>
+                    <td className="px-3 py-3 text-right tabular-nums text-slate-700 dark:text-slate-200">
+                      {selectedInvoice
+                        ? formatDecimal(selectedInvoice.net_amount)
+                        : "—"}
+                    </td>
+                    <td className="px-3 py-3 text-right tabular-nums text-slate-700 dark:text-slate-200">
+                      {selectedInvoice
+                        ? formatDecimal(selectedInvoice.balance_amount)
+                        : "—"}
+                    </td>
+                    <td className="px-3 py-3 min-w-[120px]">
+                      <FormInput
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={line.amount}
+                        onChange={(e) => updateLine(index, { amount: e.target.value })}
+                      />
+                    </td>
+                    <td className="px-3 py-3">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        disabled={lines.length === 1}
+                        onClick={() =>
+                          setLines((current) => current.filter((_, i) => i !== index))
+                        }
+                      >
+                        Remove
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      <div className="flex justify-end gap-3">
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => navigate("/purchase-bank-payments")}
+        >
+          Cancel
+        </Button>
+        <Button type="submit" disabled={submitting}>
+          {submitting ? "Saving…" : editingId ? "Update Payment" : "Save Payment"}
+        </Button>
+      </div>
+    </form>
   );
 };
+
 export default CreateUpdatePurchaseBankPayment;

@@ -553,8 +553,8 @@ class PurchaseBankPaymentViewSet(viewsets.ModelViewSet):
     filter_backends = [filters.SearchFilter]
     search_fields = [
         "payment_number",
-        "purchase_invoice__invoice_number",
-        "supplier__business_name",
+        "lines__purchase_invoice__invoice_number",
+        "lines__supplier__business_name",
         "bank_account__name",
         "remarks",
     ]
@@ -565,8 +565,13 @@ class PurchaseBankPaymentViewSet(viewsets.ModelViewSet):
                 **get_request_tenant_filter(self.request),
                 deleted_at__isnull=True,
             )
-            .select_related("supplier", "purchase_invoice", "bank_account")
+            .select_related("bank_account")
+            .prefetch_related(
+                "lines__supplier",
+                "lines__purchase_invoice",
+            )
             .order_by("-date", "-created_at")
+            .distinct()
         )
 
     def _get_serializable_payment(self, payment_id):
@@ -630,15 +635,20 @@ class PurchaseBankPaymentViewSet(viewsets.ModelViewSet):
             return Response({"data": []})
 
         current_payment = None
+        current_invoice_ids = set()
         if payment_id:
             try:
-                current_payment = PurchaseBankPayment.objects.select_related("purchase_invoice").get(
+                current_payment = PurchaseBankPayment.objects.prefetch_related("lines").get(
                     id=payment_id,
                     tenant_id=tenant_id,
                     deleted_at__isnull=True,
                 )
             except PurchaseBankPayment.DoesNotExist:
                 raise ValidationError({"payment_id": "Purchase bank payment not found for this tenant."})
+            current_invoice_ids = {
+                line.purchase_invoice_id
+                for line in current_payment.lines.filter(deleted_at__isnull=True)
+            }
 
         invoices = (
             PurchaseInvoice.objects.filter(
@@ -656,7 +666,7 @@ class PurchaseBankPaymentViewSet(viewsets.ModelViewSet):
                 invoice,
                 excluded_payment_ids=excluded_payment_ids,
             )
-            include_current_invoice = current_payment and current_payment.purchase_invoice_id == invoice.id
+            include_current_invoice = invoice.id in current_invoice_ids
             if financials["balance_amount"] <= Decimal("0.00") and not include_current_invoice:
                 continue
 

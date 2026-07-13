@@ -29,6 +29,7 @@ from inventory.services import (
 )
 from sales.models import (
     SalesBankReceipt,
+    SalesBankReceiptLine,
     SalesInvoice,
     SalesInvoiceLine,
     SalesOrder,
@@ -680,8 +681,8 @@ class SalesBankReceiptViewSet(viewsets.ModelViewSet):
     filter_backends = [filters.SearchFilter]
     search_fields = [
         "receipt_number",
-        "sales_invoice__invoice_number",
-        "customer__business_name",
+        "lines__sales_invoice__invoice_number",
+        "lines__customer__business_name",
         "bank_account__name",
         "remarks",
     ]
@@ -692,14 +693,20 @@ class SalesBankReceiptViewSet(viewsets.ModelViewSet):
                 **get_shared_tenant_filter(self.request),
                 deleted_at__isnull=True,
             )
-            .select_related("customer", "sales_invoice", "bank_account")
-            .select_related("salesman")
+            .select_related("bank_account")
+            .prefetch_related(
+                "lines__customer",
+                "lines__sales_invoice",
+                "lines__salesman",
+                "lines__party_opening_balance",
+            )
             .order_by("-date", "-created_at")
+            .distinct()
         )
         return filter_queryset_by_allowed_salesmen(
             queryset,
             self.request.user,
-            field_name="sales_invoice__salesman_id",
+            field_name="lines__sales_invoice__salesman_id",
         )
 
     def _get_serializable_receipt(self, receipt_id):
@@ -770,17 +777,28 @@ class SalesBankReceiptViewSet(viewsets.ModelViewSet):
 
         shared_filter = get_shared_tenant_filter(request)
         current_receipt = None
+        current_invoice_ids = set()
+        current_opening_ids = set()
         if receipt_id:
             try:
-                current_receipt = SalesBankReceipt.objects.select_related("sales_invoice").get(
+                current_receipt = SalesBankReceipt.objects.prefetch_related(
+                    "lines__sales_invoice",
+                ).get(
                     id=receipt_id,
                     tenant_id__in=shared_filter["tenant_id__in"],
                     deleted_at__isnull=True,
                 )
             except SalesBankReceipt.DoesNotExist:
                 raise ValidationError({"receipt_id": "Sales bank receipt not found."})
-            if not user_can_access_salesman(request.user, current_receipt.sales_invoice.salesman_id):
-                raise ValidationError({"receipt_id": "Sales bank receipt not found."})
+            for line in current_receipt.lines.filter(deleted_at__isnull=True):
+                if line.sales_invoice_id:
+                    current_invoice_ids.add(line.sales_invoice_id)
+                    if not user_can_access_salesman(
+                        request.user, line.sales_invoice.salesman_id if line.sales_invoice else None
+                    ):
+                        raise ValidationError({"receipt_id": "Sales bank receipt not found."})
+                if line.party_opening_balance_id:
+                    current_opening_ids.add(line.party_opening_balance_id)
 
         invoices = (
             SalesInvoice.objects.filter(
@@ -800,13 +818,13 @@ class SalesBankReceiptViewSet(viewsets.ModelViewSet):
                 invoice,
                 excluded_receipt_ids=excluded_receipt_ids,
             )
-            include_current_invoice = current_receipt and current_receipt.sales_invoice_id == invoice.id
+            include_current_invoice = invoice.id in current_invoice_ids
             if financials["balance_amount"] <= Decimal("0.00") and not include_current_invoice:
                 continue
 
             payload.append(
                 {
-                    "receipt_against": SalesBankReceipt.ReceiptAgainst.INVOICE,
+                    "receipt_against": SalesBankReceiptLine.ReceiptAgainst.INVOICE,
                     "id": str(invoice.id),
                     "invoice_number": invoice.invoice_number,
                     "date": invoice.date,
@@ -835,11 +853,7 @@ class SalesBankReceiptViewSet(viewsets.ModelViewSet):
             deleted_at__isnull=True,
         )
         for opening in opening_qs:
-            include_current_opening = (
-                current_receipt
-                and current_receipt.receipt_against == SalesBankReceipt.ReceiptAgainst.OPENING_BALANCE
-                and current_receipt.party_opening_balance_id == opening.id
-            )
+            include_current_opening = opening.id in current_opening_ids
             excluded_ids = [current_receipt.id] if current_receipt else []
             opening_financials = get_customer_opening_balance_financials(
                 opening,
@@ -850,7 +864,7 @@ class SalesBankReceiptViewSet(viewsets.ModelViewSet):
 
             payload.append(
                 {
-                    "receipt_against": SalesBankReceipt.ReceiptAgainst.OPENING_BALANCE,
+                    "receipt_against": SalesBankReceiptLine.ReceiptAgainst.OPENING_BALANCE,
                     "id": str(opening.id),
                     "invoice_number": "Opening Balance",
                     "date": opening.date,

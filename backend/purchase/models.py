@@ -135,16 +135,6 @@ class PurchaseReturnLine(BaseModel):
 class PurchaseBankPayment(BaseModel):
     payment_number = models.CharField(max_length=50)
     date = models.DateField()
-    supplier = models.ForeignKey(
-        Supplier,
-        on_delete=models.PROTECT,
-        related_name="purchase_bank_payments",
-    )
-    purchase_invoice = models.ForeignKey(
-        PurchaseInvoice,
-        on_delete=models.PROTECT,
-        related_name="bank_payments",
-    )
     bank_account = models.ForeignKey(
         Account,
         on_delete=models.PROTECT,
@@ -165,3 +155,28 @@ class PurchaseBankPayment(BaseModel):
 
     def __str__(self):
         return self.payment_number
+
+
+class PurchaseBankPaymentLine(BaseModel):
+    payment = models.ForeignKey(
+        PurchaseBankPayment,
+        on_delete=models.CASCADE,
+        related_name="lines",
+    )
+    supplier = models.ForeignKey(
+        Supplier,
+        on_delete=models.PROTECT,
+        related_name="purchase_bank_payment_lines",
+    )
+    purchase_invoice = models.ForeignKey(
+        PurchaseInvoice,
+        on_delete=models.PROTECT,
+        related_name="bank_payment_lines",
+    )
+    amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+
+    class Meta:
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"{self.payment.payment_number} - {self.purchase_invoice.invoice_number}"
