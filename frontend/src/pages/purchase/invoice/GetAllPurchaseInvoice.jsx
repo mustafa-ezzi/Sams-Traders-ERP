@@ -313,27 +313,26 @@ const GetAllPurchaseInvoice = () => {
                         </td>{" "}
                         <td className="px-4 py-3 text-right">
                           {" "}
-                          <div className="inline-flex justify-end gap-1">
-                            {" "}
+                          <div className="inline-flex flex-nowrap items-center justify-end gap-1 whitespace-nowrap">
                             <DimensionPrintButtons
                               dimensions={printDimensions}
                               recordId={record.id}
                               disabled={printLoadingId === record.id}
                               onPrint={handleOpenPrint}
-                            />{" "}
+                            />
                             <IconButton
-                              icon="pencil"
+                              icon="edit"
                               label="Edit invoice"
                               onClick={() =>
                                 navigate(`/purchase-invoices/${record.id}/edit`)
                               }
-                            />{" "}
+                            />
                             <IconButton
-                              icon="trash"
+                              icon="delete"
                               label="Delete invoice"
                               onClick={() => setDeleteId(record.id)}
-                            />{" "}
-                          </div>{" "}
+                            />
+                          </div>
                         </td>{" "}
                       </tr>
                     );

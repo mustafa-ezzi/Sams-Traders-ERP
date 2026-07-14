@@ -296,7 +296,7 @@ const GetAllSalesInvoice = () => {
                         {formatDecimal(record.balanceAmount)}{" "}
                       </td>{" "}
                       <td className="px-4 py-3">
-                        <div className="flex flex-wrap items-center gap-2">
+                        <div className="inline-flex flex-nowrap items-center gap-1 whitespace-nowrap">
                           <DimensionPrintButtons
                             dimensions={printDimensions}
                             recordId={record.id}
@@ -304,19 +304,19 @@ const GetAllSalesInvoice = () => {
                             onPrint={handleOpenPrint}
                           />
                           <IconButton
-                            icon="pencil"
+                            icon="edit"
                             label="Edit invoice"
                             onClick={() =>
                               navigate(`/sales-invoices/${record.id}/edit`)
                             }
-                          />{" "}
+                          />
                           <IconButton
-                            icon="trash"
+                            icon="delete"
                             label="Delete invoice"
                             onClick={() => setDeleteId(record.id)}
-                          />{" "}
+                          />
                         </div>
-                      </td>{" "}
+                      </td>
                     </tr>
                   ))}{" "}
                 </tbody>{" "}
