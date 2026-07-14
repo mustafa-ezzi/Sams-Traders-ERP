@@ -36,7 +36,8 @@ const PRINT_STYLE = `
       max-height: none !important;
       padding: 0 !important;
     }
-    .cl-print-sheet {
+    .cl-print-sheet,
+    .inv-print-sheet {
       box-shadow: none !important;
       border-radius: 0 !important;
       max-width: none !important;
@@ -52,6 +53,7 @@ const PRINT_STYLE = `
 const PrintPreviewShell = ({
   title = "Print preview",
   subtitle = "",
+  documentTitle = "",
   onClose,
   children,
 }) => {
@@ -71,6 +73,15 @@ const PrintPreviewShell = ({
       document.body.style.overflow = prevOverflow;
     };
   }, [onClose]);
+
+  useEffect(() => {
+    if (!documentTitle) return undefined;
+    const previousTitle = document.title;
+    document.title = documentTitle;
+    return () => {
+      document.title = previousTitle;
+    };
+  }, [documentTitle]);
 
   return createPortal(
     <>

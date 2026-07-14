@@ -8,10 +8,18 @@ export const formatDecimal = (value) => {
   return numberValue.toFixed(2);
 };
 
-/** Default PDF / browser save-as filename for a sales invoice print. */
-export const salesInvoicePdfTitle = (invoiceNumber) => {
-  const code = String(invoiceNumber ?? "").trim() || "Draft";
-  return `Sams Enterprise - INV# ${code}`;
+/** @deprecated Prefer invoiceDownloadFilename from InvoicePrintLayout */
+export const salesInvoicePdfTitle = (invoiceNumber, businessName = "Invoice") => {
+  const slug =
+    String(businessName || "Invoice")
+      .trim()
+      .replace(/[^\w\s-]/g, "")
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "") || "Invoice";
+  const digits = String(invoiceNumber || "").match(/(\d+)/g);
+  const seq = digits?.length ? digits[digits.length - 1] : "0001";
+  return `${slug}-${seq}`;
 };
 
 /** e.g. 30000 -> "30,000.00", 300000 -> "300,000.00" */

@@ -1,4 +1,5 @@
 import PrintPreviewShell from "../print/PrintPreviewShell";
+import { invoiceDownloadFilename } from "../print/InvoicePrintLayout";
 import SalesInvoicePrintDocument from "./SalesInvoicePrintDocument";
 
 const SalesInvoicePrintModal = ({
@@ -12,10 +13,12 @@ const SalesInvoicePrintModal = ({
 
   const invNo =
     invoice?.invoice_number ?? invoice?.invoiceNumber ?? "Sales invoice";
+  const downloadName = invoiceDownloadFilename(company?.name, invNo);
 
   return (
     <PrintPreviewShell
       title={`Print preview · ${invNo}`}
+      documentTitle={invoice ? downloadName : ""}
       onClose={onClose}
     >
       {loading ? (

@@ -5,7 +5,7 @@ import StateView from "../../components/StateView";
 import SalesInvoicePrintDocument from "../../components/sales/SalesInvoicePrintDocument";
 import salesInvoiceService from "../../api/services/salesInvoiceService";
 import dimensionService from "../../api/services/dimensionService";
-import { salesInvoicePdfTitle } from "../../utils/format";
+import { invoiceDownloadFilename } from "../../components/print/InvoicePrintLayout";
 import { dimensionToCompanyConfig } from "../../utils/dimensionCompany";
 import { formatDisplayDate } from "./invoice/salesInvoiceShared";
 
@@ -65,16 +65,16 @@ const SalesInvoicePrintPage = () => {
   }, [dimensionCode]);
 
   useEffect(() => {
-    if (!invoice) return undefined;
+    if (!invoice || !company) return undefined;
 
     const invNo = invoice.invoice_number ?? invoice.invoiceNumber ?? "";
     const previousTitle = document.title;
-    document.title = salesInvoicePdfTitle(invNo);
+    document.title = invoiceDownloadFilename(company.name, invNo);
 
     return () => {
       document.title = previousTitle;
     };
-  }, [invoice]);
+  }, [invoice, company]);
 
   const handleClose = () => {
     if (window.opener) {
@@ -112,7 +112,8 @@ const SalesInvoicePrintPage = () => {
               padding: 0 !important;
               background: white !important;
             }
-            .si-print-sheet {
+            .si-print-sheet,
+            .inv-print-sheet {
               box-shadow: none !important;
               border: none !important;
               border-radius: 0 !important;

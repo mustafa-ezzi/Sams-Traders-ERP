@@ -5,6 +5,7 @@ import StateView from "../../components/StateView";
 import PurchaseInvoicePrintDocument from "../../components/purchase/PurchaseInvoicePrintDocument";
 import purchaseInvoiceService from "../../api/services/purchaseInvoiceService";
 import dimensionService from "../../api/services/dimensionService";
+import { invoiceDownloadFilename } from "../../components/print/InvoicePrintLayout";
 import { dimensionToCompanyConfig } from "../../utils/dimensionCompany";
 import { formatDisplayDate } from "./invoice/purchaseInvoiceShared";
 
@@ -64,14 +65,14 @@ const PurchaseInvoicePrintPage = () => {
   }, [dimensionCode]);
 
   useEffect(() => {
-    if (!invoice) return undefined;
+    if (!invoice || !company) return undefined;
     const invNo = invoice.invoice_number ?? invoice.invoiceNumber ?? "";
     const previousTitle = document.title;
-    document.title = invNo ? `Purchase Invoice ${invNo}` : "Purchase Invoice";
+    document.title = invoiceDownloadFilename(company.name, invNo);
     return () => {
       document.title = previousTitle;
     };
-  }, [invoice]);
+  }, [invoice, company]);
 
   const handleClose = () => {
     if (window.opener) {
@@ -105,7 +106,8 @@ const PurchaseInvoicePrintPage = () => {
               padding: 0 !important;
               background: white !important;
             }
-            .pi-print-sheet {
+            .pi-print-sheet,
+            .inv-print-sheet {
               box-shadow: none !important;
               border: none !important;
               border-radius: 0 !important;
