@@ -1449,7 +1449,6 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
                         }
                     )
                 opening_allocated[str(opening_balance.id)] = already + amount
-                salesman_id = None
                 sales_invoice_id = None
             else:
                 if not sales_invoice_id:

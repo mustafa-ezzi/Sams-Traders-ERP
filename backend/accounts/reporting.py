@@ -1265,10 +1265,11 @@ def build_salesman_performance_report(
     """
     Salesman performance for a date range:
     - Sales commission from invoices dated in the period (with a salesman assigned).
-    - Recovery commission from bank receipts dated in the period on invoiced sales.
+    - Recovery commission from bank receipts dated in the period on invoiced sales
+      and opening-balance collections (when a salesman is assigned on the receipt line).
 
-    Amounts are allocated to dimensions from invoice line tenant_id (product dimension),
-    not only the invoice header tenant_id.
+    Invoice amounts are allocated to dimensions from invoice line tenant_id (product
+    dimension). Opening-balance receipts use the receipt line tenant_id.
     """
     from sales.models import SalesBankReceiptLine, SalesInvoice, SalesInvoiceLine
     from sales.services import get_sales_invoice_financials
@@ -1294,7 +1295,7 @@ def build_salesman_performance_report(
     elif salesman_ids:
         invoices = invoices.filter(salesman_id__in=salesman_ids)
 
-    receipt_lines = (
+    invoice_receipt_lines = (
         SalesBankReceiptLine.objects.filter(
             deleted_at__isnull=True,
             receipt__deleted_at__isnull=True,
@@ -1302,6 +1303,7 @@ def build_salesman_performance_report(
             receipt__date__lte=to_date,
             sales_invoice__isnull=False,
             sales_invoice__deleted_at__isnull=True,
+            receipt_against=SalesBankReceiptLine.ReceiptAgainst.INVOICE,
         )
         .filter(
             Q(sales_invoice__tenant_id__in=tenant_ids)
@@ -1325,15 +1327,40 @@ def build_salesman_performance_report(
         .order_by("receipt__date", "receipt__receipt_number", "created_at")
     )
     if salesman_id:
-        receipt_lines = receipt_lines.filter(
+        invoice_receipt_lines = invoice_receipt_lines.filter(
             Q(salesman_id=salesman_id)
             | Q(salesman_id__isnull=True, sales_invoice__salesman_id=salesman_id)
         )
     elif salesman_ids:
-        receipt_lines = receipt_lines.filter(
+        invoice_receipt_lines = invoice_receipt_lines.filter(
             Q(salesman_id__in=salesman_ids)
             | Q(salesman_id__isnull=True, sales_invoice__salesman_id__in=salesman_ids)
         )
+
+    opening_receipt_lines = (
+        SalesBankReceiptLine.objects.filter(
+            deleted_at__isnull=True,
+            receipt__deleted_at__isnull=True,
+            receipt__date__gte=from_date,
+            receipt__date__lte=to_date,
+            salesman_id__isnull=False,
+            receipt_against=SalesBankReceiptLine.ReceiptAgainst.OPENING_BALANCE,
+            party_opening_balance__isnull=False,
+        )
+        .filter(Q(tenant_id__in=tenant_ids) | Q(receipt__tenant_id__in=tenant_ids))
+        .select_related(
+            "salesman",
+            "customer",
+            "receipt",
+            "party_opening_balance",
+        )
+        .distinct()
+        .order_by("receipt__date", "receipt__receipt_number", "created_at")
+    )
+    if salesman_id:
+        opening_receipt_lines = opening_receipt_lines.filter(salesman_id=salesman_id)
+    elif salesman_ids:
+        opening_receipt_lines = opening_receipt_lines.filter(salesman_id__in=salesman_ids)
 
     def _ensure_salesman_row(salesman, tenant_id):
         key = (tenant_id, str(salesman.id))
@@ -1422,7 +1449,7 @@ def build_salesman_performance_report(
                 }
             )
 
-    for receipt_line in receipt_lines:
+    for receipt_line in invoice_receipt_lines:
         invoice = receipt_line.sales_invoice
         salesman = receipt_line.salesman or invoice.salesman
         if not salesman:
@@ -1480,6 +1507,56 @@ def build_salesman_performance_report(
                     "recovery_commission_amount": str(recovery_commission),
                 }
             )
+
+    for receipt_line in opening_receipt_lines:
+        salesman = receipt_line.salesman
+        if not salesman:
+            continue
+
+        dimension_tenant_id = (
+            receipt_line.tenant_id
+            or getattr(receipt_line.party_opening_balance, "tenant_id", None)
+            or receipt_line.receipt.tenant_id
+        )
+        if dimension_tenant_id not in tenant_ids:
+            continue
+
+        counted_receipt_ids.add(receipt_line.receipt_id)
+        row = _ensure_salesman_row(salesman, dimension_tenant_id)
+        receipt_amount = _money(receipt_line.amount)
+        recovery_rate = _money(receipt_line.recovery_commission_rate)
+        recovery_commission = _money(receipt_line.recovery_commission_amount)
+        if recovery_commission <= 0 and recovery_rate > 0:
+            recovery_commission = _money((receipt_amount * recovery_rate) / Decimal("100"))
+
+        row["receipt_count"] += 1
+        row["collected_amount"] = _money(row["collected_amount"] + receipt_amount)
+        row["recovery_commission"] = _money(row["recovery_commission"] + recovery_commission)
+
+        total_collected = _money(total_collected + receipt_amount)
+        total_recovery_commission = _money(total_recovery_commission + recovery_commission)
+
+        receipt_detail_rows.append(
+            {
+                "receipt_id": str(receipt_line.receipt_id),
+                "receipt_number": receipt_line.receipt.receipt_number,
+                "receipt_date": receipt_line.receipt.date.isoformat(),
+                "invoice_id": "",
+                "invoice_number": "Opening Balance",
+                "invoice_date": "",
+                "salesman_id": str(salesman.id),
+                "salesman_code": salesman.code,
+                "salesman_name": salesman.name,
+                "customer_name": (
+                    receipt_line.customer.business_name or receipt_line.customer.name or ""
+                ),
+                "tenant_id": dimension_tenant_id,
+                "dimension_name": row["dimension_name"],
+                "receipt_amount": str(receipt_amount),
+                "recovery_commission_rate": str(recovery_rate),
+                "recovery_commission_amount": str(recovery_commission),
+            }
+        )
 
     salesman_rows = []
     for row in salesman_map.values():

@@ -316,7 +316,7 @@ const CreateUpdateSalesBankReceipt = () => {
             ? line.partyOpeningBalanceId || null
             : null,
         salesman_id:
-          line.receiptAgainst === "INVOICE" ? line.salesmanId || null : null,
+          line.salesmanId || null,
         tenant_id: line.tenantId,
         bank_account_id: line.bankAccountId,
         amount: String(toNumber(line.amount).toFixed(2)),
@@ -528,7 +528,6 @@ const CreateUpdateSalesBankReceipt = () => {
                     <td className="px-3 py-3 min-w-[160px]">
                       <SearchableSelect
                         value={line.salesmanId}
-                        disabled={line.receiptAgainst === "OPENING_BALANCE"}
                         options={salesmen}
                         onChange={(salesmanId) =>
                           updateLine(index, { salesmanId })
