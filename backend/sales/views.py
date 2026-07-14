@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import DecimalField, Exists, ExpressionWrapper, F, OuterRef, Prefetch, Q, Subquery, Sum, Value
+from django.db.models import Count, DecimalField, Exists, ExpressionWrapper, F, Min, OuterRef, Prefetch, Q, Subquery, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils.timezone import now
 from rest_framework import filters, status, viewsets
@@ -679,7 +679,20 @@ class SalesBankReceiptViewSet(viewsets.ModelViewSet):
     serializer_class = SalesBankReceiptSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
-    filter_backends = [filters.SearchFilter]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    ordering_fields = [
+        "receipt_number",
+        "date",
+        "tenant_id",
+        "bank_account__name",
+        "bank_account__code",
+        "amount",
+        "_line_count",
+        "_recovery_commission_amount",
+        "_customer_name",
+        "_reference_name",
+    ]
+    ordering = ["-date", "-created_at"]
     search_fields = [
         "receipt_number",
         "lines__sales_invoice__invoice_number",
@@ -689,6 +702,7 @@ class SalesBankReceiptViewSet(viewsets.ModelViewSet):
     ]
 
     def get_queryset(self):
+        active_lines = Q(lines__deleted_at__isnull=True)
         queryset = (
             SalesBankReceipt.objects.filter(
                 **get_shared_tenant_filter(self.request),
@@ -701,7 +715,25 @@ class SalesBankReceiptViewSet(viewsets.ModelViewSet):
                 "lines__salesman",
                 "lines__party_opening_balance",
             )
-            .order_by("-date", "-created_at")
+            .annotate(
+                _line_count=Count("lines", filter=active_lines, distinct=True),
+                _recovery_commission_amount=Coalesce(
+                    Sum(
+                        "lines__recovery_commission_amount",
+                        filter=active_lines,
+                    ),
+                    Value(0),
+                    output_field=DecimalField(max_digits=12, decimal_places=2),
+                ),
+                _customer_name=Min(
+                    "lines__customer__business_name",
+                    filter=active_lines,
+                ),
+                _reference_name=Min(
+                    "lines__sales_invoice__invoice_number",
+                    filter=active_lines,
+                ),
+            )
             .distinct()
         )
         return filter_queryset_by_allowed_salesmen(

@@ -5,9 +5,11 @@ import Button from "../../../components/ui/Button";
 import FormInput from "../../../components/ui/FormInput";
 import ConfirmModal from "../../../components/ui/ConfirmModal";
 import StateView from "../../../components/StateView";
+import SortableHeader from "../../../components/ui/SortableHeader";
 import purchaseBankPaymentService from "../../../api/services/purchaseBankPaymentService";
 import { formatDecimal } from "../../../utils/format";
 import { useToast } from "../../../context/ToastContext";
+
 const extractErrorMessage = (error) => {
   const data = error?.response?.data;
   if (!data) return "Something went wrong";
@@ -23,6 +25,22 @@ const extractErrorMessage = (error) => {
   }
   return "Something went wrong";
 };
+
+const orderingFields = {
+  payment: "payment_number",
+  date: "date",
+  supplier: "_supplier_name",
+  reference: "_reference_name",
+  lines: "_line_count",
+  bank: "bank_account__name",
+  amount: "amount",
+};
+
+const getOrdering = (sortConfig) => {
+  const field = orderingFields[sortConfig.key] || "date";
+  return sortConfig.direction === "desc" ? `-${field}` : field;
+};
+
 const GetAllPurchaseBankPayment = () => {
   const navigate = useNavigate();
   const toast = useToast();
@@ -33,8 +51,17 @@ const GetAllPurchaseBankPayment = () => {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [deleteId, setDeleteId] = useState("");
+  const [sortConfig, setSortConfig] = useState({
+    key: "date",
+    direction: "desc",
+  });
   const limit = 10;
-  const loadPayments = async (nextPage = page, nextSearch = search) => {
+
+  const loadPayments = async (
+    nextPage = page,
+    nextSearch = search,
+    nextSortConfig = sortConfig,
+  ) => {
     setLoading(true);
     setError("");
     try {
@@ -42,6 +69,7 @@ const GetAllPurchaseBankPayment = () => {
         page: nextPage,
         limit,
         search: nextSearch,
+        ordering: getOrdering(nextSortConfig),
       });
       setRecords(response.data || []);
       setTotal(response.total || 0);
@@ -55,9 +83,24 @@ const GetAllPurchaseBankPayment = () => {
       setLoading(false);
     }
   };
+
   useEffect(() => {
-    loadPayments(1, "");
+    loadPayments(1, "", sortConfig);
   }, []);
+
+  const handleSort = (key) => {
+    const nextSortConfig = {
+      key,
+      direction:
+        sortConfig.key === key && sortConfig.direction === "asc"
+          ? "desc"
+          : "asc",
+    };
+    setSortConfig(nextSortConfig);
+    setPage(1);
+    loadPayments(1, search, nextSortConfig);
+  };
+
   const confirmDelete = async () => {
     try {
       const response = await purchaseBankPaymentService.remove(deleteId);
@@ -65,7 +108,7 @@ const GetAllPurchaseBankPayment = () => {
         response.message || "Purchase bank payment deleted successfully",
       );
       setDeleteId("");
-      await loadPayments(page, search);
+      await loadPayments(page, search, sortConfig);
     } catch (deleteError) {
       toast.error(
         extractErrorMessage(deleteError) ||
@@ -73,110 +116,129 @@ const GetAllPurchaseBankPayment = () => {
       );
     }
   };
+
   return (
     <div className="space-y-6">
-      {" "}
       <Card className="space-y-4">
-        {" "}
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          {" "}
           <div>
-            {" "}
             <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
               Bank Payments
-            </h2>{" "}
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400 dark:text-slate-500">
-              {" "}
-              Review, edit, and remove supplier bank payment documents.{" "}
-            </p>{" "}
-          </div>{" "}
+            </h2>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Review, edit, and remove supplier bank payment documents.
+            </p>
+          </div>
           <div className="flex flex-wrap items-center gap-2">
-            {" "}
             <Link to="/purchase-bank-payments/create">
-              {" "}
-              <Button type="button">New payment</Button>{" "}
-            </Link>{" "}
+              <Button type="button">New payment</Button>
+            </Link>
             <FormInput
               placeholder="Search payment, supplier, invoice, bank"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-            />{" "}
+            />
             <Button
               variant="secondary"
               onClick={() => {
                 setPage(1);
-                loadPayments(1, search);
+                loadPayments(1, search, sortConfig);
               }}
             >
-              {" "}
-              Search{" "}
-            </Button>{" "}
-          </div>{" "}
-        </div>{" "}
+              Search
+            </Button>
+          </div>
+        </div>
         <StateView
           loading={loading}
           error={error}
           isEmpty={!loading && !error && records.length === 0}
           emptyMessage="No bank payments found yet."
         >
-          {" "}
           <div className="overflow-hidden rounded-[24px] border border-slate-200 dark:border-slate-700">
-            {" "}
             <div className="overflow-x-auto">
-              {" "}
               <table className="min-w-full divide-y divide-slate-200 text-sm">
-                {" "}
-                <thead className="bg-slate-50 dark:bg-slate-900/60 text-left text-xs font-bold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400 dark:text-slate-500">
-                  {" "}
+                <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.2em] text-slate-500 dark:bg-slate-900/60 dark:text-slate-400">
                   <tr>
-                    {" "}
-                    <th className="px-4 py-3">Payment</th>{" "}
-                    <th className="px-4 py-3">Date</th>{" "}
-                    <th className="px-4 py-3">Supplier(s)</th>{" "}
-                    <th className="px-4 py-3">Reference PI(s)</th>{" "}
-                    <th className="px-4 py-3">Lines</th>{" "}
-                    <th className="px-4 py-3">Bank</th>{" "}
-                    <th className="px-4 py-3">Amount</th>{" "}
-                    <th className="px-4 py-3">Actions</th>{" "}
-                  </tr>{" "}
-                </thead>{" "}
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800">
-                  {" "}
+                    <SortableHeader
+                      className="px-4 py-3"
+                      label="Payment"
+                      sortKey="payment"
+                      sortConfig={sortConfig}
+                      onSort={handleSort}
+                    />
+                    <SortableHeader
+                      className="px-4 py-3"
+                      label="Date"
+                      sortKey="date"
+                      sortConfig={sortConfig}
+                      onSort={handleSort}
+                    />
+                    <SortableHeader
+                      className="px-4 py-3"
+                      label="Supplier(s)"
+                      sortKey="supplier"
+                      sortConfig={sortConfig}
+                      onSort={handleSort}
+                    />
+                    <SortableHeader
+                      className="px-4 py-3"
+                      label="Reference PI(s)"
+                      sortKey="reference"
+                      sortConfig={sortConfig}
+                      onSort={handleSort}
+                    />
+                    <SortableHeader
+                      className="px-4 py-3"
+                      label="Lines"
+                      sortKey="lines"
+                      sortConfig={sortConfig}
+                      onSort={handleSort}
+                    />
+                    <SortableHeader
+                      className="px-4 py-3"
+                      label="Bank"
+                      sortKey="bank"
+                      sortConfig={sortConfig}
+                      onSort={handleSort}
+                    />
+                    <SortableHeader
+                      className="px-4 py-3"
+                      label="Amount"
+                      sortKey="amount"
+                      sortConfig={sortConfig}
+                      onSort={handleSort}
+                    />
+                    <th className="px-4 py-3">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white dark:divide-slate-700 dark:bg-slate-800">
                   {records.map((record) => (
                     <tr key={record.id}>
-                      {" "}
                       <td className="px-4 py-3 font-semibold text-slate-900 dark:text-slate-100">
-                        {" "}
-                        {record.payment_number}{" "}
-                      </td>{" "}
+                        {record.payment_number}
+                      </td>
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
                         {record.date}
-                      </td>{" "}
+                      </td>
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
-                        {" "}
-                        {record.supplierSummary || "-"}{" "}
-                      </td>{" "}
+                        {record.supplierSummary || "-"}
+                      </td>
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
-                        {" "}
-                        {record.referenceSummary || "-"}{" "}
-                      </td>{" "}
+                        {record.referenceSummary || "-"}
+                      </td>
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
-                        {" "}
-                        {record.lineCount || 0}{" "}
-                      </td>{" "}
+                        {record.lineCount || 0}
+                      </td>
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
-                        {" "}
                         {record.bank_account?.code} -{" "}
-                        {record.bank_account?.name}{" "}
-                      </td>{" "}
+                        {record.bank_account?.name}
+                      </td>
                       <td className="px-4 py-3 font-semibold text-slate-800 dark:text-slate-100">
-                        {" "}
-                        {formatDecimal(record.amount)}{" "}
-                      </td>{" "}
+                        {formatDecimal(record.amount)}
+                      </td>
                       <td className="px-4 py-3">
-                        {" "}
                         <div className="flex gap-2">
-                          {" "}
                           <Button
                             variant="secondary"
                             onClick={() =>
@@ -185,59 +247,54 @@ const GetAllPurchaseBankPayment = () => {
                               )
                             }
                           >
-                            {" "}
-                            Edit{" "}
-                          </Button>{" "}
+                            Edit
+                          </Button>
                           <Button
                             variant="danger"
                             onClick={() => setDeleteId(record.id)}
                           >
-                            {" "}
-                            Delete{" "}
-                          </Button>{" "}
-                        </div>{" "}
-                      </td>{" "}
+                            Delete
+                          </Button>
+                        </div>
+                      </td>
                     </tr>
-                  ))}{" "}
-                </tbody>{" "}
-              </table>{" "}
-            </div>{" "}
-          </div>{" "}
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
           {total > limit ? (
             <div className="flex items-center justify-end gap-3">
-              {" "}
               <Button
                 variant="secondary"
                 disabled={page <= 1}
-                onClick={() => loadPayments(page - 1, search)}
+                onClick={() => loadPayments(page - 1, search, sortConfig)}
               >
-                {" "}
-                Previous{" "}
-              </Button>{" "}
-              <span className="text-sm font-medium text-slate-500 dark:text-slate-400 dark:text-slate-500">
-                {" "}
-                Page {page} of {Math.max(1, Math.ceil(total / limit))}{" "}
-              </span>{" "}
+                Previous
+              </Button>
+              <span className="text-sm font-medium text-slate-500 dark:text-slate-400">
+                Page {page} of {Math.max(1, Math.ceil(total / limit))}
+              </span>
               <Button
                 variant="secondary"
                 disabled={page >= Math.ceil(total / limit)}
-                onClick={() => loadPayments(page + 1, search)}
+                onClick={() => loadPayments(page + 1, search, sortConfig)}
               >
-                {" "}
-                Next{" "}
-              </Button>{" "}
+                Next
+              </Button>
             </div>
-          ) : null}{" "}
-        </StateView>{" "}
-      </Card>{" "}
+          ) : null}
+        </StateView>
+      </Card>
       <ConfirmModal
         open={Boolean(deleteId)}
         title="Delete Bank Payment"
         description="This will remove the bank payment and restore balances on the linked purchase invoices."
         onCancel={() => setDeleteId("")}
         onConfirm={confirmDelete}
-      />{" "}
+      />
     </div>
   );
 };
+
 export default GetAllPurchaseBankPayment;

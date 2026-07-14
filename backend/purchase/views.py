@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import DecimalField, ExpressionWrapper, F, OuterRef, Prefetch, Q, Subquery, Sum, Value
+from django.db.models import Count, DecimalField, ExpressionWrapper, F, Min, OuterRef, Prefetch, Q, Subquery, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils.timezone import now
 from rest_framework import filters, status, viewsets
@@ -552,7 +552,18 @@ class PurchaseBankPaymentViewSet(viewsets.ModelViewSet):
     serializer_class = PurchaseBankPaymentSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
-    filter_backends = [filters.SearchFilter]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    ordering_fields = [
+        "payment_number",
+        "date",
+        "bank_account__name",
+        "bank_account__code",
+        "amount",
+        "_line_count",
+        "_supplier_name",
+        "_reference_name",
+    ]
+    ordering = ["-date", "-created_at"]
     search_fields = [
         "payment_number",
         "lines__purchase_invoice__invoice_number",
@@ -562,6 +573,7 @@ class PurchaseBankPaymentViewSet(viewsets.ModelViewSet):
     ]
 
     def get_queryset(self):
+        active_lines = Q(lines__deleted_at__isnull=True)
         return (
             PurchaseBankPayment.objects.filter(
                 **get_request_tenant_filter(self.request),
@@ -572,7 +584,17 @@ class PurchaseBankPaymentViewSet(viewsets.ModelViewSet):
                 "lines__supplier",
                 "lines__purchase_invoice",
             )
-            .order_by("-date", "-created_at")
+            .annotate(
+                _line_count=Count("lines", filter=active_lines, distinct=True),
+                _supplier_name=Min(
+                    "lines__supplier__business_name",
+                    filter=active_lines,
+                ),
+                _reference_name=Min(
+                    "lines__purchase_invoice__invoice_number",
+                    filter=active_lines,
+                ),
+            )
             .distinct()
         )
 
