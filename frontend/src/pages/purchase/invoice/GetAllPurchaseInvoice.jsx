@@ -8,6 +8,7 @@ import StateView from "../../../components/StateView";
 import PageSizeSelect from "../../../components/ui/PageSizeSelect";
 import SortableHeader from "../../../components/ui/SortableHeader";
 import purchaseInvoiceService from "../../../api/services/purchaseInvoiceService";
+import dimensionService from "../../../api/services/dimensionService";
 import { formatDecimal } from "../../../utils/format";
 import { useToast } from "../../../context/ToastContext";
 import { useAuth } from "../../../context/AuthContext";
@@ -39,9 +40,12 @@ const getOrdering = (sortConfig) => {
 const GetAllPurchaseInvoice = () => {
   const navigate = useNavigate();
   const toast = useToast();
-  const { allowedDimensions } = useAuth();
+  const { allowedDimensions, tenantId } = useAuth();
   const printDimensions = useMemo(
-    () => (allowedDimensions || []).filter((dimension) => dimension.is_active),
+    () =>
+      (allowedDimensions || []).filter(
+        (dimension) => dimension?.code && dimension.is_active !== false,
+      ),
     [allowedDimensions],
   );
   const [records, setRecords] = useState([]);
@@ -103,19 +107,36 @@ const GetAllPurchaseInvoice = () => {
   const handleOpenPrint = async (recordId, dimensionCode) => {
     printCancelledRef.current = false;
     setPrintLoadingId(recordId);
-    const dimension = printDimensions.find((item) => item.code === dimensionCode);
+    const dimension =
+      printDimensions.find((item) => item.code === dimensionCode) ||
+      printDimensions.find((item) => item.code === tenantId) ||
+      printDimensions[0] ||
+      (dimensionCode || tenantId
+        ? { code: dimensionCode || tenantId, name: dimensionCode || tenantId }
+        : null);
     setPrintModal({
       loading: true,
       invoice: null,
       company: dimensionToCompanyConfig(dimension),
     });
     try {
+      let companyDimension = dimension;
+      try {
+        const items = await dimensionService.list();
+        const match =
+          (items || []).find((item) => item.code === dimension?.code) ||
+          (items || []).find((item) => item.code === tenantId) ||
+          (items || [])[0];
+        if (match) companyDimension = match;
+      } catch {
+        // Keep login dimension if lookup fails.
+      }
       const inv = await purchaseInvoiceService.getById(recordId);
       if (printCancelledRef.current) return;
       setPrintModal({
         loading: false,
         invoice: inv,
-        company: dimensionToCompanyConfig(dimension),
+        company: dimensionToCompanyConfig(companyDimension),
       });
     } catch (printError) {
       if (!printCancelledRef.current) {

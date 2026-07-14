@@ -275,7 +275,10 @@ const PurchaseInvoicePage = () => {
   const toast = useToast();
   const { allowedDimensions } = useAuth();
   const printDimensions = useMemo(
-    () => (allowedDimensions || []).filter((dimension) => dimension.is_active),
+    () =>
+      (allowedDimensions || []).filter(
+        (dimension) => dimension?.code && dimension.is_active !== false,
+      ),
     [allowedDimensions],
   );
   const [records, setRecords] = useState([]);
