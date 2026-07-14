@@ -142,7 +142,7 @@ const GetAllPurchaseInvoice = () => {
       if (!printCancelledRef.current) {
         toast.error(
           extractErrorMessage(printError) ||
-            "Could not load invoice for printing",
+          "Could not load invoice for printing",
         );
         setPrintModal(null);
       }
@@ -322,14 +322,14 @@ const GetAllPurchaseInvoice = () => {
                               onPrint={handleOpenPrint}
                             />{" "}
                             <IconButton
-                              icon="edit"
+                              icon="pencil"
                               label="Edit invoice"
                               onClick={() =>
                                 navigate(`/purchase-invoices/${record.id}/edit`)
                               }
                             />{" "}
                             <IconButton
-                              icon="delete"
+                              icon="trash"
                               label="Delete invoice"
                               onClick={() => setDeleteId(record.id)}
                             />{" "}
@@ -349,29 +349,29 @@ const GetAllPurchaseInvoice = () => {
               disabled={loading}
             />
             {total > limit ? (
-            <div className="flex items-center justify-end gap-3">
-              {" "}
-              <Button
-                variant="secondary"
-                disabled={page <= 1}
-                onClick={() => loadInvoices(page - 1, search)}
-              >
+              <div className="flex items-center justify-end gap-3">
                 {" "}
-                Previous{" "}
-              </Button>{" "}
-              <span className="text-sm font-medium text-slate-500 dark:text-slate-400 dark:text-slate-500">
-                {" "}
-                Page {page} of {Math.max(1, Math.ceil(total / limit))}{" "}
-              </span>{" "}
-              <Button
-                variant="secondary"
-                disabled={page >= Math.ceil(total / limit)}
-                onClick={() => loadInvoices(page + 1, search)}
-              >
-                {" "}
-                Next{" "}
-              </Button>{" "}
-            </div>
+                <Button
+                  variant="secondary"
+                  disabled={page <= 1}
+                  onClick={() => loadInvoices(page - 1, search)}
+                >
+                  {" "}
+                  Previous{" "}
+                </Button>{" "}
+                <span className="text-sm font-medium text-slate-500 dark:text-slate-400 dark:text-slate-500">
+                  {" "}
+                  Page {page} of {Math.max(1, Math.ceil(total / limit))}{" "}
+                </span>{" "}
+                <Button
+                  variant="secondary"
+                  disabled={page >= Math.ceil(total / limit)}
+                  onClick={() => loadInvoices(page + 1, search)}
+                >
+                  {" "}
+                  Next{" "}
+                </Button>{" "}
+              </div>
             ) : null}{" "}
           </div>
         </StateView>{" "}
