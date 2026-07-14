@@ -2070,6 +2070,7 @@ class ExpenseViewSet(ModelViewSet):
         "lines__bank_account__code",
         "lines__expense_account__name",
         "lines__expense_account__code",
+        "lines__description",
         "remarks",
     ]
 

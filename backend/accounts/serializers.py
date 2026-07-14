@@ -658,6 +658,12 @@ class ExpenseLineSerializer(serializers.Serializer):
     bank_account_id = serializers.UUIDField(write_only=True)
     expense_account = AccountMiniSerializer(read_only=True, required=False)
     expense_account_id = serializers.UUIDField(write_only=True)
+    description = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=255,
+        default="",
+    )
     amount = serializers.DecimalField(max_digits=12, decimal_places=2)
 
     def get_dimension_name(self, obj):
@@ -669,6 +675,7 @@ class ExpenseLineSerializer(serializers.Serializer):
         data["bank_account_id"] = str(instance.bank_account_id)
         data["expense_account_id"] = str(instance.expense_account_id)
         data["tenant_id"] = instance.tenant_id
+        data["description"] = instance.description or ""
         return data
 
     def validate_amount(self, value):
@@ -969,6 +976,7 @@ class ExpenseSerializer(serializers.ModelSerializer):
                     "tenant_id": line_tenant_id,
                     "bank_account_id": bank_account_id,
                     "expense_account_id": expense_account_id,
+                    "description": str(line.get("description") or "").strip()[:255],
                     "amount": amount,
                 }
             )

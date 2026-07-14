@@ -707,6 +707,11 @@ def _build_expense_lines(expense):
         bank_tenant_id = bank_account.tenant_id
         line_tenant_id = expense_line.tenant_id or bank_tenant_id
         amount = quantize_money(expense_line.amount)
+        description = (expense_line.description or "").strip()
+        expense_label = description or "Expense"
+        payment_label = (
+            f"Expense Payment - {description}" if description else "Expense Payment"
+        )
         lines.extend(
             [
                 {
@@ -714,14 +719,14 @@ def _build_expense_lines(expense):
                     "tenant_id": line_tenant_id,
                     "debit": amount,
                     "credit": Decimal("0.00"),
-                    "line_description": "Expense",
+                    "line_description": expense_label,
                 },
                 {
                     "account": bank_account,
                     "tenant_id": bank_tenant_id,
                     "debit": Decimal("0.00"),
                     "credit": amount,
-                    "line_description": "Expense Payment",
+                    "line_description": payment_label,
                 },
             ]
         )

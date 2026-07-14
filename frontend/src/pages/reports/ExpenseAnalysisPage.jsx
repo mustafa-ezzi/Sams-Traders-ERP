@@ -128,17 +128,19 @@ const ExpenseAnalysisPage = () => {
                         <th className="px-4 py-3">Date</th>
                         <th className="px-4 py-3">Account</th>
                         <th className="px-4 py-3">Bank</th>
+                        <th className="px-4 py-3">Description</th>
                         {showDimension ? <th className="px-4 py-3">Dimension</th> : null}
                         <th className="px-4 py-3 text-right">Amount</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 bg-white dark:divide-slate-700 dark:bg-slate-800">
-                      {(report.detail_rows || []).map((row) => (
-                        <tr key={row.expense_id}>
+                      {(report.detail_rows || []).map((row, index) => (
+                        <tr key={`${row.expense_id}-${index}`}>
                           <td className="px-4 py-3 font-semibold">{row.expense_number}</td>
                           <td className="px-4 py-3">{row.date}</td>
                           <td className="px-4 py-3">{row.account_code} — {row.account_name}</td>
                           <td className="px-4 py-3">{row.bank_account_name}</td>
+                          <td className="px-4 py-3">{row.description || "-"}</td>
                           {showDimension ? <td className="px-4 py-3">{row.dimension_name}</td> : null}
                           <td className="px-4 py-3 text-right">{formatDecimal(row.amount)}</td>
                         </tr>

@@ -360,6 +360,7 @@ class ExpenseLine(BaseModel):
         on_delete=models.PROTECT,
         related_name="expense_entries",
     )
+    description = models.CharField(max_length=255, blank=True, default="")
     amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
 
     class Meta:

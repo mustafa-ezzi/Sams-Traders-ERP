@@ -2243,6 +2243,7 @@ def build_expense_analysis_report(tenant_ids, from_date, to_date):
                 "tenant_id": line_tenant_id,
                 "dimension_name": dimension_names.get(line_tenant_id, line_tenant_id),
                 "amount": str(amount),
+                "description": line.description or "",
                 "remarks": expense.remarks or "",
             }
         )

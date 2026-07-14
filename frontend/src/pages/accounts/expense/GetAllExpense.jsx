@@ -122,6 +122,7 @@ const GetAllExpense = () => {
                     <th className="px-4 py-3">Dimension</th>
                     <th className="px-4 py-3">Bank</th>
                     <th className="px-4 py-3">Expense COA</th>
+                    <th className="px-4 py-3">Description</th>
                     <th className="px-4 py-3">Amount</th>
                     <th className="px-4 py-3">Remarks</th>
                     <th className="px-4 py-3">Actions</th>
@@ -144,6 +145,9 @@ const GetAllExpense = () => {
                       </td>
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
                         {record.expenseSummary || "-"}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
+                        {record.descriptionSummary || "-"}
                       </td>
                       <td className="px-4 py-3 font-semibold text-slate-800 dark:text-slate-100">
                         {formatDecimal(record.amount)}

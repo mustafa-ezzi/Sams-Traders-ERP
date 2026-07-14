@@ -22,6 +22,7 @@ const createEmptyLine = (tenantId = "") => ({
   tenantId: tenantId || "",
   bankAccountId: "",
   expenseAccountId: "",
+  description: "",
   amount: "0",
   bankAccounts: [],
   expenseAccounts: [],
@@ -167,6 +168,7 @@ const CreateUpdateExpense = () => {
           tenantId: line.tenantId,
           bankAccountId: line.bankAccountId,
           expenseAccountId: line.expenseAccountId,
+          description: line.description || "",
           amount: String(line.amount ?? 0),
         }));
         setLines(mappedLines.length ? mappedLines : [createEmptyLine()]);
@@ -242,6 +244,7 @@ const CreateUpdateExpense = () => {
       tenant_id: line.tenantId,
       bank_account_id: line.bankAccountId,
       expense_account_id: line.expenseAccountId,
+      description: line.description || "",
       amount: toNumber(line.amount),
     })),
   });
@@ -373,6 +376,7 @@ const CreateUpdateExpense = () => {
                 <th className="px-3 py-3">Dimension</th>
                 <th className="px-3 py-3">Bank</th>
                 <th className="px-3 py-3">Expense (COA)</th>
+                <th className="px-3 py-3">Expense Description</th>
                 <th className="px-3 py-3 text-right">Net Amount</th>
                 <th className="px-3 py-3" />
               </tr>
@@ -433,6 +437,17 @@ const CreateUpdateExpense = () => {
                         </option>
                       ))}
                     </select>
+                  </td>
+                  <td className="px-3 py-3 min-w-[220px]">
+                    <input
+                      type="text"
+                      className={selectClassName}
+                      value={line.description}
+                      placeholder="What is this expense for?"
+                      onChange={(e) =>
+                        updateLine(index, { description: e.target.value })
+                      }
+                    />
                   </td>
                   <td className="px-3 py-3 min-w-[140px]">
                     <input

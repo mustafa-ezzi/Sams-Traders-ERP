@@ -7,6 +7,7 @@ const mapExpenseLine = (line) => ({
   tenantId: line.tenant_id || "",
   bankAccountId: line.bank_account?.id || line.bank_account_id || "",
   expenseAccountId: line.expense_account?.id || line.expense_account_id || "",
+  description: line.description || "",
   amount: line.amount ?? 0,
 });
 
@@ -16,6 +17,11 @@ const mapExpense = (expense) => ({
   bankSummary: expense.bank_summary || "",
   expenseSummary: expense.expense_summary || "",
   dimensionSummary: expense.dimension_summary || "",
+  descriptionSummary: (expense.lines || [])
+    .map((line) => line.description)
+    .filter(Boolean)
+    .filter((value, index, all) => all.indexOf(value) === index)
+    .join(", "),
   lineCount: expense.line_count ?? (expense.lines || []).length,
   amount: expense.amount ?? 0,
 });
