@@ -16,6 +16,8 @@ import dimensionService from "../../../api/services/dimensionService";
 import { formatDecimal } from "../../../utils/format";
 import { useToast } from "../../../context/ToastContext";
 import { useAuth } from "../../../context/AuthContext";
+import IconButton from "../../../components/ui/IconButton";
+
 const extractErrorMessage = (error) => {
   const data = error?.response?.data;
   if (!data) return "Something went wrong";
@@ -144,7 +146,7 @@ const GetAllSalesInvoice = () => {
       if (!printCancelledRef.current) {
         toast.error(
           extractErrorMessage(printError) ||
-            "Could not load invoice for printing",
+          "Could not load invoice for printing",
         );
         setPrintModal(null);
       }
@@ -294,27 +296,25 @@ const GetAllSalesInvoice = () => {
                         {formatDecimal(record.balanceAmount)}{" "}
                       </td>{" "}
                       <td className="px-4 py-3">
-                          <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <DimensionPrintButtons
                             dimensions={printDimensions}
                             recordId={record.id}
                             disabled={printLoadingId === record.id}
                             onPrint={handleOpenPrint}
                           />
-                          <Button
-                            variant="secondary"
+                          <IconButton
+                            icon="pencil"
+                            label="Edit invoice"
                             onClick={() =>
                               navigate(`/sales-invoices/${record.id}/edit`)
                             }
-                          >
-                            Edit
-                          </Button>
-                          <Button
-                            variant="danger"
+                          />{" "}
+                          <IconButton
+                            icon="trash"
+                            label="Delete invoice"
                             onClick={() => setDeleteId(record.id)}
-                          >
-                            Delete
-                          </Button>
+                          />{" "}
                         </div>
                       </td>{" "}
                     </tr>
@@ -330,29 +330,29 @@ const GetAllSalesInvoice = () => {
               disabled={loading}
             />
             {total > limit ? (
-            <div className="flex items-center justify-end gap-3">
-              {" "}
-              <Button
-                variant="secondary"
-                disabled={page <= 1}
-                onClick={() => loadInvoices(page - 1, search)}
-              >
+              <div className="flex items-center justify-end gap-3">
                 {" "}
-                Previous{" "}
-              </Button>{" "}
-              <span className="text-sm font-medium text-slate-500 dark:text-slate-400 dark:text-slate-500">
-                {" "}
-                Page {page} of {Math.max(1, Math.ceil(total / limit))}{" "}
-              </span>{" "}
-              <Button
-                variant="secondary"
-                disabled={page >= Math.ceil(total / limit)}
-                onClick={() => loadInvoices(page + 1, search)}
-              >
-                {" "}
-                Next{" "}
-              </Button>{" "}
-            </div>
+                <Button
+                  variant="secondary"
+                  disabled={page <= 1}
+                  onClick={() => loadInvoices(page - 1, search)}
+                >
+                  {" "}
+                  Previous{" "}
+                </Button>{" "}
+                <span className="text-sm font-medium text-slate-500 dark:text-slate-400 dark:text-slate-500">
+                  {" "}
+                  Page {page} of {Math.max(1, Math.ceil(total / limit))}{" "}
+                </span>{" "}
+                <Button
+                  variant="secondary"
+                  disabled={page >= Math.ceil(total / limit)}
+                  onClick={() => loadInvoices(page + 1, search)}
+                >
+                  {" "}
+                  Next{" "}
+                </Button>{" "}
+              </div>
             ) : null}{" "}
           </div>
         </StateView>{" "}
