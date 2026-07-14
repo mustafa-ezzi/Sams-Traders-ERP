@@ -1,21 +1,37 @@
 import axiosInstance from "../axiosInstance";
 import { createAcrossDimensions } from "../createAcrossDimensions";
 
+const tenantHeader = (tenantId = "") => {
+  if (!tenantId) {
+    return {};
+  }
+  if (Array.isArray(tenantId)) {
+    const codes = [...new Set(tenantId.filter(Boolean))];
+    if (!codes.length) {
+      return {};
+    }
+    return {
+      "x-tenant-id": codes[0],
+      "x-tenant-ids": codes.join(","),
+    };
+  }
+  return {
+    "x-tenant-id": tenantId,
+    "x-tenant-ids": tenantId,
+  };
+};
+
 const productService = {
   async list(params, tenantId = "") {
     const response = await axiosInstance.get("/inventory/products", {
       params,
-      headers: tenantId
-        ? { "x-tenant-id": tenantId, "x-tenant-ids": tenantId }
-        : {},
+      headers: tenantHeader(tenantId),
     });
     return response.data;
   },
   async getById(id, tenantId = "") {
     const response = await axiosInstance.get(`/inventory/products/${id}/`, {
-      headers: tenantId
-        ? { "x-tenant-id": tenantId, "x-tenant-ids": tenantId }
-        : {},
+      headers: tenantHeader(tenantId),
     });
     return response.data;
   },

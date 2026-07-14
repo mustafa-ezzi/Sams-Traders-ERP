@@ -4,48 +4,21 @@ import Button from "../../components/ui/Button";
 import FormInput from "../../components/ui/FormInput";
 import SearchableSelect from "../../components/ui/SearchableSelect";
 import StateView from "../../components/StateView";
-import axiosInstance from "../../api/axiosInstance";
 import accountService from "../../api/services/accountService";
+import customerService from "../../api/services/customerService";
 import dimensionService from "../../api/services/dimensionService";
+import supplierService from "../../api/services/supplierService";
 import { flattenAccountTree, formatAccountLabel } from "../../utils/accounts";
 import { formatDecimal } from "../../utils/format";
 import { useToast } from "../../context/ToastContext";
 import { useAuth } from "../../context/AuthContext";
 import ReportPrintWrapper from "../../components/print/ReportPrintWrapper";
-
-const selectClassName =
-  "w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100";
-
-const extractErrorMessage = (error) => {
-  const data = error?.response?.data;
-
-  if (!data) {
-    return "Something went wrong";
-  }
-
-  if (typeof data === "string") {
-    return data;
-  }
-
-  if (data.message) {
-    return data.message;
-  }
-
-  if (typeof data.detail === "string") {
-    return data.detail;
-  }
-
-  const fieldEntry = Object.entries(data).find(
-    ([, value]) => typeof value === "string" || Array.isArray(value),
-  );
-
-  if (fieldEntry) {
-    const [, value] = fieldEntry;
-    return Array.isArray(value) ? value.join(", ") : value;
-  }
-
-  return "Something went wrong";
-};
+import {
+  extractErrorMessage,
+  fetchAllForTenant,
+  resolveReportTenant,
+  selectClassName,
+} from "./shared/reportHelpers";
 
 const LedgerReportsPage = () => {
   const toast = useToast();
@@ -141,75 +114,77 @@ const LedgerReportsPage = () => {
   }, []);
 
   useEffect(() => {
-    const fetchWithTenant = async (url, selectedTenant) => {
-      const response = await axiosInstance.get(url, {
-        headers: { "x-tenant-id": selectedTenant },
-      });
-      return response.data;
-    };
-
-    const mergeUniqueParties = (responses) => {
+    const mergeUniqueParties = (parties) => {
       const seen = new Set();
-      return responses
-        .flatMap((response) => response.data || [])
-        .filter((party) => {
-          const key = `${party.business_name}|${party.account || ""}`;
-          if (seen.has(key)) {
-            return false;
-          }
-          seen.add(key);
-          return true;
-        });
+      return parties.filter((party) => {
+        const key = `${party.business_name}|${party.account || ""}`;
+        if (seen.has(key)) {
+          return false;
+        }
+        seen.add(key);
+        return true;
+      });
     };
 
     const loadSetup = async () => {
+      if (!form.tenantScope) {
+        return;
+      }
+      // Wait for dimensions when "All Dimensions" so bank COA can include every tenant.
+      if (form.tenantScope === "BOTH" && !dimensions.length) {
+        return;
+      }
+
       setLoadingSetup(true);
       setError("");
       try {
+        const accountsTenant = resolveReportTenant(
+          form.tenantScope,
+          tenantId,
+          dimensions,
+        );
+        const accountsResponse = await accountService.list({}, accountsTenant);
+        setAccountTree(
+          Array.isArray(accountsResponse)
+            ? accountsResponse
+            : accountsResponse.data || [],
+        );
+
         if (form.tenantScope === "BOTH") {
-          const activeDimensionCodes = dimensions.map((item) => item.code);
-          const [accountsResponse, ...dimensionResponses] = await Promise.all([
-            fetchWithTenant("/accounts/accounts/", tenantId),
-            ...activeDimensionCodes.flatMap((dimensionCode) => [
-              fetchWithTenant("/inventory/suppliers", dimensionCode),
-              fetchWithTenant("/inventory/customers", dimensionCode),
-            ]),
-          ]);
-
-          const supplierResponses = dimensionResponses.filter(
-            (_, index) => index % 2 === 0,
+          const partiesByDimension = await Promise.all(
+            dimensions.map(async (dimension) => {
+              const [suppliersForDim, customersForDim] = await Promise.all([
+                fetchAllForTenant(supplierService, dimension.code),
+                fetchAllForTenant(customerService, dimension.code),
+              ]);
+              return { suppliersForDim, customersForDim };
+            }),
           );
-          const customerResponses = dimensionResponses.filter(
-            (_, index) => index % 2 === 1,
+          setSuppliers(
+            mergeUniqueParties(
+              partiesByDimension.flatMap((item) => item.suppliersForDim),
+            ),
           );
-
-          setAccountTree(
-            Array.isArray(accountsResponse)
-              ? accountsResponse
-              : accountsResponse.data || [],
+          setCustomers(
+            mergeUniqueParties(
+              partiesByDimension.flatMap((item) => item.customersForDim),
+            ),
           );
-          setSuppliers(mergeUniqueParties(supplierResponses));
-          setCustomers(mergeUniqueParties(customerResponses));
         } else {
-          const [accountsResponse, supplierResponse, customerResponse] =
-            await Promise.all([
-              fetchWithTenant("/accounts/accounts/", form.tenantScope),
-              fetchWithTenant("/inventory/suppliers", form.tenantScope),
-              fetchWithTenant("/inventory/customers", form.tenantScope),
-            ]);
-
-          setAccountTree(
-            Array.isArray(accountsResponse)
-              ? accountsResponse
-              : accountsResponse.data || [],
-          );
-          setSuppliers(supplierResponse.data || []);
-          setCustomers(customerResponse.data || []);
+          const [supplierRows, customerRows] = await Promise.all([
+            fetchAllForTenant(supplierService, form.tenantScope),
+            fetchAllForTenant(customerService, form.tenantScope),
+          ]);
+          setSuppliers(supplierRows);
+          setCustomers(customerRows);
         }
       } catch (loadError) {
         setError(
           extractErrorMessage(loadError) || "Failed to load report filters",
         );
+        setAccountTree([]);
+        setSuppliers([]);
+        setCustomers([]);
       } finally {
         setLoadingSetup(false);
       }

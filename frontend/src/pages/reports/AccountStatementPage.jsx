@@ -14,6 +14,7 @@ import ReportPrintWrapper from "../../components/print/ReportPrintWrapper";
 import DimensionScopeField from "./shared/DimensionScopeField";
 import {
   extractErrorMessage,
+  resolveReportTenant,
   scopeLabel,
   startOfYear,
   todayIso,
@@ -46,11 +47,17 @@ const AccountStatementPage = () => {
 
   useEffect(() => {
     const loadAccounts = async () => {
+      if (!form.tenantScope) {
+        return;
+      }
+      if (form.tenantScope === "BOTH" && !dimensions.length) {
+        return;
+      }
       setLoadingSetup(true);
       try {
         const response = await accountService.list(
           {},
-          form.tenantScope === "BOTH" ? tenantId : form.tenantScope,
+          resolveReportTenant(form.tenantScope, tenantId, dimensions),
         );
         setAccountTree(Array.isArray(response) ? response : response.data || []);
       } catch {
@@ -60,7 +67,7 @@ const AccountStatementPage = () => {
       }
     };
     loadAccounts();
-  }, [form.tenantScope, tenantId]);
+  }, [dimensions, form.tenantScope, tenantId]);
 
   const handleGenerate = async (event) => {
     event.preventDefault();

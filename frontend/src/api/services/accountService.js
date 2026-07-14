@@ -1,9 +1,24 @@
 import axiosInstance from "../axiosInstance";
 
-const tenantHeader = (selectedTenant = "") =>
-  selectedTenant
-    ? { "x-tenant-id": selectedTenant, "x-tenant-ids": selectedTenant }
-    : {};
+const tenantHeader = (selectedTenant = "") => {
+  if (!selectedTenant) {
+    return {};
+  }
+  if (Array.isArray(selectedTenant)) {
+    const codes = [...new Set(selectedTenant.filter(Boolean))];
+    if (!codes.length) {
+      return {};
+    }
+    return {
+      "x-tenant-id": codes[0],
+      "x-tenant-ids": codes.join(","),
+    };
+  }
+  return {
+    "x-tenant-id": selectedTenant,
+    "x-tenant-ids": selectedTenant,
+  };
+};
 
 const accountService = {
   async list(params, selectedTenant = "") {

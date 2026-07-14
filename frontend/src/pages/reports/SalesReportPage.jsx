@@ -14,41 +14,16 @@ import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import ReportPrintWrapper from "../../components/print/ReportPrintWrapper";
 import { formatDecimal } from "../../utils/format";
-
-const selectClassName =
-  "w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-800/90 dark:text-slate-100 dark:focus:ring-blue-900/40";
+import {
+  extractErrorMessage,
+  fetchAllForTenant,
+  resolveReportTenant,
+  selectClassName,
+} from "./shared/reportHelpers";
 
 const startOfMonth = () => {
   const now = new Date();
   return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
-};
-
-const extractErrorMessage = (error) => {
-  const data = error?.response?.data;
-  if (!data) return "Something went wrong";
-  if (typeof data === "string") return data;
-  if (data.message) return data.message;
-  if (typeof data.detail === "string") return data.detail;
-  const fieldEntry = Object.entries(data).find(
-    ([, value]) => typeof value === "string" || Array.isArray(value),
-  );
-  if (!fieldEntry) return "Something went wrong";
-  const [, value] = fieldEntry;
-  return Array.isArray(value) ? value.join(", ") : value;
-};
-
-const fetchAll = async (service, params = {}) => {
-  const limit = 100;
-  let page = 1;
-  let total = 0;
-  const rows = [];
-  do {
-    const response = await service.list({ page, limit, search: "", ...params });
-    rows.push(...(response.data || []));
-    total = response.total || rows.length;
-    page += 1;
-  } while (rows.length < total);
-  return rows;
 };
 
 const money = (value) => formatDecimal(value);
@@ -150,30 +125,60 @@ const SalesReportPage = () => {
   });
 
   useEffect(() => {
+    dimensionService
+      .list()
+      .then((items) => setDimensions(items || []))
+      .catch(() => setDimensions([]));
+  }, []);
+
+  useEffect(() => {
     const loadSetup = async () => {
+      if (!form.tenantScope) {
+        return;
+      }
+      if (form.tenantScope === "BOTH" && !dimensions.length) {
+        return;
+      }
       setLoadingSetup(true);
       try {
-        const [dimensionItems, customerItems, productItems, salesmanItems, warehouseItems] =
+        const scopeTenant = resolveReportTenant(
+          form.tenantScope,
+          tenantId,
+          dimensions,
+        );
+        const [customerItems, productItems, salesmanItems, warehouseItems] =
           await Promise.all([
-            dimensionService.list(),
-            fetchAll(customerService),
-            fetchAll(productService),
-            fetchAll(salesmanService),
-            fetchAll(warehouseService),
+            fetchAllForTenant(customerService, scopeTenant),
+            fetchAllForTenant(productService, scopeTenant),
+            fetchAllForTenant(salesmanService, scopeTenant),
+            fetchAllForTenant(warehouseService, scopeTenant),
           ]);
-        setDimensions(dimensionItems || []);
         setCustomers(customerItems);
         setProducts(productItems);
         setSalesmen(salesmanItems);
         setWarehouses(warehouseItems);
       } catch {
         toast.error("Failed to load report filters");
+        setCustomers([]);
+        setProducts([]);
+        setSalesmen([]);
+        setWarehouses([]);
       } finally {
         setLoadingSetup(false);
       }
     };
     loadSetup();
-  }, [toast]);
+  }, [dimensions, form.tenantScope, tenantId, toast]);
+
+  useEffect(() => {
+    setForm((current) => ({
+      ...current,
+      customerId: "",
+      productId: "",
+      salesmanId: "",
+      warehouseId: "",
+    }));
+  }, [form.tenantScope]);
 
   const handleChange = (field, value) => {
     setForm((current) => ({ ...current, [field]: value }));

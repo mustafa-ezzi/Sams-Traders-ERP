@@ -26,3 +26,26 @@ export const todayIso = () => new Date().toISOString().slice(0, 10);
 
 export const scopeLabel = (tenantScope) =>
   tenantScope === "BOTH" ? "All Dimensions" : tenantScope;
+
+/** Resolve API tenant header value from report dimension scope. */
+export const resolveReportTenant = (tenantScope, tenantId, dimensions = []) => {
+  if (tenantScope === "BOTH") {
+    const codes = dimensions.map((item) => item.code).filter(Boolean);
+    return codes.length ? codes : tenantId || "";
+  }
+  return tenantScope || tenantId || "";
+};
+
+export const fetchAllForTenant = async (service, tenant = "", params = {}) => {
+  const limit = 100;
+  let page = 1;
+  let total = 0;
+  const rows = [];
+  do {
+    const response = await service.list({ page, limit, search: "", ...params }, tenant);
+    rows.push(...(response.data || []));
+    total = response.total || rows.length;
+    page += 1;
+  } while (rows.length < total);
+  return rows;
+};
