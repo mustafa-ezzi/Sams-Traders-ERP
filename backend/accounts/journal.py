@@ -605,18 +605,21 @@ def _build_sales_return_lines(sales_return):
 
 def _build_sales_bank_receipt_lines(receipt):
     lines = []
-    bank_account = receipt.bank_account
-    bank_tenant_id = bank_account.tenant_id
     for receipt_line in receipt.lines.filter(deleted_at__isnull=True).select_related(
         "customer",
         "sales_invoice",
         "party_opening_balance",
+        "bank_account",
     ):
+        bank_account = receipt_line.bank_account
+        bank_tenant_id = bank_account.tenant_id
+        line_tenant_id = receipt_line.tenant_id or bank_tenant_id
+
         if (
             receipt_line.receipt_against == receipt_line.ReceiptAgainst.OPENING_BALANCE
             and receipt_line.party_opening_balance_id
         ):
-            ar_tenant_id = receipt_line.party_opening_balance.tenant_id
+            ar_tenant_id = receipt_line.party_opening_balance.tenant_id or line_tenant_id
             customer_account = _party_control_account_for_dimension(
                 receipt_line.customer,
                 "Customer",
@@ -644,37 +647,32 @@ def _build_sales_bank_receipt_lines(receipt):
             )
             continue
 
-        allocations = _allocate_invoice_amount_by_tenant(
-            receipt_line.sales_invoice,
-            receipt_line.amount,
-            _sales_invoice_weights(receipt_line.sales_invoice),
+        # Debit the selected line bank; credit AR in the line's dimension.
+        customer_account = _party_control_account_for_dimension(
+            receipt_line.customer,
+            "Customer",
+            line_tenant_id,
         )
-        lines.append(
-            {
-                "account": bank_account,
-                "tenant_id": bank_tenant_id,
-                "debit": receipt_line.amount,
-                "credit": Decimal("0.00"),
-                "line_description": "Bank Receipt",
-            }
-        )
-        for tenant_id, amount in allocations.items():
-            customer_account = _party_control_account_for_dimension(
-                receipt_line.customer,
-                "Customer",
-                tenant_id,
-            )
-            lines.append(
+        lines.extend(
+            [
+                {
+                    "account": bank_account,
+                    "tenant_id": bank_tenant_id,
+                    "debit": receipt_line.amount,
+                    "credit": Decimal("0.00"),
+                    "line_description": "Bank Receipt",
+                },
                 {
                     "account": customer_account,
-                    "tenant_id": tenant_id,
+                    "tenant_id": line_tenant_id,
                     "debit": Decimal("0.00"),
-                    "credit": amount,
+                    "credit": receipt_line.amount,
                     "line_description": "Customer Receipt",
                     "people_type": "Customer",
                     "people_name": receipt_line.customer.business_name,
-                }
-            )
+                },
+            ]
+        )
     return lines
 
 
@@ -1103,12 +1101,11 @@ def sync_all_journals():
         sync_sales_invoice_journal(invoice)
     for sales_return in SalesReturn.objects.filter(deleted_at__isnull=True).select_related("customer"):
         sync_sales_return_journal(sales_return)
-    for receipt in SalesBankReceipt.objects.filter(deleted_at__isnull=True).select_related(
-        "bank_account"
-    ).prefetch_related(
+    for receipt in SalesBankReceipt.objects.filter(deleted_at__isnull=True).prefetch_related(
         "lines__customer",
         "lines__sales_invoice",
         "lines__party_opening_balance",
+        "lines__bank_account",
     ):
         sync_sales_bank_receipt_journal(receipt)
     for expense in Expense.objects.filter(deleted_at__isnull=True).select_related("bank_account", "expense_account"):

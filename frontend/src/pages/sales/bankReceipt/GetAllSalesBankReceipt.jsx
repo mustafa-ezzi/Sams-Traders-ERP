@@ -30,10 +30,10 @@ const orderingFields = {
   receipt: "receipt_number",
   date: "date",
   customer: "_customer_name",
-  dimension: "tenant_id",
+  dimension: "_line_tenant_id",
   reference: "_reference_name",
   lines: "_line_count",
-  bank: "bank_account__name",
+  bank: "_bank_name",
   total: "amount",
   recovery: "_recovery_commission_amount",
 };
@@ -240,7 +240,7 @@ const GetAllSalesBankReceipt = () => {
                         {record.customerSummary || "-"}
                       </td>
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
-                        {record.dimensionName || record.tenantId}
+                        {record.dimensionName || record.tenantId || "-"}
                       </td>
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
                         {record.referenceSummary || "-"}
@@ -249,8 +249,7 @@ const GetAllSalesBankReceipt = () => {
                         {record.lineCount || 0}
                       </td>
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
-                        {record.bank_account?.code} -{" "}
-                        {record.bank_account?.name}
+                        {record.bankSummary || "-"}
                       </td>
                       <td className="px-4 py-3 font-semibold text-slate-800 dark:text-slate-100">
                         {formatDecimal(record.amount)}

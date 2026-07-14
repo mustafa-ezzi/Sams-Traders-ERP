@@ -210,11 +210,6 @@ class SalesReturnLine(BaseModel):
 class SalesBankReceipt(BaseModel):
     receipt_number = models.CharField(max_length=50)
     date = models.DateField()
-    bank_account = models.ForeignKey(
-        Account,
-        on_delete=models.PROTECT,
-        related_name="sales_bank_receipts",
-    )
     amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     remarks = models.TextField(blank=True, default="")
 
@@ -250,6 +245,16 @@ class SalesBankReceipt(BaseModel):
             .first()
         )
         return line.sales_invoice if line else None
+
+    @property
+    def bank_account(self):
+        """Compatibility shim: bank lives on receipt lines."""
+        line = (
+            self.lines.filter(deleted_at__isnull=True)
+            .select_related("bank_account")
+            .first()
+        )
+        return line.bank_account if line else None
 
 
 class SalesBankReceiptLine(BaseModel):
@@ -292,6 +297,11 @@ class SalesBankReceiptLine(BaseModel):
         null=True,
         blank=True,
         related_name="recovery_bank_receipt_lines",
+    )
+    bank_account = models.ForeignKey(
+        Account,
+        on_delete=models.PROTECT,
+        related_name="sales_bank_receipt_lines",
     )
     amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     recovery_commission_rate = models.DecimalField(max_digits=5, decimal_places=2, default=0)

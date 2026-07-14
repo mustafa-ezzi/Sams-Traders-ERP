@@ -4,9 +4,13 @@ const BASE_URL = "/sales/sales-bank-receipts/";
 
 const mapReceipt = (receipt) => ({
   ...receipt,
-  bankAccountId: receipt.bank_account?.id || receipt.bank_account_id || "",
   tenantId: receipt.tenant_id || receipt.tenantId || "",
-  dimensionName: receipt.dimension_name || receipt.dimensionName || "",
+  dimensionName:
+    receipt.dimension_summary ||
+    receipt.dimension_name ||
+    receipt.dimensionName ||
+    "",
+  bankSummary: receipt.bank_summary || "",
   amount: receipt.amount ?? 0,
   lineCount: receipt.line_count ?? receipt.lines?.length ?? 0,
   customerSummary: receipt.customer_summary || "",

@@ -173,7 +173,7 @@ class Account(BaseModel):
 
         from inventory.models import Category, Customer, Product, RawMaterial, Supplier
         from purchase.models import PurchaseBankPayment
-        from sales.models import SalesBankReceipt
+        from sales.models import SalesBankReceiptLine
 
         dependencies = [
             Category.objects.filter(
@@ -206,10 +206,10 @@ class Account(BaseModel):
                 deleted_at__isnull=True,
                 bank_account=self,
             ),
-            SalesBankReceipt.objects.filter(
+            SalesBankReceiptLine.objects.filter(
                 deleted_at__isnull=True,
                 bank_account=self,
-            ),
+            ).filter(receipt__deleted_at__isnull=True),
             Expense.objects.filter(
                 deleted_at__isnull=True,
             ).filter(

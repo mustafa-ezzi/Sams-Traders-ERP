@@ -1634,6 +1634,7 @@ class AccountViewSet(ModelViewSet):
             SalesBankReceipt.objects.filter(deleted_at__isnull=True)
             .filter(
                 Q(tenant_id=tenant_id)
+                | Q(lines__tenant_id=tenant_id)
                 | Q(lines__sales_invoice__lines__tenant_id=tenant_id)
             )
             .distinct()
@@ -2271,6 +2272,7 @@ class DimensionViewSet(ModelViewSet):
             SalesReturn.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
             SalesReturnLine.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
             SalesBankReceipt.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
+            SalesBankReceiptLine.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
             JournalEntry.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
             JournalLine.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
             Expense.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),

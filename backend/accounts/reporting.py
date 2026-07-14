@@ -1114,7 +1114,7 @@ def build_sales_report(
         )
         receipts = (
             SalesBankReceiptLine.objects.filter(
-                receipt__tenant_id__in=tenant_ids,
+                Q(tenant_id__in=tenant_ids) | Q(receipt__tenant_id__in=tenant_ids),
                 sales_invoice_id__in=invoice_ids,
                 deleted_at__isnull=True,
                 receipt__deleted_at__isnull=True,
@@ -1124,7 +1124,7 @@ def build_sales_report(
                 "sales_invoice",
                 "salesman",
                 "receipt",
-                "receipt__bank_account",
+                "bank_account",
             )
             .order_by("receipt__date", "receipt__receipt_number", "created_at")
         )
@@ -1148,13 +1148,14 @@ def build_sales_report(
                     "date": item.receipt.date.isoformat(),
                     "invoice_number": item.sales_invoice.invoice_number,
                     "customer_name": item.customer.business_name or item.customer.name,
-                    "tenant_id": item.receipt.tenant_id,
+                    "tenant_id": item.tenant_id or item.receipt.tenant_id,
                     "dimension_name": dimension_names.get(
-                        item.receipt.tenant_id, item.receipt.tenant_id
+                        item.tenant_id or item.receipt.tenant_id,
+                        item.tenant_id or item.receipt.tenant_id,
                     ),
                     "salesman_name": item.salesman.name if item.salesman else "",
                     "bank_account": (
-                        item.receipt.bank_account.name if item.receipt.bank_account else ""
+                        item.bank_account.name if item.bank_account else ""
                     ),
                     "amount": str(_money(item.amount)),
                     "recovery_commission_rate": str(_money(item.recovery_commission_rate)),

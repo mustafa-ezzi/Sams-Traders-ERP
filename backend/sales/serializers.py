@@ -1094,6 +1094,10 @@ class SalesBankReceiptLineSerializer(serializers.Serializer):
     )
     salesman = SalesmanMiniSerializer(read_only=True, required=False)
     salesman_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
+    tenant_id = serializers.CharField()
+    dimension_name = serializers.SerializerMethodField()
+    bank_account = AccountMiniSerializer(read_only=True, required=False)
+    bank_account_id = serializers.UUIDField(write_only=True)
     amount = serializers.DecimalField(max_digits=12, decimal_places=2)
     recovery_commission_rate = serializers.DecimalField(
         max_digits=5,
@@ -1108,6 +1112,10 @@ class SalesBankReceiptLineSerializer(serializers.Serializer):
         required=False,
     )
     reference_label = serializers.SerializerMethodField()
+
+    def get_dimension_name(self, obj):
+        dimension = Dimension.objects.filter(code=obj.tenant_id).first()
+        return dimension.name if dimension else obj.tenant_id
 
     def get_reference_label(self, obj):
         if getattr(obj, "receipt_against", None) == SalesBankReceiptLine.ReceiptAgainst.OPENING_BALANCE:
@@ -1127,6 +1135,8 @@ class SalesBankReceiptLineSerializer(serializers.Serializer):
             else None
         )
         data["salesman_id"] = str(instance.salesman_id) if instance.salesman_id else None
+        data["bank_account_id"] = str(instance.bank_account_id)
+        data["tenant_id"] = instance.tenant_id
         data["recovery_commission_rate"] = str(instance.recovery_commission_rate)
         data["recovery_commission_amount"] = str(instance.recovery_commission_amount)
         return data
@@ -1138,14 +1148,12 @@ class SalesBankReceiptLineSerializer(serializers.Serializer):
 
 
 class SalesBankReceiptSerializer(serializers.ModelSerializer):
-    tenant_id = serializers.CharField(required=False)
-    bank_account = AccountMiniSerializer(read_only=True)
-    bank_account_id = serializers.UUIDField(write_only=True)
-    dimension_name = serializers.SerializerMethodField()
     lines = SalesBankReceiptLineSerializer(many=True)
     line_count = serializers.SerializerMethodField()
     customer_summary = serializers.SerializerMethodField()
     reference_summary = serializers.SerializerMethodField()
+    bank_summary = serializers.SerializerMethodField()
+    dimension_summary = serializers.SerializerMethodField()
     recovery_commission_amount = serializers.SerializerMethodField()
 
     class Meta:
@@ -1154,16 +1162,15 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
             "id",
             "receipt_number",
             "tenant_id",
-            "dimension_name",
             "date",
-            "bank_account",
-            "bank_account_id",
             "amount",
             "remarks",
             "lines",
             "line_count",
             "customer_summary",
             "reference_summary",
+            "bank_summary",
+            "dimension_summary",
             "recovery_commission_amount",
             "created_at",
             "updated_at",
@@ -1171,19 +1178,17 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id",
             "receipt_number",
-            "dimension_name",
+            "tenant_id",
             "amount",
             "line_count",
             "customer_summary",
             "reference_summary",
+            "bank_summary",
+            "dimension_summary",
             "recovery_commission_amount",
             "created_at",
             "updated_at",
         ]
-
-    def get_dimension_name(self, obj):
-        dimension = Dimension.objects.filter(code=obj.tenant_id).first()
-        return dimension.name if dimension else obj.tenant_id
 
     def get_line_count(self, obj):
         if hasattr(obj, "_prefetched_objects_cache") and "lines" in obj._prefetched_objects_cache:
@@ -1217,6 +1222,40 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
             return labels[0]
         return f"{labels[0]} +{len(labels) - 1}"
 
+    def get_bank_summary(self, obj):
+        labels = []
+        seen = set()
+        for line in obj.lines.filter(deleted_at__isnull=True).select_related("bank_account"):
+            if not line.bank_account_id:
+                continue
+            label = f"{line.bank_account.code} - {line.bank_account.name}"
+            if label not in seen:
+                seen.add(label)
+                labels.append(label)
+        if not labels:
+            return ""
+        if len(labels) == 1:
+            return labels[0]
+        return f"{labels[0]} +{len(labels) - 1}"
+
+    def get_dimension_summary(self, obj):
+        codes = []
+        seen = set()
+        for line in obj.lines.filter(deleted_at__isnull=True):
+            if line.tenant_id and line.tenant_id not in seen:
+                seen.add(line.tenant_id)
+                codes.append(line.tenant_id)
+        if not codes:
+            return obj.tenant_id or ""
+        names = {
+            row.code: row.name
+            for row in Dimension.objects.filter(code__in=codes)
+        }
+        labels = [names.get(code, code) for code in codes]
+        if len(labels) == 1:
+            return labels[0]
+        return f"{labels[0]} +{len(labels) - 1}"
+
     def get_recovery_commission_amount(self, obj):
         total = Decimal("0.00")
         for line in obj.lines.filter(deleted_at__isnull=True):
@@ -1226,49 +1265,88 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         data["lines"] = SalesBankReceiptLineSerializer(
-            instance.lines.filter(deleted_at__isnull=True),
+            instance.lines.filter(deleted_at__isnull=True).select_related(
+                "customer",
+                "sales_invoice",
+                "salesman",
+                "bank_account",
+            ),
             many=True,
         ).data
         return data
 
-    def validate_tenant_id(self, value):
+    def _allowed_dimension_codes(self):
         request = self.context["request"]
         tenant_ids = get_user_active_dimension_codes(request.user)
         current = getattr(request, "tenant_id", "") or request.user.tenant_id
         if current and current not in tenant_ids:
             tenant_ids.append(current)
-        if value not in tenant_ids:
-            raise serializers.ValidationError("Dimension not found")
-        return value
+        return tenant_ids
 
-    def validate_bank_account_id(self, value):
-        request = self.context["request"]
-        tenant_ids = get_user_active_dimension_codes(request.user)
-        current = getattr(request, "tenant_id", "") or request.user.tenant_id
-        if current and current not in tenant_ids:
-            tenant_ids.append(current)
+    def _validate_bank_account(self, bank_account_id, tenant_id, index):
         try:
             account = Account.objects.get(
-                id=value,
-                tenant_id__in=tenant_ids,
+                id=bank_account_id,
+                tenant_id=tenant_id,
                 deleted_at__isnull=True,
             )
         except Account.DoesNotExist:
-            raise serializers.ValidationError("Bank account not found")
+            raise serializers.ValidationError(
+                {
+                    "lines": {
+                        index: {
+                            "bank_account_id": (
+                                "Bank account not found for the selected dimension."
+                            )
+                        }
+                    }
+                }
+            )
 
         if not account.is_active:
-            raise serializers.ValidationError("Selected bank account is inactive")
+            raise serializers.ValidationError(
+                {"lines": {index: {"bank_account_id": "Selected bank account is inactive"}}}
+            )
         if not account.is_postable:
-            raise serializers.ValidationError("Selected bank account must be postable")
+            raise serializers.ValidationError(
+                {
+                    "lines": {
+                        index: {
+                            "bank_account_id": "Selected bank account must be postable"
+                        }
+                    }
+                }
+            )
         if account.account_group != Account.AccountGroup.ASSET:
-            raise serializers.ValidationError("Selected bank account must belong to asset group")
+            raise serializers.ValidationError(
+                {
+                    "lines": {
+                        index: {
+                            "bank_account_id": (
+                                "Selected bank account must belong to asset group"
+                            )
+                        }
+                    }
+                }
+            )
         if account.account_type != Account.AccountType.BANK:
-            raise serializers.ValidationError("Selected account must have account type BANK")
-        return value
+            raise serializers.ValidationError(
+                {
+                    "lines": {
+                        index: {
+                            "bank_account_id": (
+                                "Selected account must have account type BANK"
+                            )
+                        }
+                    }
+                }
+            )
+        return account
 
     def _validate_lines(self, lines_data):
         request = self.context["request"]
         tenant_ids = get_shared_tenant_ids(request)
+        allowed_dimensions = self._allowed_dimension_codes()
         excluded_receipt_ids = [self.instance.id] if self.instance else []
         invoice_allocated = {}
         opening_allocated = {}
@@ -1283,6 +1361,23 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {"lines": {index: {"customer_id": "Customer not found"}}}
                 )
+
+            line_tenant_id = (line.get("tenant_id") or "").strip()
+            if not line_tenant_id:
+                raise serializers.ValidationError(
+                    {"lines": {index: {"tenant_id": "Dimension is required."}}}
+                )
+            if line_tenant_id not in allowed_dimensions:
+                raise serializers.ValidationError(
+                    {"lines": {index: {"tenant_id": "Dimension not found"}}}
+                )
+
+            bank_account_id = line.get("bank_account_id")
+            if not bank_account_id:
+                raise serializers.ValidationError(
+                    {"lines": {index: {"bank_account_id": "Bank is required."}}}
+                )
+            self._validate_bank_account(bank_account_id, line_tenant_id, index)
 
             receipt_against = line.get(
                 "receipt_against",
@@ -1318,6 +1413,18 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
                                 index: {
                                     "party_opening_balance_id": (
                                         "Opening balance does not belong to the chosen customer."
+                                    )
+                                }
+                            }
+                        }
+                    )
+                if opening_balance.tenant_id != line_tenant_id:
+                    raise serializers.ValidationError(
+                        {
+                            "lines": {
+                                index: {
+                                    "tenant_id": (
+                                        "Dimension must match the opening balance dimension."
                                     )
                                 }
                             }
@@ -1436,11 +1543,13 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
 
             prepared_lines.append(
                 {
+                    "tenant_id": line_tenant_id,
                     "customer_id": customer_id,
                     "receipt_against": receipt_against,
                     "sales_invoice_id": sales_invoice_id,
                     "party_opening_balance_id": party_opening_balance_id,
                     "salesman_id": salesman_id,
+                    "bank_account_id": bank_account_id,
                     "amount": amount,
                     "recovery_commission_rate": recovery_rate,
                     "recovery_commission_amount": recovery_amount,
@@ -1466,7 +1575,6 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
     def _create_lines(self, receipt, lines_data):
         for line_data in lines_data:
             SalesBankReceiptLine.objects.create(
-                tenant_id=receipt.tenant_id,
                 receipt=receipt,
                 **line_data,
             )
@@ -1474,11 +1582,9 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
     @transaction.atomic
     def create(self, validated_data):
         lines_data = validated_data.pop("lines")
-        tenant_id = validated_data.pop("tenant_id", None) or self.context["request"].user.tenant_id
-        bank_account_id = validated_data.pop("bank_account_id")
+        tenant_id = lines_data[0]["tenant_id"]
         receipt = SalesBankReceipt.objects.create(
             tenant_id=tenant_id,
-            bank_account_id=bank_account_id,
             receipt_number=self._generate_receipt_number(tenant_id),
             **validated_data,
         )
@@ -1488,8 +1594,7 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
     @transaction.atomic
     def update(self, instance, validated_data):
         lines_data = validated_data.pop("lines")
-        instance.tenant_id = validated_data.pop("tenant_id", instance.tenant_id)
-        instance.bank_account_id = validated_data.pop("bank_account_id", instance.bank_account_id)
+        instance.tenant_id = lines_data[0]["tenant_id"]
         instance.date = validated_data.get("date", instance.date)
         instance.amount = validated_data.get("amount", instance.amount)
         instance.remarks = validated_data.get("remarks", instance.remarks)

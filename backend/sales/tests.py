@@ -92,7 +92,6 @@ class SalesBankReceiptTests(TestCase):
             tenant_id=self.tenant_id,
             receipt_number="SBR-00001",
             date="2026-04-20",
-            bank_account=self.bank_account,
             amount=Decimal("700.00"),
         )
         SalesBankReceiptLine.objects.create(
@@ -101,6 +100,7 @@ class SalesBankReceiptTests(TestCase):
             customer=self.customer,
             sales_invoice=self.invoice,
             receipt_against="INVOICE",
+            bank_account=self.bank_account,
             amount=Decimal("700.00"),
         )
 
@@ -116,7 +116,6 @@ class SalesBankReceiptTests(TestCase):
             tenant_id=self.tenant_id,
             receipt_number="SBR-00001",
             date="2026-04-20",
-            bank_account=self.bank_account,
             amount=Decimal("1000.00"),
         )
         SalesBankReceiptLine.objects.create(
@@ -125,19 +124,21 @@ class SalesBankReceiptTests(TestCase):
             customer=self.customer,
             sales_invoice=self.invoice,
             receipt_against="INVOICE",
+            bank_account=self.bank_account,
             amount=Decimal("1000.00"),
         )
 
         serializer = SalesBankReceiptSerializer(
             data={
                 "date": "2026-04-20",
-                "bank_account_id": str(self.bank_account.id),
                 "remarks": "Second receipt",
                 "lines": [
                     {
                         "customer_id": str(self.customer.id),
                         "receipt_against": "INVOICE",
                         "sales_invoice_id": str(self.invoice.id),
+                        "tenant_id": self.tenant_id,
+                        "bank_account_id": str(self.bank_account.id),
                         "amount": "1500.00",
                     }
                 ],
@@ -165,13 +166,14 @@ class SalesBankReceiptTests(TestCase):
         serializer = SalesBankReceiptSerializer(
             data={
                 "date": "2026-04-20",
-                "bank_account_id": str(cash_account.id),
                 "remarks": "Cash is not valid here",
                 "lines": [
                     {
                         "customer_id": str(self.customer.id),
                         "receipt_against": "INVOICE",
                         "sales_invoice_id": str(self.invoice.id),
+                        "tenant_id": self.tenant_id,
+                        "bank_account_id": str(cash_account.id),
                         "amount": "500.00",
                     }
                 ],
@@ -180,7 +182,7 @@ class SalesBankReceiptTests(TestCase):
         )
 
         self.assertFalse(serializer.is_valid())
-        self.assertIn("bank_account_id", serializer.errors)
+        self.assertIn("lines", serializer.errors)
 
 
 class SalesInvoiceSerializerTests(TestCase):

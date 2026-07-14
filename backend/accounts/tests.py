@@ -288,7 +288,6 @@ class LedgerReportTests(TestCase):
             tenant_id=self.tenant_id,
             receipt_number="SBR-00001",
             date="2026-04-03",
-            bank_account=self.bank,
             amount=Decimal("500.00"),
         )
         SalesBankReceiptLine.objects.create(
@@ -297,6 +296,7 @@ class LedgerReportTests(TestCase):
             customer=self.customer,
             sales_invoice=invoice,
             receipt_against="INVOICE",
+            bank_account=self.bank,
             amount=Decimal("500.00"),
         )
         sync_sales_invoice_journal(invoice)
@@ -903,7 +903,6 @@ class AccountSoftDeleteProtectionTests(TestCase):
             tenant_id=self.tenant_id,
             receipt_number="SBR-00001",
             date="2026-04-03",
-            bank_account=self.bank,
             amount=Decimal("500.00"),
         )
         SalesBankReceiptLine.objects.create(
@@ -912,6 +911,7 @@ class AccountSoftDeleteProtectionTests(TestCase):
             customer=self.customer,
             sales_invoice=invoice,
             receipt_against="INVOICE",
+            bank_account=self.bank,
             amount=Decimal("500.00"),
         )
 

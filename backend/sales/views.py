@@ -683,37 +683,38 @@ class SalesBankReceiptViewSet(viewsets.ModelViewSet):
     ordering_fields = [
         "receipt_number",
         "date",
-        "tenant_id",
-        "bank_account__name",
-        "bank_account__code",
         "amount",
         "_line_count",
         "_recovery_commission_amount",
         "_customer_name",
         "_reference_name",
+        "_bank_name",
+        "_line_tenant_id",
     ]
     ordering = ["-date", "-created_at"]
     search_fields = [
         "receipt_number",
         "lines__sales_invoice__invoice_number",
         "lines__customer__business_name",
-        "bank_account__name",
+        "lines__bank_account__name",
         "remarks",
     ]
 
     def get_queryset(self):
         active_lines = Q(lines__deleted_at__isnull=True)
+        shared_filter = get_shared_tenant_filter(self.request)
+        tenant_ids = shared_filter["tenant_id__in"]
         queryset = (
             SalesBankReceipt.objects.filter(
-                **get_shared_tenant_filter(self.request),
                 deleted_at__isnull=True,
             )
-            .select_related("bank_account")
+            .filter(Q(tenant_id__in=tenant_ids) | Q(lines__tenant_id__in=tenant_ids))
             .prefetch_related(
                 "lines__customer",
                 "lines__sales_invoice",
                 "lines__salesman",
                 "lines__party_opening_balance",
+                "lines__bank_account",
             )
             .annotate(
                 _line_count=Count("lines", filter=active_lines, distinct=True),
@@ -731,6 +732,14 @@ class SalesBankReceiptViewSet(viewsets.ModelViewSet):
                 ),
                 _reference_name=Min(
                     "lines__sales_invoice__invoice_number",
+                    filter=active_lines,
+                ),
+                _bank_name=Min(
+                    "lines__bank_account__name",
+                    filter=active_lines,
+                ),
+                _line_tenant_id=Min(
+                    "lines__tenant_id",
                     filter=active_lines,
                 ),
             )
@@ -816,11 +825,15 @@ class SalesBankReceiptViewSet(viewsets.ModelViewSet):
             try:
                 current_receipt = SalesBankReceipt.objects.prefetch_related(
                     "lines__sales_invoice",
-                ).get(
+                ).filter(
                     id=receipt_id,
-                    tenant_id__in=shared_filter["tenant_id__in"],
                     deleted_at__isnull=True,
-                )
+                ).filter(
+                    Q(tenant_id__in=shared_filter["tenant_id__in"])
+                    | Q(lines__tenant_id__in=shared_filter["tenant_id__in"])
+                ).distinct().first()
+                if not current_receipt:
+                    raise SalesBankReceipt.DoesNotExist
             except SalesBankReceipt.DoesNotExist:
                 raise ValidationError({"receipt_id": "Sales bank receipt not found."})
             for line in current_receipt.lines.filter(deleted_at__isnull=True):
