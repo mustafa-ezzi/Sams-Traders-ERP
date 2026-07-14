@@ -698,20 +698,34 @@ def _build_salesman_commission_payment_lines(payment):
 
 
 def _build_expense_lines(expense):
-    return [
-        {
-            "account": expense.expense_account,
-            "debit": expense.amount,
-            "credit": Decimal("0.00"),
-            "line_description": "Expense",
-        },
-        {
-            "account": expense.bank_account,
-            "debit": Decimal("0.00"),
-            "credit": expense.amount,
-            "line_description": "Expense Payment",
-        },
-    ]
+    lines = []
+    for expense_line in expense.lines.filter(deleted_at__isnull=True).select_related(
+        "bank_account",
+        "expense_account",
+    ):
+        bank_account = expense_line.bank_account
+        bank_tenant_id = bank_account.tenant_id
+        line_tenant_id = expense_line.tenant_id or bank_tenant_id
+        amount = quantize_money(expense_line.amount)
+        lines.extend(
+            [
+                {
+                    "account": expense_line.expense_account,
+                    "tenant_id": line_tenant_id,
+                    "debit": amount,
+                    "credit": Decimal("0.00"),
+                    "line_description": "Expense",
+                },
+                {
+                    "account": bank_account,
+                    "tenant_id": bank_tenant_id,
+                    "debit": Decimal("0.00"),
+                    "credit": amount,
+                    "line_description": "Expense Payment",
+                },
+            ]
+        )
+    return lines
 
 
 @transaction.atomic
@@ -1108,7 +1122,10 @@ def sync_all_journals():
         "lines__bank_account",
     ):
         sync_sales_bank_receipt_journal(receipt)
-    for expense in Expense.objects.filter(deleted_at__isnull=True).select_related("bank_account", "expense_account"):
+    for expense in Expense.objects.filter(deleted_at__isnull=True).prefetch_related(
+        "lines__bank_account",
+        "lines__expense_account",
+    ):
         sync_expense_journal(expense)
     for transfer in BankTransfer.objects.filter(deleted_at__isnull=True).select_related(
         "from_bank_account",

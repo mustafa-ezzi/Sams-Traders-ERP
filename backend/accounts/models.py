@@ -210,11 +210,11 @@ class Account(BaseModel):
                 deleted_at__isnull=True,
                 bank_account=self,
             ).filter(receipt__deleted_at__isnull=True),
-            Expense.objects.filter(
+            ExpenseLine.objects.filter(
                 deleted_at__isnull=True,
-            ).filter(
-                Q(bank_account=self) | Q(expense_account=self)
-            ),
+            )
+            .filter(Q(bank_account=self) | Q(expense_account=self))
+            .filter(expense__deleted_at__isnull=True),
         ]
 
         if any(queryset.exists() for queryset in dependencies):
@@ -307,16 +307,6 @@ class JournalLine(BaseModel):
 class Expense(BaseModel):
     expense_number = models.CharField(max_length=50)
     date = models.DateField()
-    bank_account = models.ForeignKey(
-        Account,
-        on_delete=models.PROTECT,
-        related_name="expense_bank_entries",
-    )
-    expense_account = models.ForeignKey(
-        Account,
-        on_delete=models.PROTECT,
-        related_name="expense_entries",
-    )
     amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     remarks = models.TextField(blank=True, default="")
 
@@ -332,6 +322,51 @@ class Expense(BaseModel):
 
     def __str__(self):
         return self.expense_number
+
+    @property
+    def bank_account(self):
+        """Compatibility shim: bank lives on expense lines after multi-line refactor."""
+        line = (
+            self.lines.filter(deleted_at__isnull=True)
+            .select_related("bank_account")
+            .first()
+        )
+        return line.bank_account if line else None
+
+    @property
+    def expense_account(self):
+        """Compatibility shim: expense COA lives on expense lines."""
+        line = (
+            self.lines.filter(deleted_at__isnull=True)
+            .select_related("expense_account")
+            .first()
+        )
+        return line.expense_account if line else None
+
+
+class ExpenseLine(BaseModel):
+    expense = models.ForeignKey(
+        Expense,
+        on_delete=models.CASCADE,
+        related_name="lines",
+    )
+    bank_account = models.ForeignKey(
+        Account,
+        on_delete=models.PROTECT,
+        related_name="expense_bank_entries",
+    )
+    expense_account = models.ForeignKey(
+        Account,
+        on_delete=models.PROTECT,
+        related_name="expense_entries",
+    )
+    amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+
+    class Meta:
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"{self.expense.expense_number} - {self.expense_account.code}"
 
 
 class BankTransfer(BaseModel):

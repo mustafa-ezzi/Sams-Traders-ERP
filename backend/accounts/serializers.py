@@ -1,7 +1,12 @@
 from rest_framework import serializers
+from decimal import Decimal
+
+from django.db import transaction
+from django.utils.timezone import now
 
 from accounts.dimensions import build_dimension_code, get_user_active_dimension_codes
-from accounts.models import Account, Dimension, Expense, Inquiry, User, BankTransfer
+from accounts.journal import quantize_money
+from accounts.models import Account, Dimension, Expense, ExpenseLine, Inquiry, User, BankTransfer
 from common.tenancy import get_request_tenant_ids
 from inventory.models import Salesman
 
@@ -645,37 +650,137 @@ class AccountMiniSerializer(serializers.Serializer):
     name = serializers.CharField()
 
 
-class ExpenseSerializer(serializers.ModelSerializer):
-    bank_account = AccountMiniSerializer(read_only=True)
+class ExpenseLineSerializer(serializers.Serializer):
+    id = serializers.UUIDField(read_only=True, required=False)
+    tenant_id = serializers.CharField()
+    dimension_name = serializers.SerializerMethodField()
+    bank_account = AccountMiniSerializer(read_only=True, required=False)
     bank_account_id = serializers.UUIDField(write_only=True)
-    expense_account = AccountMiniSerializer(read_only=True)
+    expense_account = AccountMiniSerializer(read_only=True, required=False)
     expense_account_id = serializers.UUIDField(write_only=True)
+    amount = serializers.DecimalField(max_digits=12, decimal_places=2)
+
+    def get_dimension_name(self, obj):
+        dimension = Dimension.objects.filter(code=obj.tenant_id).first()
+        return dimension.name if dimension else obj.tenant_id
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data["bank_account_id"] = str(instance.bank_account_id)
+        data["expense_account_id"] = str(instance.expense_account_id)
+        data["tenant_id"] = instance.tenant_id
+        return data
+
+    def validate_amount(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("Line amount must be greater than 0")
+        return quantize_money(value)
+
+
+class ExpenseSerializer(serializers.ModelSerializer):
+    lines = ExpenseLineSerializer(many=True)
+    line_count = serializers.SerializerMethodField()
+    bank_summary = serializers.SerializerMethodField()
+    expense_summary = serializers.SerializerMethodField()
+    dimension_summary = serializers.SerializerMethodField()
 
     class Meta:
         model = Expense
         fields = [
             "id",
             "expense_number",
+            "tenant_id",
             "date",
-            "bank_account",
-            "bank_account_id",
-            "expense_account",
-            "expense_account_id",
             "amount",
             "remarks",
+            "lines",
+            "line_count",
+            "bank_summary",
+            "expense_summary",
+            "dimension_summary",
             "created_at",
             "updated_at",
         ]
         read_only_fields = [
             "id",
             "expense_number",
+            "tenant_id",
+            "amount",
+            "line_count",
+            "bank_summary",
+            "expense_summary",
+            "dimension_summary",
             "created_at",
             "updated_at",
         ]
 
-    def _allowed_account_tenant_ids(self):
-        # COA is shared across every dimension the user owns, so any of
-        # them is a valid source for a bank / expense account.
+    def get_line_count(self, obj):
+        if hasattr(obj, "_prefetched_objects_cache") and "lines" in obj._prefetched_objects_cache:
+            return len([line for line in obj.lines.all() if line.deleted_at is None])
+        return obj.lines.filter(deleted_at__isnull=True).count()
+
+    def get_bank_summary(self, obj):
+        labels = []
+        seen = set()
+        for line in obj.lines.filter(deleted_at__isnull=True).select_related("bank_account"):
+            if not line.bank_account_id:
+                continue
+            label = f"{line.bank_account.code} - {line.bank_account.name}"
+            if label not in seen:
+                seen.add(label)
+                labels.append(label)
+        if not labels:
+            return ""
+        if len(labels) == 1:
+            return labels[0]
+        return f"{labels[0]} +{len(labels) - 1}"
+
+    def get_expense_summary(self, obj):
+        labels = []
+        seen = set()
+        for line in obj.lines.filter(deleted_at__isnull=True).select_related("expense_account"):
+            if not line.expense_account_id:
+                continue
+            label = f"{line.expense_account.code} - {line.expense_account.name}"
+            if label not in seen:
+                seen.add(label)
+                labels.append(label)
+        if not labels:
+            return ""
+        if len(labels) == 1:
+            return labels[0]
+        return f"{labels[0]} +{len(labels) - 1}"
+
+    def get_dimension_summary(self, obj):
+        codes = []
+        seen = set()
+        for line in obj.lines.filter(deleted_at__isnull=True):
+            if line.tenant_id and line.tenant_id not in seen:
+                seen.add(line.tenant_id)
+                codes.append(line.tenant_id)
+        if not codes:
+            return obj.tenant_id or ""
+        names = {
+            row.code: row.name
+            for row in Dimension.objects.filter(code__in=codes)
+        }
+        labels = [names.get(code, code) for code in codes]
+        if len(labels) == 1:
+            return labels[0]
+        return f"{labels[0]} +{len(labels) - 1}"
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data["lines"] = ExpenseLineSerializer(
+            instance.lines.filter(deleted_at__isnull=True).select_related(
+                "bank_account",
+                "expense_account",
+            ),
+            many=True,
+        ).data
+        return data
+
+    def _allowed_dimension_codes(self):
         request = self.context["request"]
         tenant_ids = get_user_active_dimension_codes(request.user)
         current = getattr(request, "tenant_id", "") or request.user.tenant_id
@@ -683,74 +788,233 @@ class ExpenseSerializer(serializers.ModelSerializer):
             tenant_ids.append(current)
         return tenant_ids
 
-    def validate_bank_account_id(self, value):
-        tenant_ids = self._allowed_account_tenant_ids()
+    def _validate_bank_account(self, bank_account_id, tenant_id, index):
         try:
             account = Account.objects.get(
-                id=value,
-                tenant_id__in=tenant_ids,
+                id=bank_account_id,
+                tenant_id=tenant_id,
                 deleted_at__isnull=True,
             )
         except Account.DoesNotExist:
-            raise serializers.ValidationError("Bank account not found")
+            raise serializers.ValidationError(
+                {
+                    "lines": {
+                        index: {
+                            "bank_account_id": (
+                                "Bank account not found for the selected dimension."
+                            )
+                        }
+                    }
+                }
+            )
 
         if not account.is_active:
-            raise serializers.ValidationError("Selected bank account is inactive")
+            raise serializers.ValidationError(
+                {"lines": {index: {"bank_account_id": "Selected bank account is inactive"}}}
+            )
         if not account.is_postable:
-            raise serializers.ValidationError("Selected bank account must be postable")
+            raise serializers.ValidationError(
+                {
+                    "lines": {
+                        index: {
+                            "bank_account_id": "Selected bank account must be postable"
+                        }
+                    }
+                }
+            )
         if account.account_group != Account.AccountGroup.ASSET:
-            raise serializers.ValidationError("Selected bank account must belong to asset group")
+            raise serializers.ValidationError(
+                {
+                    "lines": {
+                        index: {
+                            "bank_account_id": (
+                                "Selected bank account must belong to asset group"
+                            )
+                        }
+                    }
+                }
+            )
         if account.account_type != Account.AccountType.BANK:
-            raise serializers.ValidationError("Selected account must have account type BANK")
-        return value
+            raise serializers.ValidationError(
+                {
+                    "lines": {
+                        index: {
+                            "bank_account_id": (
+                                "Selected account must have account type BANK"
+                            )
+                        }
+                    }
+                }
+            )
+        return account
 
-    def validate_expense_account_id(self, value):
-        tenant_ids = self._allowed_account_tenant_ids()
+    def _validate_expense_account(self, expense_account_id, tenant_id, index):
         try:
             account = Account.objects.get(
-                id=value,
-                tenant_id__in=tenant_ids,
+                id=expense_account_id,
+                tenant_id=tenant_id,
                 deleted_at__isnull=True,
             )
         except Account.DoesNotExist:
-            raise serializers.ValidationError("Expense account not found")
+            raise serializers.ValidationError(
+                {
+                    "lines": {
+                        index: {
+                            "expense_account_id": (
+                                "Expense account not found for the selected dimension."
+                            )
+                        }
+                    }
+                }
+            )
 
         if not account.is_active:
-            raise serializers.ValidationError("Selected expense account is inactive")
+            raise serializers.ValidationError(
+                {
+                    "lines": {
+                        index: {
+                            "expense_account_id": "Selected expense account is inactive"
+                        }
+                    }
+                }
+            )
         if not account.is_postable:
-            raise serializers.ValidationError("Selected expense account must be postable")
+            raise serializers.ValidationError(
+                {
+                    "lines": {
+                        index: {
+                            "expense_account_id": (
+                                "Selected expense account must be postable"
+                            )
+                        }
+                    }
+                }
+            )
         if account.account_group != Account.AccountGroup.EXPENSE:
-            raise serializers.ValidationError("Selected expense account must belong to expense group")
-        return value
+            raise serializers.ValidationError(
+                {
+                    "lines": {
+                        index: {
+                            "expense_account_id": (
+                                "Selected expense account must belong to expense group"
+                            )
+                        }
+                    }
+                }
+            )
+        return account
 
-    def validate_amount(self, value):
-        if value <= 0:
-            raise serializers.ValidationError("Amount must be greater than 0")
-        return value
+    def _validate_lines(self, lines_data):
+        allowed_dimensions = self._allowed_dimension_codes()
+        prepared_lines = []
+
+        if not lines_data:
+            raise serializers.ValidationError(
+                {"lines": "At least one payment line is required."}
+            )
+
+        for index, line in enumerate(lines_data):
+            line_tenant_id = str(line.get("tenant_id") or "").strip()
+            if not line_tenant_id:
+                raise serializers.ValidationError(
+                    {"lines": {index: {"tenant_id": "Dimension is required."}}}
+                )
+            if line_tenant_id not in allowed_dimensions:
+                raise serializers.ValidationError(
+                    {
+                        "lines": {
+                            index: {
+                                "tenant_id": "You do not have access to this dimension."
+                            }
+                        }
+                    }
+                )
+
+            bank_account_id = line.get("bank_account_id")
+            expense_account_id = line.get("expense_account_id")
+            amount = line.get("amount")
+
+            if not bank_account_id:
+                raise serializers.ValidationError(
+                    {"lines": {index: {"bank_account_id": "Bank account is required."}}}
+                )
+            if not expense_account_id:
+                raise serializers.ValidationError(
+                    {
+                        "lines": {
+                            index: {"expense_account_id": "Expense account is required."}
+                        }
+                    }
+                )
+            if amount is None:
+                raise serializers.ValidationError(
+                    {"lines": {index: {"amount": "Amount is required."}}}
+                )
+
+            amount = quantize_money(amount)
+            if amount <= 0:
+                raise serializers.ValidationError(
+                    {
+                        "lines": {
+                            index: {"amount": "Line amount must be greater than 0"}
+                        }
+                    }
+                )
+
+            self._validate_bank_account(bank_account_id, line_tenant_id, index)
+            self._validate_expense_account(expense_account_id, line_tenant_id, index)
+
+            prepared_lines.append(
+                {
+                    "tenant_id": line_tenant_id,
+                    "bank_account_id": bank_account_id,
+                    "expense_account_id": expense_account_id,
+                    "amount": amount,
+                }
+            )
+
+        return prepared_lines
+
+    def validate(self, attrs):
+        lines_data = attrs.get("lines")
+        if lines_data is None and self.instance:
+            raise serializers.ValidationError({"lines": "Payment lines are required."})
+        attrs["lines"] = self._validate_lines(lines_data or [])
+        attrs["amount"] = quantize_money(
+            sum((line["amount"] for line in attrs["lines"]), Decimal("0.00"))
+        )
+        return attrs
 
     def _generate_expense_number(self, tenant_id):
         count = Expense.objects.filter(tenant_id=tenant_id).count() + 1
         return f"EXP-{count:05d}"
 
+    def _create_lines(self, expense, lines_data):
+        for line_data in lines_data:
+            ExpenseLine.objects.create(expense=expense, **line_data)
+
+    @transaction.atomic
     def create(self, validated_data):
-        tenant_id = self.context["request"].user.tenant_id
-        bank_account_id = validated_data.pop("bank_account_id")
-        expense_account_id = validated_data.pop("expense_account_id")
-        return Expense.objects.create(
+        lines_data = validated_data.pop("lines")
+        tenant_id = lines_data[0]["tenant_id"]
+        expense = Expense.objects.create(
             tenant_id=tenant_id,
             expense_number=self._generate_expense_number(tenant_id),
-            bank_account_id=bank_account_id,
-            expense_account_id=expense_account_id,
             **validated_data,
         )
+        self._create_lines(expense, lines_data)
+        return expense
 
+    @transaction.atomic
     def update(self, instance, validated_data):
-        instance.bank_account_id = validated_data.pop("bank_account_id", instance.bank_account_id)
-        instance.expense_account_id = validated_data.pop("expense_account_id", instance.expense_account_id)
+        lines_data = validated_data.pop("lines")
+        instance.tenant_id = lines_data[0]["tenant_id"]
         instance.date = validated_data.get("date", instance.date)
         instance.amount = validated_data.get("amount", instance.amount)
         instance.remarks = validated_data.get("remarks", instance.remarks)
         instance.save()
+        instance.lines.filter(deleted_at__isnull=True).update(deleted_at=now())
+        self._create_lines(instance, lines_data)
         return instance
 
 

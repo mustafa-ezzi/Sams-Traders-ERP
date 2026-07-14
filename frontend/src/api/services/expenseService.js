@@ -2,10 +2,21 @@ import axiosInstance from "../axiosInstance";
 
 const BASE_URL = "/accounts/expenses/";
 
+const mapExpenseLine = (line) => ({
+  ...line,
+  tenantId: line.tenant_id || "",
+  bankAccountId: line.bank_account?.id || line.bank_account_id || "",
+  expenseAccountId: line.expense_account?.id || line.expense_account_id || "",
+  amount: line.amount ?? 0,
+});
+
 const mapExpense = (expense) => ({
   ...expense,
-  bankAccountId: expense.bank_account?.id || expense.bank_account_id || "",
-  expenseAccountId: expense.expense_account?.id || expense.expense_account_id || "",
+  lines: (expense.lines || []).map(mapExpenseLine),
+  bankSummary: expense.bank_summary || "",
+  expenseSummary: expense.expense_summary || "",
+  dimensionSummary: expense.dimension_summary || "",
+  lineCount: expense.line_count ?? (expense.lines || []).length,
   amount: expense.amount ?? 0,
 });
 

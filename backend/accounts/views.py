@@ -8,7 +8,7 @@ from django.db import transaction
 from django.db.models import Count, Prefetch, Q, Sum
 from django.db.models.functions import Coalesce, TruncMonth
 from django.utils.timezone import now
-from rest_framework import status
+from rest_framework import filters, status
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import BasePermission, IsAuthenticated
@@ -84,7 +84,7 @@ from .serializers import (
     TenantStaffSerializer,
 )
 from .services import admin_login_service, login_service
-from .models import BankTransfer, Dimension, Expense, Inquiry, JournalEntry, JournalLine, User
+from .models import BankTransfer, Dimension, Expense, ExpenseLine, Inquiry, JournalEntry, JournalLine, User
 from .journal import (
     delete_bank_transfer_journals,
     delete_journal_entry,
@@ -2063,14 +2063,26 @@ class ExpenseViewSet(ModelViewSet):
     serializer_class = ExpenseSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
+    filter_backends = [filters.SearchFilter]
+    search_fields = [
+        "expense_number",
+        "lines__bank_account__name",
+        "lines__bank_account__code",
+        "lines__expense_account__name",
+        "lines__expense_account__code",
+        "remarks",
+    ]
 
     def get_queryset(self):
+        tenant_ids = get_request_tenant_filter(self.request)["tenant_id__in"]
         return (
-            Expense.objects.filter(
-                **get_request_tenant_filter(self.request),
-                deleted_at__isnull=True,
+            Expense.objects.filter(deleted_at__isnull=True)
+            .filter(Q(tenant_id__in=tenant_ids) | Q(lines__tenant_id__in=tenant_ids))
+            .prefetch_related(
+                "lines__bank_account",
+                "lines__expense_account",
             )
-            .select_related("bank_account", "expense_account")
+            .distinct()
             .order_by("-date", "-created_at")
         )
 
@@ -2104,8 +2116,10 @@ class ExpenseViewSet(ModelViewSet):
         return Response(response_serializer.data)
 
     def perform_destroy(self, instance):
-        instance.deleted_at = now()
+        stamp = now()
+        instance.deleted_at = stamp
         instance.save(update_fields=["deleted_at", "updated_at"])
+        instance.lines.filter(deleted_at__isnull=True).update(deleted_at=stamp)
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -2276,6 +2290,7 @@ class DimensionViewSet(ModelViewSet):
             JournalEntry.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
             JournalLine.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
             Expense.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
+            ExpenseLine.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
         ]
         return any(queryset.exists() for queryset in dependency_checks)
 

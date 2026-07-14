@@ -2192,28 +2192,31 @@ def build_comparative_profit_and_loss_report(tenant_ids, from_date, to_date):
 
 
 def build_expense_analysis_report(tenant_ids, from_date, to_date):
-    from accounts.models import Expense
+    from accounts.models import ExpenseLine
 
     dimension_names = _dimension_name_map(tenant_ids)
-    expenses = (
-        Expense.objects.filter(
-            tenant_id__in=tenant_ids,
+    expense_lines = (
+        ExpenseLine.objects.filter(
             deleted_at__isnull=True,
-            date__gte=from_date,
-            date__lte=to_date,
+            expense__deleted_at__isnull=True,
+            expense__date__gte=from_date,
+            expense__date__lte=to_date,
         )
-        .select_related("expense_account", "bank_account")
-        .order_by("date", "expense_number")
+        .filter(Q(tenant_id__in=tenant_ids) | Q(expense__tenant_id__in=tenant_ids))
+        .select_related("expense", "expense_account", "bank_account")
+        .order_by("expense__date", "expense__expense_number", "created_at")
     )
 
     grouped = {}
     detail_rows = []
     total_amount = Decimal("0.00")
 
-    for expense in expenses:
-        account = expense.expense_account
-        key = (expense.tenant_id, str(account.id))
-        amount = _money(expense.amount)
+    for line in expense_lines:
+        expense = line.expense
+        account = line.expense_account
+        line_tenant_id = line.tenant_id or expense.tenant_id
+        key = (line_tenant_id, str(account.id))
+        amount = _money(line.amount)
         total_amount += amount
 
         if key not in grouped:
@@ -2221,8 +2224,8 @@ def build_expense_analysis_report(tenant_ids, from_date, to_date):
                 "expense_account_id": str(account.id),
                 "account_code": account.code,
                 "account_name": account.name,
-                "tenant_id": expense.tenant_id,
-                "dimension_name": dimension_names.get(expense.tenant_id, expense.tenant_id),
+                "tenant_id": line_tenant_id,
+                "dimension_name": dimension_names.get(line_tenant_id, line_tenant_id),
                 "expense_count": 0,
                 "total_amount": Decimal("0.00"),
             }
@@ -2236,9 +2239,9 @@ def build_expense_analysis_report(tenant_ids, from_date, to_date):
                 "date": expense.date.isoformat(),
                 "account_code": account.code,
                 "account_name": account.name,
-                "bank_account_name": expense.bank_account.name,
-                "tenant_id": expense.tenant_id,
-                "dimension_name": dimension_names.get(expense.tenant_id, expense.tenant_id),
+                "bank_account_name": line.bank_account.name,
+                "tenant_id": line_tenant_id,
+                "dimension_name": dimension_names.get(line_tenant_id, line_tenant_id),
                 "amount": str(amount),
                 "remarks": expense.remarks or "",
             }

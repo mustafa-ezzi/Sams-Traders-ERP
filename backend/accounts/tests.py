@@ -13,7 +13,7 @@ from accounts.journal import (
     sync_sales_invoice_journal,
 )
 from accounts.models import JournalEntry
-from accounts.models import Account, Dimension, Expense, JournalLine, User
+from accounts.models import Account, Dimension, Expense, ExpenseLine, JournalLine, User
 from accounts.views import AccountViewSet, DimensionViewSet, ExpenseViewSet
 from inventory.models import (
     Brand,
@@ -2304,10 +2304,15 @@ class ExpenseTests(TestCase):
             "/api/accounts/expenses/",
             {
                 "date": "2026-04-22",
-                "bank_account_id": str(self.bank.id),
-                "expense_account_id": str(self.expense_account.id),
-                "amount": "1500.00",
                 "remarks": "Electricity bill",
+                "lines": [
+                    {
+                        "tenant_id": self.tenant_id,
+                        "bank_account_id": str(self.bank.id),
+                        "expense_account_id": str(self.expense_account.id),
+                        "amount": "1500.00",
+                    }
+                ],
             },
             format="json",
         )
@@ -2320,8 +2325,9 @@ class ExpenseTests(TestCase):
             deleted_at__isnull=True,
         )
         self.assertEqual(expense.amount, Decimal("1500.00"))
-        self.assertEqual(expense.bank_account_id, self.bank.id)
-        self.assertEqual(expense.expense_account_id, self.expense_account.id)
+        line = expense.lines.filter(deleted_at__isnull=True).get()
+        self.assertEqual(line.bank_account_id, self.bank.id)
+        self.assertEqual(line.expense_account_id, self.expense_account.id)
         self.assertTrue(
             JournalEntry.objects.filter(
                 tenant_id=self.tenant_id,
@@ -2336,10 +2342,15 @@ class ExpenseTests(TestCase):
             tenant_id=self.tenant_id,
             expense_number="EXP-00001",
             date="2026-04-22",
+            amount=Decimal("1500.00"),
+            remarks="Electricity bill",
+        )
+        ExpenseLine.objects.create(
+            tenant_id=self.tenant_id,
+            expense=expense,
             bank_account=self.bank,
             expense_account=self.expense_account,
             amount=Decimal("1500.00"),
-            remarks="Electricity bill",
         )
 
         sync_expense_journal(expense)
