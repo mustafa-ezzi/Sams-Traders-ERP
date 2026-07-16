@@ -466,7 +466,8 @@ def build_profit_and_loss_report(tenant_ids, from_date, to_date):
     line_totals = _journal_line_totals_for_accounts(
         tenant_ids,
         account_ids,
-        as_of_date=as_of_date,
+        from_date=from_date,
+        to_date=to_date,
     )
 
     balance_map = {}
