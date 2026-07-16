@@ -80,6 +80,11 @@ const PartyCrudPage = ({
   const [openingModalOpen, setOpeningModalOpen] = useState(false);
   const [editingOpening, setEditingOpening] = useState(null);
   const [deleteOpeningId, setDeleteOpeningId] = useState("");
+  const [openingSearch, setOpeningSearch] = useState("");
+  const [openingDimensionFilter, setOpeningDimensionFilter] = useState("");
+  const [openingPage, setOpeningPage] = useState(1);
+  const [openingTotal, setOpeningTotal] = useState(0);
+  const [openingLimit, setOpeningLimit] = useState(10);
   const [loadingRecord, setLoadingRecord] = useState(false);
   const toast = useToast();
   const { allowedDimensions } = useAuth();
@@ -149,16 +154,25 @@ const PartyCrudPage = ({
     }
   };
 
-  const loadOpeningBalances = async () => {
+  const loadOpeningBalances = async (
+    nextPage = openingPage,
+    nextSearch = openingSearch,
+    nextLimit = openingLimit,
+    nextDimension = openingDimensionFilter,
+  ) => {
     if (!partyType || isFormView) return;
     setOpeningLoading(true);
     try {
       const response = await partyOpeningBalanceService.list({
-        page: 1,
-        limit: 100,
+        page: nextPage,
+        limit: nextLimit,
+        search: nextSearch,
         partyType,
+        tenantId: nextDimension,
       });
       setOpeningBalances(response.data || []);
+      setOpeningTotal(response.total || 0);
+      setOpeningPage(response.page || nextPage);
     } catch {
       toast.error("Failed to load opening accounts");
     } finally {
@@ -236,7 +250,7 @@ const PartyCrudPage = ({
   useEffect(() => {
     if (!isFormView) {
       loadRecords(1, "");
-      loadOpeningBalances();
+      loadOpeningBalances(1, "", openingLimit, "");
     }
   }, [isFormView, partyType]);
 
@@ -367,6 +381,7 @@ const PartyCrudPage = ({
   };
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
+  const openingTotalPages = Math.max(1, Math.ceil(openingTotal / openingLimit));
 
   const handleSaveOpening = async (payload, openingId, dimensionCode = "") => {
     if (openingId) {
@@ -703,26 +718,65 @@ const PartyCrudPage = ({
 
           {partyType ? (
             <Card className="space-y-4">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                 <div>
                   <h3 className="text-lg font-bold text-slate-900">Opening Accounts</h3>
                   <p className="text-sm text-slate-500">
                     Posted to receivable/payable control accounts for party ledger reports.
                   </p>
                 </div>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => {
-                    setEditingOpening(null);
-                    setOpeningModalOpen(true);
-                    if (!openingPartyOptions.length && !openingPartyLoading) {
-                      loadOpeningPartyOptions();
+                <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap lg:w-auto lg:justify-end">
+                  <input
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-100 sm:w-56"
+                    placeholder={`Search ${singularTitle.toLowerCase()}, remarks…`}
+                    value={openingSearch}
+                    onChange={(event) => setOpeningSearch(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        loadOpeningBalances(1, openingSearch, openingLimit, openingDimensionFilter);
+                      }
+                    }}
+                  />
+                  <select
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100 sm:w-48"
+                    value={openingDimensionFilter}
+                    onChange={(event) => {
+                      const nextDimension = event.target.value;
+                      setOpeningDimensionFilter(nextDimension);
+                      loadOpeningBalances(1, openingSearch, openingLimit, nextDimension);
+                    }}
+                  >
+                    <option value="">All dimensions</option>
+                    {openingDimensions.map((dimension) => (
+                      <option key={dimension.code} value={dimension.code}>
+                        {dimension.name}
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() =>
+                      loadOpeningBalances(1, openingSearch, openingLimit, openingDimensionFilter)
                     }
-                  }}
-                >
-                  Add Opening Account
-                </Button>
+                  >
+                    Search
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => {
+                      setEditingOpening(null);
+                      setOpeningModalOpen(true);
+                      if (!openingPartyOptions.length && !openingPartyLoading) {
+                        loadOpeningPartyOptions();
+                      }
+                    }}
+                  >
+                    Add Opening Account
+                  </Button>
+                </div>
               </div>
 
               <div className="overflow-x-auto rounded-2xl border border-slate-200">
@@ -747,7 +801,7 @@ const PartyCrudPage = ({
                     ) : openingBalances.length === 0 ? (
                       <tr>
                         <td colSpan={6} className="px-4 py-6 text-center text-slate-500">
-                          No opening accounts yet.
+                          No opening accounts found.
                         </td>
                       </tr>
                     ) : (
@@ -792,6 +846,55 @@ const PartyCrudPage = ({
                     )}
                   </tbody>
                 </table>
+              </div>
+
+              <div className="flex flex-col gap-3 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+                <span className="text-center sm:text-left">
+                  {openingTotal} total opening accounts
+                </span>
+                <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-end">
+                  <PageSizeSelect
+                    value={openingLimit}
+                    onChange={(nextLimit) => {
+                      setOpeningLimit(nextLimit);
+                      loadOpeningBalances(1, openingSearch, nextLimit, openingDimensionFilter);
+                    }}
+                    disabled={openingLoading}
+                  />
+                  <Button
+                    variant="secondary"
+                    type="button"
+                    disabled={openingPage <= 1 || openingLoading}
+                    onClick={() =>
+                      loadOpeningBalances(
+                        openingPage - 1,
+                        openingSearch,
+                        openingLimit,
+                        openingDimensionFilter,
+                      )
+                    }
+                  >
+                    Prev
+                  </Button>
+                  <span className="font-semibold text-slate-700">
+                    Page {openingPage} / {openingTotalPages}
+                  </span>
+                  <Button
+                    variant="secondary"
+                    type="button"
+                    disabled={openingPage >= openingTotalPages || openingLoading}
+                    onClick={() =>
+                      loadOpeningBalances(
+                        openingPage + 1,
+                        openingSearch,
+                        openingLimit,
+                        openingDimensionFilter,
+                      )
+                    }
+                  >
+                    Next
+                  </Button>
+                </div>
               </div>
             </Card>
           ) : null}

@@ -14,13 +14,20 @@ const mapRecord = (record) => ({
 });
 
 class PartyOpeningBalanceService {
-  async list({ page = 1, limit = 20, search = "", partyType = "" } = {}) {
+  async list({
+    page = 1,
+    limit = 20,
+    search = "",
+    partyType = "",
+    tenantId = "",
+  } = {}) {
     const response = await axiosInstance.get(BASE_URL, {
       params: {
         page,
         limit,
         search,
         party_type: partyType,
+        ...(tenantId ? { tenant_id: tenantId } : {}),
       },
     });
     const items = response.data.data || response.data.results || [];

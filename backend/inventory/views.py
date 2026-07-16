@@ -1111,7 +1111,14 @@ class SupplierViewSet(SharedPartyViewSet):
 class PartyOpeningBalanceViewSet(SharedMasterViewSet):
     queryset = PartyOpeningBalance.objects.select_related("customer", "supplier")
     serializer_class = PartyOpeningBalanceSerializer
-    search_fields = ["customer__business_name", "supplier__business_name", "remarks"]
+    search_fields = [
+        "customer__business_name",
+        "customer__name",
+        "supplier__business_name",
+        "supplier__name",
+        "remarks",
+        "tenant_id",
+    ]
 
     def perform_create(self, serializer):
         serializer.save()
@@ -1123,7 +1130,16 @@ class PartyOpeningBalanceViewSet(SharedMasterViewSet):
             queryset = queryset.filter(party_type=PartyOpeningBalance.PartyType.CUSTOMER)
         elif party_type == "supplier":
             queryset = queryset.filter(party_type=PartyOpeningBalance.PartyType.SUPPLIER)
-        return queryset
+
+        dimension_code = (
+            self.request.query_params.get("tenant_id")
+            or self.request.query_params.get("dimension")
+            or ""
+        ).strip()
+        if dimension_code and dimension_code.upper() not in {"BOTH", "ALL"}:
+            queryset = queryset.filter(tenant_id=dimension_code)
+
+        return queryset.order_by("-date", "-created_at")
 
     def perform_destroy(self, instance):
         delete_journal_entry(
