@@ -569,18 +569,28 @@ const CreateUpdateSalesBankReceipt = () => {
                         value={line.tenantId}
                         onChange={(e) => {
                           const nextTenantId = e.target.value;
-                          const referencePatch = buildDefaultReferencePatch({
-                            options: line.invoiceOptions,
-                            tenantId: nextTenantId,
-                            against:
-                              line.receiptAgainst ||
-                              PAYMENT_AGAINST.OPENING_BALANCE,
-                          });
-                          updateLine(index, {
-                            tenantId: nextTenantId,
-                            bankAccountId: "",
-                            ...referencePatch,
-                          });
+                          const currentAgainst =
+                            line.receiptAgainst || PAYMENT_AGAINST.INVOICE;
+
+                          // Dimension change should update opening-balance + banks.
+                          // Invoices must NOT be re-selected based on dimension.
+                          if (currentAgainst === PAYMENT_AGAINST.OPENING_BALANCE) {
+                            const referencePatch = buildDefaultReferencePatch({
+                              options: line.invoiceOptions,
+                              tenantId: nextTenantId,
+                              against: PAYMENT_AGAINST.OPENING_BALANCE,
+                            });
+                            updateLine(index, {
+                              tenantId: nextTenantId,
+                              bankAccountId: "",
+                              ...referencePatch,
+                            });
+                          } else {
+                            updateLine(index, {
+                              tenantId: nextTenantId,
+                              bankAccountId: "",
+                            });
+                          }
                           loadBanksForLine(index, nextTenantId);
                         }}
                         required

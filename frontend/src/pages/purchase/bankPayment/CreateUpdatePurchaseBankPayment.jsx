@@ -120,11 +120,22 @@ const CreateUpdatePurchaseBankPayment = () => {
     setLines((current) =>
       current.map((line) => {
         if (!line.supplierId) return line;
+
+        const currentAgainst =
+          line.paymentAgainst || PAYMENT_AGAINST.INVOICE;
+
+        // Bank dimension change should update opening-balance lines only.
+        // Invoice allocations must remain unchanged.
+        if (currentAgainst !== PAYMENT_AGAINST.OPENING_BALANCE) {
+          return line;
+        }
+
         const referencePatch = buildDefaultReferencePatch({
           options: line.invoiceOptions,
           tenantId: bankTenantId,
-          against: line.paymentAgainst || PAYMENT_AGAINST.OPENING_BALANCE,
+          against: PAYMENT_AGAINST.OPENING_BALANCE,
         });
+
         return { ...line, ...referencePatch };
       }),
     );

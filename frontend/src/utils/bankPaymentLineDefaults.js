@@ -3,17 +3,19 @@ export const PAYMENT_AGAINST = {
   OPENING_BALANCE: "OPENING_BALANCE",
 };
 
+// Sales uses `receipt_against`, purchase uses `payment_against`
 export const getAgainstField = (option) =>
-  option?.receipt_against ||
-  option?.payment_against ||
-  PAYMENT_AGAINST.INVOICE;
+  option?.receipt_against || option?.payment_against || PAYMENT_AGAINST.INVOICE;
 
+// Invoices are NOT dimension-based in the UI, so we ignore tenant_id for INVOICE.
+// Opening balances ARE dimension-based, so we filter by tenant_id when against is OPENING_BALANCE.
 export const filterOptionsByDimension = (options, tenantId, against) => {
-  let filtered = options || [];
-  if (against) {
-    filtered = filtered.filter((option) => getAgainstField(option) === against);
-  }
-  if (tenantId) {
+  const list = options || [];
+  if (!against) return list;
+
+  let filtered = list.filter((option) => getAgainstField(option) === against);
+
+  if (against === PAYMENT_AGAINST.OPENING_BALANCE && tenantId) {
     filtered = filtered.filter(
       (option) => !option.tenant_id || option.tenant_id === tenantId,
     );
@@ -25,10 +27,12 @@ export const sortOptionsOldestFirst = (options) =>
   [...(options || [])].sort((a, b) => {
     const dateCmp = String(a.date || "").localeCompare(String(b.date || ""));
     if (dateCmp !== 0) return dateCmp;
+
     const createdCmp = String(a.created_at || "").localeCompare(
       String(b.created_at || ""),
     );
     if (createdCmp !== 0) return createdCmp;
+
     return String(a.invoice_number || "").localeCompare(
       String(b.invoice_number || ""),
     );
@@ -39,48 +43,34 @@ export const pickDefaultPaymentReference = ({
   tenantId = "",
   against = PAYMENT_AGAINST.OPENING_BALANCE,
 }) => {
-  const byAgainstAndDimension = sortOptionsOldestFirst(
-    filterOptionsByDimension(options, tenantId, against),
-  );
-  if (byAgainstAndDimension.length) {
-    return { against, option: byAgainstAndDimension[0] };
-  }
-
-  // Invoice should still auto-pick oldest even when current dimension has no rows.
   if (against === PAYMENT_AGAINST.INVOICE) {
-    const anyDimensionInvoice = sortOptionsOldestFirst(
+    const invoices = sortOptionsOldestFirst(
       filterOptionsByDimension(options, "", PAYMENT_AGAINST.INVOICE),
     );
-    if (anyDimensionInvoice.length) {
-      return { against, option: anyDimensionInvoice[0] };
-    }
-    return null;
+    return invoices.length
+      ? { against: PAYMENT_AGAINST.INVOICE, option: invoices[0] }
+      : null;
   }
 
   if (against === PAYMENT_AGAINST.OPENING_BALANCE) {
-    // Prefer opening balance in selected dimension, then fallback to oldest invoice.
-    const invoiceByDimension = sortOptionsOldestFirst(
-      filterOptionsByDimension(options, tenantId, PAYMENT_AGAINST.INVOICE),
+    const openings = sortOptionsOldestFirst(
+      filterOptionsByDimension(
+        options,
+        tenantId,
+        PAYMENT_AGAINST.OPENING_BALANCE,
+      ),
     );
-    if (invoiceByDimension.length) {
-      return { against: PAYMENT_AGAINST.INVOICE, option: invoiceByDimension[0] };
+    if (openings.length) {
+      return { against: PAYMENT_AGAINST.OPENING_BALANCE, option: openings[0] };
     }
 
-    const anyDimensionInvoice = sortOptionsOldestFirst(
+    // Fallback: if no opening exists for this dimension, pick oldest invoice (cross-dimension).
+    const invoices = sortOptionsOldestFirst(
       filterOptionsByDimension(options, "", PAYMENT_AGAINST.INVOICE),
     );
-    if (anyDimensionInvoice.length) {
-      return { against: PAYMENT_AGAINST.INVOICE, option: anyDimensionInvoice[0] };
-    }
-
-    return null;
-  }
-
-  const byAgainstAnyDimension = sortOptionsOldestFirst(
-    filterOptionsByDimension(options, "", against),
-  );
-  if (byAgainstAnyDimension.length) {
-    return { against, option: byAgainstAnyDimension[0] };
+    return invoices.length
+      ? { against: PAYMENT_AGAINST.INVOICE, option: invoices[0] }
+      : null;
   }
 
   return null;
@@ -117,8 +107,7 @@ export const buildDefaultReferencePatch = ({
   against = PAYMENT_AGAINST.OPENING_BALANCE,
 }) => {
   const picked = pickDefaultPaymentReference({ options, tenantId, against });
-  if (!picked) {
-    return referenceSelectionFromOption(against, null);
-  }
+  if (!picked) return referenceSelectionFromOption(against, null);
   return referenceSelectionFromOption(picked.against, picked.option);
 };
+
