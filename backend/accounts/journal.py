@@ -373,7 +373,40 @@ def _build_purchase_bank_payment_lines(payment):
     for payment_line in payment.lines.filter(deleted_at__isnull=True).select_related(
         "supplier",
         "purchase_invoice",
+        "party_opening_balance",
     ):
+        if (
+            payment_line.payment_against == payment_line.PaymentAgainst.OPENING_BALANCE
+            and payment_line.party_opening_balance_id
+        ):
+            ap_tenant_id = payment_line.party_opening_balance.tenant_id or bank_tenant_id
+            supplier_account = _party_control_account_for_dimension(
+                payment_line.supplier,
+                "Supplier",
+                ap_tenant_id,
+            )
+            lines.extend(
+                [
+                    {
+                        "account": supplier_account,
+                        "tenant_id": ap_tenant_id,
+                        "debit": payment_line.amount,
+                        "credit": Decimal("0.00"),
+                        "line_description": "Supplier Opening Payment",
+                        "people_type": "Supplier",
+                        "people_name": payment_line.supplier.business_name,
+                    },
+                    {
+                        "account": bank_account,
+                        "tenant_id": bank_tenant_id,
+                        "debit": Decimal("0.00"),
+                        "credit": payment_line.amount,
+                        "line_description": "Bank Payment",
+                    },
+                ]
+            )
+            continue
+
         allocations = _allocate_invoice_amount_by_tenant(
             payment_line.purchase_invoice,
             payment_line.amount,

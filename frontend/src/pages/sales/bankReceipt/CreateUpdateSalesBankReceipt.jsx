@@ -16,6 +16,11 @@ import {
 } from "../../../utils/accounts";
 import { useToast } from "../../../context/ToastContext";
 import { useAuth } from "../../../context/AuthContext";
+import {
+  PAYMENT_AGAINST,
+  buildDefaultReferencePatch,
+  filterOptionsByDimension,
+} from "../../../utils/bankPaymentLineDefaults";
 
 const selectClassName =
   "w-full min-w-[8rem] rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-800/90 dark:text-slate-100 dark:focus:ring-blue-900/40";
@@ -23,7 +28,7 @@ const selectClassName =
 const createEmptyLine = (tenantId = "") => ({
   key: `${Date.now()}-${Math.random()}`,
   customerId: "",
-  receiptAgainst: "INVOICE",
+  receiptAgainst: PAYMENT_AGAINST.OPENING_BALANCE,
   salesInvoiceId: "",
   partyOpeningBalanceId: "",
   salesmanId: "",
@@ -147,7 +152,12 @@ const CreateUpdateSalesBankReceipt = () => {
     }
   };
 
-  const loadInvoiceOptionsForLine = async (index, customerId) => {
+  const loadInvoiceOptionsForLine = async (
+    index,
+    customerId,
+    tenantId,
+    against = PAYMENT_AGAINST.OPENING_BALANCE,
+  ) => {
     if (!customerId) {
       updateLine(index, {
         invoiceOptions: [],
@@ -161,7 +171,15 @@ const CreateUpdateSalesBankReceipt = () => {
         customerId,
         editingId,
       );
-      updateLine(index, { invoiceOptions: options || [] });
+      const referencePatch = buildDefaultReferencePatch({
+        options: options || [],
+        tenantId,
+        against,
+      });
+      updateLine(index, {
+        invoiceOptions: options || [],
+        ...referencePatch,
+      });
     } catch (loadError) {
       toast.error(
         extractErrorMessage(loadError) || "Failed to load invoice options",
@@ -441,9 +459,10 @@ const CreateUpdateSalesBankReceipt = () => {
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white dark:divide-slate-700 dark:bg-slate-800">
               {lines.map((line, index) => {
-                const filteredOptions = (line.invoiceOptions || []).filter(
-                  (option) =>
-                    option.receipt_against === (line.receiptAgainst || "INVOICE"),
+                const filteredOptions = filterOptionsByDimension(
+                  line.invoiceOptions,
+                  line.tenantId,
+                  line.receiptAgainst || PAYMENT_AGAINST.OPENING_BALANCE,
                 );
                 const selectedOption = filteredOptions.find((option) =>
                   line.receiptAgainst === "OPENING_BALANCE"
@@ -467,12 +486,18 @@ const CreateUpdateSalesBankReceipt = () => {
                         onChange={(customerId) => {
                           updateLine(index, {
                             customerId,
+                            receiptAgainst: PAYMENT_AGAINST.OPENING_BALANCE,
                             salesInvoiceId: "",
                             partyOpeningBalanceId: "",
                             salesmanId: "",
                             amount: "0",
                           });
-                          loadInvoiceOptionsForLine(index, customerId);
+                          loadInvoiceOptionsForLine(
+                            index,
+                            customerId,
+                            line.tenantId,
+                            PAYMENT_AGAINST.OPENING_BALANCE,
+                          );
                         }}
                         getOptionLabel={(customer) =>
                           customer.business_name || customer.name || "Customer"
@@ -484,15 +509,15 @@ const CreateUpdateSalesBankReceipt = () => {
                       <select
                         className={selectClassName}
                         value={line.receiptAgainst}
-                        onChange={(e) =>
-                          updateLine(index, {
-                            receiptAgainst: e.target.value,
-                            salesInvoiceId: "",
-                            partyOpeningBalanceId: "",
-                            salesmanId: "",
-                            amount: "0",
-                          })
-                        }
+                        onChange={(e) => {
+                          const nextAgainst = e.target.value;
+                          const referencePatch = buildDefaultReferencePatch({
+                            options: line.invoiceOptions,
+                            tenantId: line.tenantId,
+                            against: nextAgainst,
+                          });
+                          updateLine(index, referencePatch);
+                        }}
                       >
                         <option value="INVOICE">Invoice</option>
                         <option value="OPENING_BALANCE">Opening Balance</option>
@@ -544,9 +569,17 @@ const CreateUpdateSalesBankReceipt = () => {
                         value={line.tenantId}
                         onChange={(e) => {
                           const nextTenantId = e.target.value;
+                          const referencePatch = buildDefaultReferencePatch({
+                            options: line.invoiceOptions,
+                            tenantId: nextTenantId,
+                            against:
+                              line.receiptAgainst ||
+                              PAYMENT_AGAINST.OPENING_BALANCE,
+                          });
                           updateLine(index, {
                             tenantId: nextTenantId,
                             bankAccountId: "",
+                            ...referencePatch,
                           });
                           loadBanksForLine(index, nextTenantId);
                         }}

@@ -17,7 +17,7 @@ from accounts.journal import (
     sync_purchase_return_journal,
 )
 from accounts.models import JournalEntry
-from inventory.models import Product, ProductStock, RawMaterial, Stock
+from inventory.models import PartyOpeningBalance, Product, ProductStock, RawMaterial, Stock
 from inventory.pagination import StandardResultsSetPagination
 from inventory.services import (
     get_current_product_average_cost,
@@ -42,6 +42,7 @@ from purchase.serializers import (
 from purchase.services import (
     get_purchase_invoice_financials,
     get_purchase_return_line_metrics,
+    get_supplier_opening_balance_financials,
     quantize_money,
 )
 from accounts.models import Dimension
@@ -651,7 +652,7 @@ class PurchaseBankPaymentViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="invoice-options")
     def invoice_options(self, request):
-        tenant_id = request.user.tenant_id
+        tenant_ids = get_shared_tenant_ids(request)
         supplier_id = request.query_params.get("supplier_id")
         payment_id = request.query_params.get("payment_id")
 
@@ -660,27 +661,29 @@ class PurchaseBankPaymentViewSet(viewsets.ModelViewSet):
 
         current_payment = None
         current_invoice_ids = set()
+        current_opening_ids = set()
         if payment_id:
             try:
                 current_payment = PurchaseBankPayment.objects.prefetch_related("lines").get(
                     id=payment_id,
-                    tenant_id=tenant_id,
+                    tenant_id__in=tenant_ids,
                     deleted_at__isnull=True,
                 )
             except PurchaseBankPayment.DoesNotExist:
-                raise ValidationError({"payment_id": "Purchase bank payment not found for this tenant."})
-            current_invoice_ids = {
-                line.purchase_invoice_id
-                for line in current_payment.lines.filter(deleted_at__isnull=True)
-            }
+                raise ValidationError({"payment_id": "Purchase bank payment not found."})
+            for line in current_payment.lines.filter(deleted_at__isnull=True):
+                if line.purchase_invoice_id:
+                    current_invoice_ids.add(line.purchase_invoice_id)
+                if line.party_opening_balance_id:
+                    current_opening_ids.add(line.party_opening_balance_id)
 
         invoices = (
             PurchaseInvoice.objects.filter(
-                tenant_id=tenant_id,
+                tenant_id__in=tenant_ids,
                 supplier_id=supplier_id,
                 deleted_at__isnull=True,
             )
-            .order_by("-date", "-created_at")
+            .order_by("date", "created_at")
         )
 
         payload = []
@@ -696,13 +699,46 @@ class PurchaseBankPaymentViewSet(viewsets.ModelViewSet):
 
             payload.append(
                 {
+                    "payment_against": PurchaseBankPaymentLine.PaymentAgainst.INVOICE,
                     "id": str(invoice.id),
                     "invoice_number": invoice.invoice_number,
                     "date": invoice.date,
+                    "tenant_id": invoice.tenant_id,
                     "net_amount": str(financials["net_amount"]),
                     "returned_amount": str(financials["returned_amount"]),
                     "paid_amount": str(financials["paid_amount"]),
                     "balance_amount": str(financials["balance_amount"]),
+                }
+            )
+
+        opening_qs = PartyOpeningBalance.objects.select_related("supplier").filter(
+            tenant_id__in=tenant_ids,
+            supplier_id=supplier_id,
+            party_type=PartyOpeningBalance.PartyType.SUPPLIER,
+            deleted_at__isnull=True,
+        ).order_by("date", "created_at")
+        for opening in opening_qs:
+            include_current_opening = opening.id in current_opening_ids
+            excluded_ids = [current_payment.id] if current_payment else []
+            opening_financials = get_supplier_opening_balance_financials(
+                opening,
+                excluded_payment_ids=excluded_ids,
+            )
+            if opening_financials["balance_amount"] <= Decimal("0.00") and not include_current_opening:
+                continue
+
+            payload.append(
+                {
+                    "payment_against": PurchaseBankPaymentLine.PaymentAgainst.OPENING_BALANCE,
+                    "id": str(opening.id),
+                    "invoice_number": "Opening Balance",
+                    "date": opening.date,
+                    "tenant_id": opening.tenant_id,
+                    "net_amount": str(opening_financials["opening_amount"]),
+                    "returned_amount": "0.00",
+                    "paid_amount": str(opening_financials["paid_amount"]),
+                    "balance_amount": str(opening_financials["balance_amount"]),
+                    "created_at": opening.created_at.isoformat() if opening.created_at else None,
                 }
             )
 

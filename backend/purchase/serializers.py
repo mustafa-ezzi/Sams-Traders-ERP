@@ -7,7 +7,7 @@ from rest_framework import serializers
 from accounts.dimensions import get_user_active_dimension_codes
 from common.tenancy import get_shared_tenant_ids, shared_master_exists
 from accounts.models import Account
-from inventory.models import Product, ProductStock, RawMaterial, Stock, Supplier, Warehouse
+from inventory.models import PartyOpeningBalance, Product, ProductStock, RawMaterial, Stock, Supplier, Warehouse
 from inventory.serializers import ProductDetailedSerializer, RawMaterialDetailedSerializer
 from purchase.models import (
     PurchaseBankPayment,
@@ -20,6 +20,7 @@ from purchase.models import (
 from purchase.services import (
     get_purchase_invoice_financials,
     get_purchase_return_line_metrics,
+    get_supplier_opening_balance_financials,
     quantize_money,
 )
 
@@ -646,14 +647,32 @@ class PurchaseBankPaymentLineSerializer(serializers.Serializer):
     id = serializers.UUIDField(read_only=True, required=False)
     supplier = SupplierMiniSerializer(read_only=True, required=False)
     supplier_id = serializers.UUIDField(write_only=True)
+    payment_against = serializers.ChoiceField(
+        choices=PurchaseBankPaymentLine.PaymentAgainst.choices,
+        required=False,
+        default=PurchaseBankPaymentLine.PaymentAgainst.INVOICE,
+    )
     purchase_invoice = PurchaseInvoiceMiniSerializer(read_only=True, required=False)
-    purchase_invoice_id = serializers.UUIDField(write_only=True)
+    purchase_invoice_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
+    party_opening_balance_id = serializers.UUIDField(
+        write_only=True,
+        required=False,
+        allow_null=True,
+    )
     amount = serializers.DecimalField(max_digits=12, decimal_places=2)
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
         data["supplier_id"] = str(instance.supplier_id)
-        data["purchase_invoice_id"] = str(instance.purchase_invoice_id)
+        data["payment_against"] = instance.payment_against
+        data["purchase_invoice_id"] = (
+            str(instance.purchase_invoice_id) if instance.purchase_invoice_id else None
+        )
+        data["party_opening_balance_id"] = (
+            str(instance.party_opening_balance_id)
+            if instance.party_opening_balance_id
+            else None
+        )
         return data
 
     def validate_amount(self, value):
@@ -716,10 +735,15 @@ class PurchaseBankPaymentSerializer(serializers.ModelSerializer):
         return f"{names[0]} +{len(names) - 1}"
 
     def get_reference_summary(self, obj):
-        labels = [
-            line.purchase_invoice.invoice_number
-            for line in obj.lines.filter(deleted_at__isnull=True).select_related("purchase_invoice")
-        ]
+        labels = []
+        for line in obj.lines.filter(deleted_at__isnull=True).select_related(
+            "purchase_invoice",
+            "party_opening_balance",
+        ):
+            if line.payment_against == PurchaseBankPaymentLine.PaymentAgainst.OPENING_BALANCE:
+                labels.append("Opening Balance")
+            elif line.purchase_invoice_id:
+                labels.append(line.purchase_invoice.invoice_number)
         if not labels:
             return ""
         if len(labels) == 1:
@@ -759,19 +783,35 @@ class PurchaseBankPaymentSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Selected account must have account type BANK")
         return value
 
-    def _validate_lines(self, lines_data):
+    def _validate_lines(self, lines_data, bank_account_id):
         request = self.context["request"]
         tenant_ids = get_shared_tenant_ids(request)
         excluded_payment_ids = [self.instance.id] if self.instance else []
         invoice_allocated = {}
+        opening_allocated = {}
         prepared_lines = []
 
         if not lines_data:
             raise serializers.ValidationError({"lines": "At least one payment line is required."})
 
+        try:
+            bank_account = Account.objects.get(
+                id=bank_account_id,
+                tenant_id__in=tenant_ids,
+                deleted_at__isnull=True,
+            )
+        except Account.DoesNotExist:
+            raise serializers.ValidationError({"bank_account_id": "Bank account not found"})
+        bank_tenant_id = bank_account.tenant_id
+
         for index, line in enumerate(lines_data):
             supplier_id = line.get("supplier_id")
+            payment_against = line.get(
+                "payment_against",
+                PurchaseBankPaymentLine.PaymentAgainst.INVOICE,
+            )
             purchase_invoice_id = line.get("purchase_invoice_id")
+            party_opening_balance_id = line.get("party_opening_balance_id")
             amount = quantize_money(line.get("amount", Decimal("0.00")))
 
             if not shared_master_exists(Supplier, request, supplier_id):
@@ -779,6 +819,79 @@ class PurchaseBankPaymentSerializer(serializers.ModelSerializer):
                     {"lines": {index: {"supplier_id": "Supplier not found"}}}
                 )
 
+            if payment_against == PurchaseBankPaymentLine.PaymentAgainst.OPENING_BALANCE:
+                if not party_opening_balance_id:
+                    raise serializers.ValidationError(
+                        {"lines": {index: {"party_opening_balance_id": "Opening balance is required."}}}
+                    )
+                opening_balance = PartyOpeningBalance.objects.select_related("supplier").filter(
+                    id=party_opening_balance_id,
+                    tenant_id__in=tenant_ids,
+                    party_type=PartyOpeningBalance.PartyType.SUPPLIER,
+                    deleted_at__isnull=True,
+                ).first()
+                if not opening_balance:
+                    raise serializers.ValidationError(
+                        {"lines": {index: {"party_opening_balance_id": "Opening balance not found."}}}
+                    )
+                if opening_balance.supplier_id != supplier_id:
+                    raise serializers.ValidationError(
+                        {
+                            "lines": {
+                                index: {
+                                    "party_opening_balance_id": (
+                                        "Opening balance does not belong to the chosen supplier."
+                                    )
+                                }
+                            }
+                        }
+                    )
+                if opening_balance.tenant_id != bank_tenant_id:
+                    raise serializers.ValidationError(
+                        {
+                            "lines": {
+                                index: {
+                                    "party_opening_balance_id": (
+                                        "Opening balance dimension must match the selected bank dimension."
+                                    )
+                                }
+                            }
+                        }
+                    )
+                financials = get_supplier_opening_balance_financials(
+                    opening_balance,
+                    excluded_payment_ids=excluded_payment_ids,
+                )
+                already = opening_allocated.get(str(opening_balance.id), Decimal("0.00"))
+                if amount + already > financials["balance_amount"]:
+                    raise serializers.ValidationError(
+                        {
+                            "lines": {
+                                index: {
+                                    "amount": (
+                                        "Payment amount cannot exceed opening balance "
+                                        f"({financials['balance_amount']})."
+                                    )
+                                }
+                            }
+                        }
+                    )
+                opening_allocated[str(opening_balance.id)] = already + amount
+                prepared_lines.append(
+                    {
+                        "supplier_id": supplier_id,
+                        "payment_against": payment_against,
+                        "purchase_invoice_id": None,
+                        "party_opening_balance_id": party_opening_balance_id,
+                        "amount": amount,
+                    }
+                )
+                continue
+
+            if not purchase_invoice_id:
+                raise serializers.ValidationError(
+                    {"lines": {index: {"purchase_invoice_id": "Purchase invoice is required."}}}
+                )
             purchase_invoice = (
                 PurchaseInvoice.objects.select_related("supplier")
                 .filter(id=purchase_invoice_id, deleted_at__isnull=True)
@@ -825,7 +938,9 @@ class PurchaseBankPaymentSerializer(serializers.ModelSerializer):
             prepared_lines.append(
                 {
                     "supplier_id": supplier_id,
+                    "payment_against": PurchaseBankPaymentLine.PaymentAgainst.INVOICE,
                     "purchase_invoice_id": purchase_invoice_id,
+                    "party_opening_balance_id": None,
                     "amount": amount,
                 }
             )
@@ -834,9 +949,12 @@ class PurchaseBankPaymentSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         lines_data = attrs.get("lines")
+        bank_account_id = attrs.get("bank_account_id")
+        if self.instance and not bank_account_id:
+            bank_account_id = self.instance.bank_account_id
         if lines_data is None and self.instance:
             raise serializers.ValidationError({"lines": "Payment lines are required."})
-        attrs["lines"] = self._validate_lines(lines_data or [])
+        attrs["lines"] = self._validate_lines(lines_data or [], bank_account_id)
         attrs["amount"] = quantize_money(
             sum((line["amount"] for line in attrs["lines"]), Decimal("0.00"))
         )

@@ -2,7 +2,7 @@ from django.db import models
 
 from accounts.models import Account
 from common.models import BaseModel
-from inventory.models import Product, RawMaterial, Supplier, Unit, Warehouse
+from inventory.models import PartyOpeningBalance, Product, RawMaterial, Supplier, Unit, Warehouse
 
 
 class PurchaseInvoice(BaseModel):
@@ -178,6 +178,10 @@ class PurchaseBankPayment(BaseModel):
 
 
 class PurchaseBankPaymentLine(BaseModel):
+    class PaymentAgainst(models.TextChoices):
+        INVOICE = "INVOICE", "Invoice"
+        OPENING_BALANCE = "OPENING_BALANCE", "Opening Balance"
+
     payment = models.ForeignKey(
         PurchaseBankPayment,
         on_delete=models.CASCADE,
@@ -188,10 +192,24 @@ class PurchaseBankPaymentLine(BaseModel):
         on_delete=models.PROTECT,
         related_name="purchase_bank_payment_lines",
     )
+    payment_against = models.CharField(
+        max_length=30,
+        choices=PaymentAgainst.choices,
+        default=PaymentAgainst.INVOICE,
+    )
     purchase_invoice = models.ForeignKey(
         PurchaseInvoice,
         on_delete=models.PROTECT,
+        null=True,
+        blank=True,
         related_name="bank_payment_lines",
+    )
+    party_opening_balance = models.ForeignKey(
+        PartyOpeningBalance,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="purchase_bank_payment_lines",
     )
     amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
 

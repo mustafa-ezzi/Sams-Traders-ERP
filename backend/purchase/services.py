@@ -2,7 +2,7 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from django.db.models import Sum
 
-from inventory.models import ProductStock
+from inventory.models import PartyOpeningBalance, ProductStock
 from purchase.models import PurchaseBankPaymentLine, PurchaseReturn, PurchaseReturnLine
 
 
@@ -73,6 +73,7 @@ def get_purchase_invoice_financials(purchase_invoice, excluded_payment_ids=None)
     paid_amount = (
         PurchaseBankPaymentLine.objects.filter(
             purchase_invoice=purchase_invoice,
+            payment_against=PurchaseBankPaymentLine.PaymentAgainst.INVOICE,
             deleted_at__isnull=True,
             payment__deleted_at__isnull=True,
         )
@@ -92,6 +93,34 @@ def get_purchase_invoice_financials(purchase_invoice, excluded_payment_ids=None)
     return {
         "net_amount": net_amount,
         "returned_amount": returned_amount,
+        "paid_amount": paid_amount,
+        "balance_amount": balance_amount,
+    }
+
+
+def get_supplier_opening_balance_financials(opening_balance, excluded_payment_ids=None):
+    excluded_payment_ids = excluded_payment_ids or []
+
+    opening_amount = quantize_money(opening_balance.amount or Decimal("0.00"))
+    paid_amount = (
+        PurchaseBankPaymentLine.objects.filter(
+            party_opening_balance=opening_balance,
+            payment_against=PurchaseBankPaymentLine.PaymentAgainst.OPENING_BALANCE,
+            deleted_at__isnull=True,
+            payment__deleted_at__isnull=True,
+        )
+        .exclude(payment_id__in=excluded_payment_ids)
+        .aggregate(total=Sum("amount"))["total"]
+        or Decimal("0.00")
+    )
+    paid_amount = quantize_money(paid_amount)
+    balance_amount = max(
+        quantize_money(opening_amount - paid_amount),
+        Decimal("0.00"),
+    )
+
+    return {
+        "opening_amount": opening_amount,
         "paid_amount": paid_amount,
         "balance_amount": balance_amount,
     }

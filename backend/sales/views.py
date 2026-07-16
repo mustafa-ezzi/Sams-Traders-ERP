@@ -897,7 +897,7 @@ class SalesBankReceiptViewSet(viewsets.ModelViewSet):
             customer_id=customer_id,
             party_type=PartyOpeningBalance.PartyType.CUSTOMER,
             deleted_at__isnull=True,
-        )
+        ).order_by("date", "created_at")
         for opening in opening_qs:
             include_current_opening = opening.id in current_opening_ids
             excluded_ids = [current_receipt.id] if current_receipt else []
@@ -919,6 +919,7 @@ class SalesBankReceiptViewSet(viewsets.ModelViewSet):
                     "returned_amount": "0.00",
                     "received_amount": str(opening_financials["received_amount"]),
                     "balance_amount": str(opening_financials["balance_amount"]),
+                    "created_at": opening.created_at.isoformat() if opening.created_at else None,
                     "salesman": None,
                 }
             )

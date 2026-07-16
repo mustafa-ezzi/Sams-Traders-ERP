@@ -9,6 +9,11 @@ import bankTransferService from "../../../api/services/bankTransferService";
 import purchaseBankPaymentService from "../../../api/services/purchaseBankPaymentService";
 import { formatDecimal } from "../../../utils/format";
 import { useToast } from "../../../context/ToastContext";
+import {
+  PAYMENT_AGAINST,
+  buildDefaultReferencePatch,
+  filterOptionsByDimension,
+} from "../../../utils/bankPaymentLineDefaults";
 
 const selectClassName =
   "w-full rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/90 px-4 py-3 text-sm text-slate-800 dark:text-slate-100 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/40";
@@ -16,7 +21,9 @@ const selectClassName =
 const createEmptyLine = () => ({
   key: `${Date.now()}-${Math.random()}`,
   supplierId: "",
+  paymentAgainst: PAYMENT_AGAINST.OPENING_BALANCE,
   purchaseInvoiceId: "",
+  partyOpeningBalanceId: "",
   amount: "0",
   invoiceOptions: [],
 });
@@ -64,15 +71,28 @@ const CreateUpdatePurchaseBankPayment = () => {
     [lines],
   );
 
+  const getBankTenantId = (bankAccountId = form.bankAccountId) =>
+    bankAccounts.find((account) => account.id === bankAccountId)?.tenant_id || "";
+
   const updateLine = (index, patch) => {
     setLines((current) =>
       current.map((line, i) => (i === index ? { ...line, ...patch } : line)),
     );
   };
 
-  const loadInvoiceOptionsForLine = async (index, supplierId) => {
+  const loadInvoiceOptionsForLine = async (
+    index,
+    supplierId,
+    bankTenantId,
+    against = PAYMENT_AGAINST.OPENING_BALANCE,
+  ) => {
     if (!supplierId) {
-      updateLine(index, { invoiceOptions: [], purchaseInvoiceId: "", amount: "0" });
+      updateLine(index, {
+        invoiceOptions: [],
+        purchaseInvoiceId: "",
+        partyOpeningBalanceId: "",
+        amount: "0",
+      });
       return;
     }
     try {
@@ -80,12 +100,34 @@ const CreateUpdatePurchaseBankPayment = () => {
         supplierId,
         editingId,
       );
-      updateLine(index, { invoiceOptions: options || [] });
+      const referencePatch = buildDefaultReferencePatch({
+        options: options || [],
+        tenantId: bankTenantId,
+        against,
+      });
+      updateLine(index, {
+        invoiceOptions: options || [],
+        ...referencePatch,
+      });
     } catch (loadError) {
       toast.error(
         extractErrorMessage(loadError) || "Failed to load purchase invoices",
       );
     }
+  };
+
+  const reapplyDefaultsForAllLines = (bankTenantId) => {
+    setLines((current) =>
+      current.map((line) => {
+        if (!line.supplierId) return line;
+        const referencePatch = buildDefaultReferencePatch({
+          options: line.invoiceOptions,
+          tenantId: bankTenantId,
+          against: line.paymentAgainst || PAYMENT_AGAINST.OPENING_BALANCE,
+        });
+        return { ...line, ...referencePatch };
+      }),
+    );
   };
 
   useEffect(() => {
@@ -135,8 +177,10 @@ const CreateUpdatePurchaseBankPayment = () => {
             return {
               key: line.id || `${Date.now()}-${Math.random()}`,
               supplierId,
+              paymentAgainst: line.payment_against || PAYMENT_AGAINST.INVOICE,
               purchaseInvoiceId:
                 line.purchase_invoice_id || line.purchase_invoice?.id || "",
+              partyOpeningBalanceId: line.party_opening_balance_id || "",
               amount: String(line.amount ?? "0"),
               invoiceOptions: invoiceOptions || [],
             };
@@ -164,7 +208,12 @@ const CreateUpdatePurchaseBankPayment = () => {
         toast.error(`Row ${index + 1}: supplier is required`);
         return;
       }
-      if (!line.purchaseInvoiceId) {
+      if (line.paymentAgainst === PAYMENT_AGAINST.OPENING_BALANCE) {
+        if (!line.partyOpeningBalanceId) {
+          toast.error(`Row ${index + 1}: opening balance is required`);
+          return;
+        }
+      } else if (!line.purchaseInvoiceId) {
         toast.error(`Row ${index + 1}: purchase invoice is required`);
         return;
       }
@@ -180,7 +229,15 @@ const CreateUpdatePurchaseBankPayment = () => {
       remarks: form.remarks,
       lines: lines.map((line) => ({
         supplier_id: line.supplierId,
-        purchase_invoice_id: line.purchaseInvoiceId,
+        payment_against: line.paymentAgainst || PAYMENT_AGAINST.INVOICE,
+        purchase_invoice_id:
+          line.paymentAgainst === PAYMENT_AGAINST.INVOICE
+            ? line.purchaseInvoiceId || null
+            : null,
+        party_opening_balance_id:
+          line.paymentAgainst === PAYMENT_AGAINST.OPENING_BALANCE
+            ? line.partyOpeningBalanceId || null
+            : null,
         amount: toNumber(line.amount).toFixed(2),
       })),
     };
@@ -230,7 +287,10 @@ const CreateUpdatePurchaseBankPayment = () => {
             label="Bank"
             value={form.bankAccountId}
             options={bankAccounts}
-            onChange={(bankAccountId) => setForm((c) => ({ ...c, bankAccountId }))}
+            onChange={(bankAccountId) => {
+              setForm((current) => ({ ...current, bankAccountId }));
+              reapplyDefaultsForAllLines(getBankTenantId(bankAccountId));
+            }}
             getOptionLabel={(account) =>
               account.label ||
               `${account.dimension_name || ""} - ${account.code || ""} - ${account.name || ""}`
@@ -273,7 +333,8 @@ const CreateUpdatePurchaseBankPayment = () => {
             <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-900/60">
               <tr>
                 <th className="px-3 py-3">Supplier</th>
-                <th className="px-3 py-3">Reference PI</th>
+                <th className="px-3 py-3">Against</th>
+                <th className="px-3 py-3">Invoice / Opening</th>
                 <th className="px-3 py-3 text-right">Actual Payment</th>
                 <th className="px-3 py-3 text-right">Amount</th>
                 <th className="px-3 py-3 text-right">Remaining Payment</th>
@@ -282,11 +343,19 @@ const CreateUpdatePurchaseBankPayment = () => {
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white dark:divide-slate-700 dark:bg-slate-800">
               {lines.map((line, index) => {
-                const selectedInvoice = (line.invoiceOptions || []).find(
-                  (invoice) => invoice.id === line.purchaseInvoiceId,
+                const bankTenantId = getBankTenantId();
+                const filteredOptions = filterOptionsByDimension(
+                  line.invoiceOptions,
+                  bankTenantId,
+                  line.paymentAgainst || PAYMENT_AGAINST.OPENING_BALANCE,
                 );
-                const actualPayment = selectedInvoice
-                  ? toNumber(selectedInvoice.balance_amount)
+                const selectedOption = filteredOptions.find((option) =>
+                  line.paymentAgainst === PAYMENT_AGAINST.OPENING_BALANCE
+                    ? option.id === line.partyOpeningBalanceId
+                    : option.id === line.purchaseInvoiceId,
+                );
+                const actualPayment = selectedOption
+                  ? toNumber(selectedOption.balance_amount)
                   : null;
                 const remainingPayment =
                   actualPayment == null
@@ -301,10 +370,17 @@ const CreateUpdatePurchaseBankPayment = () => {
                         onChange={(supplierId) => {
                           updateLine(index, {
                             supplierId,
+                            paymentAgainst: PAYMENT_AGAINST.OPENING_BALANCE,
                             purchaseInvoiceId: "",
+                            partyOpeningBalanceId: "",
                             amount: "0",
                           });
-                          loadInvoiceOptionsForLine(index, supplierId);
+                          loadInvoiceOptionsForLine(
+                            index,
+                            supplierId,
+                            bankTenantId,
+                            PAYMENT_AGAINST.OPENING_BALANCE,
+                          );
                         }}
                         getOptionLabel={(supplier) =>
                           supplier.business_name || "Supplier"
@@ -312,21 +388,50 @@ const CreateUpdatePurchaseBankPayment = () => {
                         placeholder="Supplier…"
                       />
                     </td>
+                    <td className="px-3 py-3 min-w-[130px]">
+                      <select
+                        className={selectClassName}
+                        value={line.paymentAgainst}
+                        onChange={(e) => {
+                          const nextAgainst = e.target.value;
+                          const referencePatch = buildDefaultReferencePatch({
+                            options: line.invoiceOptions,
+                            tenantId: bankTenantId,
+                            against: nextAgainst,
+                          });
+                          updateLine(index, referencePatch);
+                        }}
+                      >
+                        <option value="INVOICE">Invoice</option>
+                        <option value="OPENING_BALANCE">Opening Balance</option>
+                      </select>
+                    </td>
                     <td className="px-3 py-3 min-w-[240px]">
                       <SearchableSelect
-                        value={line.purchaseInvoiceId}
-                        options={line.invoiceOptions || []}
-                        onChange={(purchaseInvoiceId) => {
-                          const invoice = (line.invoiceOptions || []).find(
-                            (item) => item.id === purchaseInvoiceId,
+                        value={
+                          line.paymentAgainst === PAYMENT_AGAINST.OPENING_BALANCE
+                            ? line.partyOpeningBalanceId
+                            : line.purchaseInvoiceId
+                        }
+                        options={filteredOptions}
+                        onChange={(optionId) => {
+                          const option = filteredOptions.find(
+                            (item) => item.id === optionId,
                           );
                           updateLine(index, {
-                            purchaseInvoiceId,
-                            amount: String(invoice?.balance_amount ?? "0"),
+                            purchaseInvoiceId:
+                              line.paymentAgainst === PAYMENT_AGAINST.INVOICE
+                                ? optionId
+                                : "",
+                            partyOpeningBalanceId:
+                              line.paymentAgainst === PAYMENT_AGAINST.OPENING_BALANCE
+                                ? optionId
+                                : "",
+                            amount: String(option?.balance_amount ?? "0"),
                           });
                         }}
-                        getOptionLabel={(invoice) => invoice.invoice_number}
-                        placeholder="Select PI…"
+                        getOptionLabel={(option) => option.invoice_number}
+                        placeholder="Select reference…"
                       />
                     </td>
                     <td className="px-3 py-3 text-right tabular-nums text-slate-700 dark:text-slate-200">
