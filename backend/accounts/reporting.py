@@ -29,7 +29,6 @@ def _serialize_line(line, show_tenant=False):
 def get_account_balance(account, as_of_date=None):
     """Current ledger balance for a single postable account."""
     queryset = JournalLine.objects.filter(
-        tenant_id=account.tenant_id,
         account_id=account.id,
         deleted_at__isnull=True,
         journal_entry__deleted_at__isnull=True,
@@ -299,8 +298,34 @@ def _profit_and_loss_contribution(account, debit_total, credit_total):
     return _money(balance * Decimal("-1"))
 
 
-def _build_balance_section(accounts, balance_map, group):
+def _expand_accounts_with_display_parents(accounts, group):
+    """Include missing parent tiers so inactive header accounts still appear in reports."""
     scoped_accounts = [account for account in accounts if account.account_group == group]
+    known_ids = {account.id for account in scoped_accounts}
+    extra_parents = []
+
+    for account in list(scoped_accounts):
+        parent_id = account.parent_id
+        while parent_id and parent_id not in known_ids:
+            parent = (
+                Account.objects.filter(
+                    id=parent_id,
+                    account_group=group,
+                    deleted_at__isnull=True,
+                )
+                .first()
+            )
+            if not parent:
+                break
+            extra_parents.append(parent)
+            known_ids.add(parent.id)
+            parent_id = parent.parent_id
+
+    return scoped_accounts + extra_parents
+
+
+def _build_balance_section(accounts, balance_map, group):
+    scoped_accounts = _expand_accounts_with_display_parents(accounts, group)
     node_map = {}
     roots = []
 
@@ -393,25 +418,11 @@ def build_profit_and_loss_report(tenant_ids, from_date, to_date):
     )
 
     account_ids = [account.id for account in accounts]
-    line_totals = {
-        row["account_id"]: {
-            "debit": _money(row["debit"]),
-            "credit": _money(row["credit"]),
-        }
-        for row in JournalLine.objects.filter(
-            tenant_id__in=tenant_ids,
-            deleted_at__isnull=True,
-            journal_entry__deleted_at__isnull=True,
-            journal_entry__date__gte=from_date,
-            journal_entry__date__lte=to_date,
-            account_id__in=account_ids,
-        )
-        .values("account_id")
-        .annotate(
-            debit=Coalesce(Sum("debit"), Decimal("0.00")),
-            credit=Coalesce(Sum("credit"), Decimal("0.00")),
-        )
-    }
+    line_totals = _journal_line_totals_for_accounts(
+        tenant_ids,
+        account_ids,
+        as_of_date=as_of_date,
+    )
 
     balance_map = {}
     for account in accounts:
@@ -474,24 +485,11 @@ def build_balance_sheet_report(tenant_ids, as_of_date):
     )
 
     account_ids = [account.id for account in accounts]
-    line_totals = {
-        row["account_id"]: {
-            "debit": _money(row["debit"]),
-            "credit": _money(row["credit"]),
-        }
-        for row in JournalLine.objects.filter(
-            tenant_id__in=tenant_ids,
-            deleted_at__isnull=True,
-            journal_entry__deleted_at__isnull=True,
-            journal_entry__date__lte=as_of_date,
-            account_id__in=account_ids,
-        )
-        .values("account_id")
-        .annotate(
-            debit=Coalesce(Sum("debit"), Decimal("0.00")),
-            credit=Coalesce(Sum("credit"), Decimal("0.00")),
-        )
-    }
+    line_totals = _journal_line_totals_for_accounts(
+        tenant_ids,
+        account_ids,
+        as_of_date=as_of_date,
+    )
 
     balance_map = {}
     income_total = Decimal("0.00")
@@ -515,6 +513,8 @@ def build_balance_sheet_report(tenant_ids, as_of_date):
             Account.AccountGroup.TAX,
             Account.AccountGroup.PURCHASE,
         }:
+            if not account.is_postable:
+                continue
             contribution = _profit_and_loss_contribution(
                 account,
                 totals["debit"],
@@ -530,6 +530,22 @@ def build_balance_sheet_report(tenant_ids, as_of_date):
     assets = _build_balance_section(accounts, balance_map, Account.AccountGroup.ASSET)
     liabilities = _build_balance_section(accounts, balance_map, Account.AccountGroup.LIABILITY)
     equity = _build_balance_section(accounts, balance_map, Account.AccountGroup.EQUITY)
+
+    if unclosed_profit_loss != Decimal("0.00"):
+        equity_rows = list(equity["rows"])
+        equity_rows.append(
+            {
+                "id": "unclosed-profit-loss",
+                "code": "",
+                "name": "Unclosed Profit / Loss",
+                "level": 2,
+                "depth": 1,
+                "is_postable": False,
+                "is_synthetic": True,
+                "balance": str(unclosed_profit_loss),
+            }
+        )
+        equity = {**equity, "rows": equity_rows}
 
     total_assets = _money(assets["total"])
     total_liabilities = _money(liabilities["total"])
@@ -1600,11 +1616,19 @@ def build_salesman_performance_report(
 
 
 def _journal_line_totals_for_accounts(tenant_ids, account_ids, *, as_of_date=None, from_date=None, to_date=None):
+    """Sum journal activity per account.
+
+    Balances are attributed to the account's COA row (account_id), not the
+    journal line's tenant_id. Cross-dimension postings often set line.tenant_id
+    to the source document dimension while the account belongs to another;
+    filtering by line tenant_id drops those amounts and makes the balance sheet
+    appear out of balance.
+    """
     queryset = JournalLine.objects.filter(
-        tenant_id__in=tenant_ids,
         deleted_at__isnull=True,
         journal_entry__deleted_at__isnull=True,
         account_id__in=account_ids,
+        account__tenant_id__in=tenant_ids,
     )
     if as_of_date is not None:
         queryset = queryset.filter(journal_entry__date__lte=as_of_date)

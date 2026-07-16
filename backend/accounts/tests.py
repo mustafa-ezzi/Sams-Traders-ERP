@@ -410,10 +410,10 @@ class LedgerReportTests(TestCase):
         self.assertEqual(payload["summary"]["total_assets"], "1500.00")
         self.assertEqual(payload["summary"]["total_liabilities"], "0.00")
         self.assertEqual(payload["summary"]["total_equity"], "1000.00")
-        self.assertEqual(payload["summary"]["total_liabilities_and_equity"], "1000.00")
+        self.assertEqual(payload["summary"]["total_liabilities_and_equity"], "1500.00")
         self.assertEqual(payload["summary"]["unclosed_profit_loss"], "500.00")
-        self.assertEqual(payload["summary"]["difference"], "500.00")
-        self.assertFalse(payload["summary"]["is_balanced"])
+        self.assertEqual(payload["summary"]["difference"], "0.00")
+        self.assertTrue(payload["summary"]["is_balanced"])
 
     def test_customer_party_ledger_report_with_open_dates(self):
         sales_entry = JournalEntry.objects.create(

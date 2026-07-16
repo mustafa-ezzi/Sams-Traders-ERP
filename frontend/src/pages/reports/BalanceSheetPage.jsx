@@ -104,7 +104,7 @@ const BalanceSheetSection = ({ sectionKey, section }) => {
                   </td>
                   <td className="px-4 py-3 text-slate-700">
                     <div
-                      className={`${row.is_postable ? "font-medium" : "font-semibold text-slate-900"}`}
+                      className={`${row.is_synthetic ? "italic text-blue-700" : row.is_postable ? "font-medium" : "font-semibold text-slate-900"}`}
                       style={{ paddingLeft: `${row.depth * 18}px` }}
                     >
                       {row.name}
@@ -306,7 +306,7 @@ const BalanceSheetPage = () => {
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
                   <p className="text-xs uppercase tracking-wide text-slate-400">
-                    Liabilities + Equity
+                    Liabilities + Equity + P/L
                   </p>
                   <p className="mt-2 text-lg font-bold text-slate-900">
                     {formatDecimal(summary.total_liabilities_and_equity)}
