@@ -120,6 +120,16 @@ const TrialBalancePage = () => {
                   <p className="mt-1 text-xl font-bold">{formatDecimal(report.summary?.difference)}</p>
                 </div>
               </div>
+              {report.summary?.journal_integrity &&
+              !report.summary.journal_integrity.is_balanced ? (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+                  Journal vouchers are out of balance by{" "}
+                  <strong>{formatDecimal(report.summary.journal_integrity.difference)}</strong>
+                  {" "}(raw debits {formatDecimal(report.summary.journal_integrity.total_debit)} vs credits{" "}
+                  {formatDecimal(report.summary.journal_integrity.total_credit)}). Some source
+                  documents may need to be re-saved to rebuild their journals.
+                </div>
+              ) : null}
               <div className="overflow-x-auto rounded-[24px] border border-slate-200 dark:border-slate-700">
                 <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-700">
                   <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-900/60">
@@ -135,7 +145,19 @@ const TrialBalancePage = () => {
                     {(report.rows || []).map((row) => (
                       <tr key={`${row.tenant_id}-${row.account_id}`}>
                         <td className="px-4 py-3 font-semibold">{row.code}</td>
-                        <td className="px-4 py-3">{row.name}</td>
+                        <td className="px-4 py-3">
+                          {row.name}
+                          {!row.is_active ? (
+                            <span className="ml-2 text-xs font-semibold uppercase text-amber-600">
+                              Inactive
+                            </span>
+                          ) : null}
+                          {!row.is_postable ? (
+                            <span className="ml-2 text-xs font-semibold uppercase text-slate-400">
+                              Header
+                            </span>
+                          ) : null}
+                        </td>
                         {showDimension ? <td className="px-4 py-3">{row.dimension_name}</td> : null}
                         <td className="px-4 py-3 text-right">{formatDecimal(row.debit_balance)}</td>
                         <td className="px-4 py-3 text-right">{formatDecimal(row.credit_balance)}</td>

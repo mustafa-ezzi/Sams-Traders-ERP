@@ -329,6 +329,21 @@ const BalanceSheetPage = () => {
                   </p>
                 </div>
               </div>
+              {summary.journal_integrity && !summary.journal_integrity.is_balanced ? (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  Underlying journal vouchers are out of balance by{" "}
+                  <strong>{formatDecimal(summary.journal_integrity.difference)}</strong>.
+                  Re-save affected sales, purchase, or bank documents to rebuild journals,
+                  or contact support to run a ledger repair.
+                </div>
+              ) : null}
+              {!summary.is_balanced && summary.journal_integrity?.is_balanced ? (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  Journals balance, but some account balances are on inactive or header
+                  accounts. Check the Trial Balance for inactive/header rows and re-post
+                  those entries to the correct postable accounts.
+                </div>
+              ) : null}
             </Card>
 
             <div className="grid gap-6 xl:grid-cols-2">

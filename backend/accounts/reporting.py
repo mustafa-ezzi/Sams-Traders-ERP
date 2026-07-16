@@ -12,6 +12,56 @@ def _money(value):
     return Decimal(value or 0).quantize(Decimal("0.01"))
 
 
+def _accounts_for_balance_reports(tenant_ids, as_of_date=None):
+    """Active COA rows plus any inactive/deleted-safe rows that still have journal activity."""
+    base_qs = Account.objects.filter(
+        tenant_id__in=tenant_ids,
+        deleted_at__isnull=True,
+    ).select_related("parent")
+
+    active_ids = set(base_qs.filter(is_active=True).values_list("id", flat=True))
+
+    activity_qs = JournalLine.objects.filter(
+        deleted_at__isnull=True,
+        journal_entry__deleted_at__isnull=True,
+        account__tenant_id__in=tenant_ids,
+        account__deleted_at__isnull=True,
+    )
+    if as_of_date is not None:
+        activity_qs = activity_qs.filter(journal_entry__date__lte=as_of_date)
+
+    activity_ids = set(activity_qs.values_list("account_id", flat=True).distinct())
+    return list(base_qs.filter(id__in=(active_ids | activity_ids)).order_by("code"))
+
+
+def _raw_journal_totals(tenant_ids, *, as_of_date=None, from_date=None, to_date=None):
+    """Sum raw journal debits/credits for integrity checks."""
+    queryset = JournalLine.objects.filter(
+        deleted_at__isnull=True,
+        journal_entry__deleted_at__isnull=True,
+        account__tenant_id__in=tenant_ids,
+        account__deleted_at__isnull=True,
+    )
+    if as_of_date is not None:
+        queryset = queryset.filter(journal_entry__date__lte=as_of_date)
+    if from_date is not None:
+        queryset = queryset.filter(journal_entry__date__gte=from_date)
+    if to_date is not None:
+        queryset = queryset.filter(journal_entry__date__lte=to_date)
+
+    totals = queryset.aggregate(
+        debit=Coalesce(Sum("debit"), Decimal("0.00")),
+        credit=Coalesce(Sum("credit"), Decimal("0.00")),
+    )
+    debit = _money(totals["debit"])
+    credit = _money(totals["credit"])
+    return {
+        "total_debit": debit,
+        "total_credit": credit,
+        "difference": _money(debit - credit),
+    }
+
+
 def _serialize_line(line, show_tenant=False):
     entry = line.journal_entry
     return {
@@ -406,16 +456,11 @@ def build_profit_and_loss_report(tenant_ids, from_date, to_date):
         Account.AccountGroup.PURCHASE,
     ]
 
-    accounts = list(
-        Account.objects.filter(
-            tenant_id__in=tenant_ids,
-            deleted_at__isnull=True,
-            is_active=True,
-            account_group__in=pl_groups,
-        )
-        .select_related("parent")
-        .order_by("code")
-    )
+    accounts = [
+        account
+        for account in _accounts_for_balance_reports(tenant_ids, to_date)
+        if account.account_group in pl_groups
+    ]
 
     account_ids = [account.id for account in accounts]
     line_totals = _journal_line_totals_for_accounts(
@@ -474,15 +519,7 @@ def build_profit_and_loss_report(tenant_ids, from_date, to_date):
 
 
 def build_balance_sheet_report(tenant_ids, as_of_date):
-    accounts = list(
-        Account.objects.filter(
-            tenant_id__in=tenant_ids,
-            deleted_at__isnull=True,
-            is_active=True,
-        )
-        .select_related("parent")
-        .order_by("code")
-    )
+    accounts = _accounts_for_balance_reports(tenant_ids, as_of_date)
 
     account_ids = [account.id for account in accounts]
     line_totals = _journal_line_totals_for_accounts(
@@ -492,9 +529,6 @@ def build_balance_sheet_report(tenant_ids, as_of_date):
     )
 
     balance_map = {}
-    income_total = Decimal("0.00")
-    expense_total = Decimal("0.00")
-
     for account in accounts:
         totals = line_totals.get(
             account.id,
@@ -506,26 +540,13 @@ def build_balance_sheet_report(tenant_ids, as_of_date):
             totals["credit"],
         )
 
-        if account.account_group in {
-            Account.AccountGroup.REVENUE,
-            Account.AccountGroup.COGS,
-            Account.AccountGroup.EXPENSE,
-            Account.AccountGroup.TAX,
-            Account.AccountGroup.PURCHASE,
-        }:
-            if not account.is_postable:
-                continue
-            contribution = _profit_and_loss_contribution(
-                account,
-                totals["debit"],
-                totals["credit"],
-            )
-            if contribution >= 0:
-                income_total += contribution
-            else:
-                expense_total += abs(contribution)
-
-    unclosed_profit_loss = _money(income_total - expense_total)
+    pl_report = build_profit_and_loss_report(
+        tenant_ids,
+        date(1900, 1, 1),
+        as_of_date,
+    )
+    unclosed_profit_loss = _money(pl_report["summary"]["net_profit"])
+    journal_integrity = _raw_journal_totals(tenant_ids, as_of_date=as_of_date)
 
     assets = _build_balance_section(accounts, balance_map, Account.AccountGroup.ASSET)
     liabilities = _build_balance_section(accounts, balance_map, Account.AccountGroup.LIABILITY)
@@ -571,6 +592,12 @@ def build_balance_sheet_report(tenant_ids, as_of_date):
             "unclosed_profit_loss": str(unclosed_profit_loss),
             "difference": str(difference),
             "is_balanced": difference == Decimal("0.00"),
+            "journal_integrity": {
+                "total_debit": str(journal_integrity["total_debit"]),
+                "total_credit": str(journal_integrity["total_credit"]),
+                "difference": str(journal_integrity["difference"]),
+                "is_balanced": journal_integrity["difference"] == Decimal("0.00"),
+            },
         },
     }
 
@@ -1665,20 +1692,14 @@ def _trial_balance_columns(account, balance):
 
 def build_trial_balance_report(tenant_ids, as_of_date):
     dimension_names = _dimension_name_map(tenant_ids)
-    accounts = list(
-        Account.objects.filter(
-            tenant_id__in=tenant_ids,
-            deleted_at__isnull=True,
-            is_active=True,
-            is_postable=True,
-        ).order_by("code", "tenant_id", "name")
-    )
+    accounts = _accounts_for_balance_reports(tenant_ids, as_of_date)
     account_ids = [account.id for account in accounts]
     line_totals = _journal_line_totals_for_accounts(
         tenant_ids,
         account_ids,
         as_of_date=as_of_date,
     )
+    journal_integrity = _raw_journal_totals(tenant_ids, as_of_date=as_of_date)
 
     rows = []
     total_debit = Decimal("0.00")
@@ -1704,6 +1725,8 @@ def build_trial_balance_report(tenant_ids, as_of_date):
                 "account_group": account.account_group,
                 "tenant_id": account.tenant_id,
                 "dimension_name": dimension_names.get(account.tenant_id, account.tenant_id),
+                "is_postable": account.is_postable,
+                "is_active": account.is_active,
                 "debit_balance": str(debit_balance),
                 "credit_balance": str(credit_balance),
             }
@@ -1722,6 +1745,12 @@ def build_trial_balance_report(tenant_ids, as_of_date):
             "total_credit": str(total_credit),
             "difference": str(difference),
             "is_balanced": difference == 0,
+            "journal_integrity": {
+                "total_debit": str(journal_integrity["total_debit"]),
+                "total_credit": str(journal_integrity["total_credit"]),
+                "difference": str(journal_integrity["difference"]),
+                "is_balanced": journal_integrity["difference"] == Decimal("0.00"),
+            },
         },
     }
 
