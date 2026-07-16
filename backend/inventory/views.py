@@ -9,6 +9,7 @@ from django.db.models.functions import Coalesce
 from rest_framework.decorators import action
 from accounts.journal import delete_journal_entry
 from accounts.access_control import filter_queryset_by_allowed_salesmen
+from accounts.audit_mixin import AuditedModelMixin
 from accounts.models import JournalEntry
 from .models import (
     Brand,
@@ -1108,7 +1109,8 @@ class SupplierViewSet(SharedPartyViewSet):
     party_model = Supplier
 
 
-class PartyOpeningBalanceViewSet(SharedMasterViewSet):
+class PartyOpeningBalanceViewSet(AuditedModelMixin, SharedMasterViewSet):
+    audit_entity_type = "party_opening_balance"
     queryset = PartyOpeningBalance.objects.select_related("customer", "supplier")
     serializer_class = PartyOpeningBalanceSerializer
     search_fields = [

@@ -65,6 +65,7 @@ import AdminUsersPage from "./pages/admin/AdminUsersPage";
 import AdminInquiriesPage from "./pages/admin/AdminInquiriesPage";
 import SupportPage from "./pages/SupportPage";
 import TenantStaffPage from "./pages/settings/TenantStaffPage";
+import ActivityLogPage from "./pages/settings/ActivityLogPage";
 import { childHomePath, childMayAccessPath } from "./utils/tenantAccess";
 
 const Protected = ({ children }) => {
@@ -230,6 +231,7 @@ const App = () => (
         <Route path="suppliers/:id/edit" element={<CreateUpdateSupplier />} />
         <Route path="support" element={<SupportPage />} />
         <Route path="settings/staff" element={<TenantStaffPage />} />
+        <Route path="settings/activity-log" element={<ActivityLogPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

@@ -461,6 +461,12 @@ const navigation = [
         icon: icons.users,
         orgAdminOnly: true,
       },
+      {
+        to: "/settings/activity-log",
+        label: "Activity log",
+        icon: icons.reports,
+        orgAdminOnly: true,
+      },
     ],
   },
   {
@@ -545,6 +551,7 @@ const pageTitles = {
   "/masters/brands": { title: "Brands", eyebrow: "Masters" },
   "/support": { title: "Support", eyebrow: "Users" },
   "/settings/staff": { title: "Staff access", eyebrow: "Admin" },
+  "/settings/activity-log": { title: "Activity log", eyebrow: "Admin" },
   "/reports/coa-completeness": {
     title: "COA Completeness",
     eyebrow: "Reports",

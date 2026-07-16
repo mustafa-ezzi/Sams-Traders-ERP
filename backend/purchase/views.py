@@ -16,6 +16,7 @@ from accounts.journal import (
     sync_purchase_invoice_journal,
     sync_purchase_return_journal,
 )
+from accounts.audit_mixin import AuditedModelMixin
 from accounts.models import JournalEntry
 from inventory.models import PartyOpeningBalance, Product, ProductStock, RawMaterial, Stock
 from inventory.pagination import StandardResultsSetPagination
@@ -49,7 +50,8 @@ from accounts.models import Dimension
 from common.tenancy import get_request_tenant_filter, get_shared_tenant_ids
 
 
-class PurchaseInvoiceViewSet(viewsets.ModelViewSet):
+class PurchaseInvoiceViewSet(AuditedModelMixin, viewsets.ModelViewSet):
+    audit_entity_type = "purchase_invoice"
     serializer_class = PurchaseInvoiceSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
@@ -321,7 +323,8 @@ class PurchaseInvoiceViewSet(viewsets.ModelViewSet):
         return Response({"data": items})
 
 
-class PurchaseReturnViewSet(viewsets.ModelViewSet):
+class PurchaseReturnViewSet(AuditedModelMixin, viewsets.ModelViewSet):
+    audit_entity_type = "purchase_return"
     serializer_class = PurchaseReturnSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
@@ -549,7 +552,8 @@ class PurchaseReturnViewSet(viewsets.ModelViewSet):
         )
 
 
-class PurchaseBankPaymentViewSet(viewsets.ModelViewSet):
+class PurchaseBankPaymentViewSet(AuditedModelMixin, viewsets.ModelViewSet):
+    audit_entity_type = "purchase_bank_payment"
     serializer_class = PurchaseBankPaymentSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination

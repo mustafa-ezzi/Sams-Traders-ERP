@@ -15,9 +15,14 @@ const authService = {
   },
 
   /**
-   * Logout - clears stored tokens
+   * Logout — best-effort audit, then clear stored tokens.
    */
-  logout() {
+  async logout() {
+    try {
+      await axiosInstance.post("/auth/logout/");
+    } catch {
+      // Token may already be invalid; still clear local session.
+    }
     localStorage.removeItem("token");
     localStorage.removeItem("refreshToken");
     localStorage.removeItem("tenantId");

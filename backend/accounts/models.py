@@ -423,3 +423,40 @@ class Inquiry(BaseModel):
 
     def __str__(self):
         return f"{self.user_name}: {self.subject}"
+
+
+class AuditLog(BaseModel):
+    """Append-only user activity log. Soft-delete is unused."""
+
+    class Action(models.TextChoices):
+        LOGIN = "LOGIN", "Login"
+        LOGOUT = "LOGOUT", "Logout"
+        CREATE = "CREATE", "Create"
+        UPDATE = "UPDATE", "Update"
+        DELETE = "DELETE", "Delete"
+
+    actor = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="audit_logs",
+    )
+    actor_username = models.CharField(max_length=150, blank=True, default="")
+    action = models.CharField(max_length=20, choices=Action.choices)
+    entity_type = models.CharField(max_length=80, blank=True, default="")
+    entity_id = models.CharField(max_length=64, blank=True, default="")
+    summary = models.CharField(max_length=500, blank=True, default="")
+    metadata = models.JSONField(default=dict, blank=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["tenant_id", "-created_at"]),
+            models.Index(fields=["tenant_id", "action"]),
+            models.Index(fields=["tenant_id", "entity_type"]),
+        ]
+
+    def __str__(self):
+        return f"{self.actor_username} {self.action} {self.entity_type}"

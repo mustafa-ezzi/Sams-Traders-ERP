@@ -5,11 +5,13 @@ from .views import (
     AdminInquiryViewSet,
     AdminLoginView,
     AdminUserViewSet,
+    AuditLogViewSet,
     BankTransferViewSet,
     DimensionViewSet,
     ExpenseViewSet,
     InquiryViewSet,
     LoginView,
+    LogoutView,
     TenantStaffViewSet,
 )
 from rest_framework.routers import DefaultRouter
@@ -21,12 +23,14 @@ router.register(r"bank-transfers", BankTransferViewSet, basename="bank-transfers
 router.register(r"dimensions", DimensionViewSet, basename="dimensions")
 router.register(r"inquiries", InquiryViewSet, basename="inquiries")
 router.register(r"tenant-staff", TenantStaffViewSet, basename="tenant-staff")
+router.register(r"audit-logs", AuditLogViewSet, basename="audit-logs")
 router.register(r"admin/users", AdminUserViewSet, basename="admin-users")
 router.register(r"admin/dimensions", AdminDimensionViewSet, basename="admin-dimensions")
 router.register(r"admin/inquiries", AdminInquiryViewSet, basename="admin-inquiries")
 
 urlpatterns = [
     path("login/", LoginView.as_view()),  # ✅ FIX HERE
+    path("logout/", LogoutView.as_view()),
     path("admin/login/", AdminLoginView.as_view()),
     path(
         "accounts/balance-sheet-report/",

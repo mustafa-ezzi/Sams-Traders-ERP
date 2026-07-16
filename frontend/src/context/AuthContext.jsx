@@ -1,4 +1,5 @@
 import { createContext, useContext, useMemo, useReducer } from "react";
+import authService from "../api/services/authService";
 
 const AuthContext = createContext(null);
 
@@ -173,8 +174,10 @@ export const AuthProvider = ({ children }) => {
   const [state, dispatch] = useReducer(reducer, initialState);
 
   const logout = () => {
-    dispatch({ type: "LOGOUT" });
-    window.location.href = "/login";
+    void authService.logout().finally(() => {
+      dispatch({ type: "LOGOUT" });
+      window.location.href = "/login";
+    });
   };
 
   const value = useMemo(

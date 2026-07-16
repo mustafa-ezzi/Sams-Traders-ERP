@@ -6,7 +6,7 @@ from django.utils.timezone import now
 
 from accounts.dimensions import build_dimension_code, get_user_active_dimension_codes
 from accounts.journal import quantize_money
-from accounts.models import Account, Dimension, Expense, ExpenseLine, Inquiry, User, BankTransfer
+from accounts.models import Account, AuditLog, Dimension, Expense, ExpenseLine, Inquiry, User, BankTransfer
 from common.tenancy import get_request_tenant_ids
 from inventory.models import Salesman
 
@@ -1226,3 +1226,22 @@ class AdminInquirySerializer(serializers.ModelSerializer):
             "created_at",
         ]
         read_only_fields = ["id", "tenant_id", "user_name", "subject", "message", "created_at"]
+
+
+class AuditLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AuditLog
+        fields = [
+            "id",
+            "tenant_id",
+            "actor",
+            "actor_username",
+            "action",
+            "entity_type",
+            "entity_id",
+            "summary",
+            "metadata",
+            "ip_address",
+            "created_at",
+        ]
+        read_only_fields = fields

@@ -106,6 +106,7 @@ export function pathToPermissionKey(pathname) {
   if (p.startsWith("/reports/sales")) return "reports_sales";
 
   if (p.startsWith("/settings/staff")) return "tenant_staff_manage";
+  if (p.startsWith("/settings/activity-log")) return "tenant_activity_log";
 
   if (p.startsWith("/users/configure") || p.startsWith("/users/dimensions")) {
     return "dimensions";
@@ -118,7 +119,12 @@ export function pathToPermissionKey(pathname) {
 export function childMayAccessPath(isTenantChild, uiPermissions, pathname) {
   if (!isTenantChild) return true;
   const key = pathToPermissionKey(pathname);
-  if (key === "dimensions" || key === "support" || key === "tenant_staff_manage") {
+  if (
+    key === "dimensions" ||
+    key === "support" ||
+    key === "tenant_staff_manage" ||
+    key === "tenant_activity_log"
+  ) {
     return false;
   }
   if (!key) return false;

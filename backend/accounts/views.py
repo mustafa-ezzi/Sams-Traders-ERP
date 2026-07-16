@@ -71,6 +71,7 @@ from sales.services import get_sales_invoice_financials
 from common.tenancy import get_request_tenant_filter, get_request_tenant_ids, get_shared_tenant_ids
 from .serializers import (
     AccountSerializer,
+    AuditLogSerializer,
     BankTransferSerializer,
     DimensionSerializer,
     ExpenseSerializer,
@@ -84,7 +85,19 @@ from .serializers import (
     TenantStaffSerializer,
 )
 from .services import admin_login_service, login_service
-from .models import BankTransfer, Dimension, Expense, ExpenseLine, Inquiry, JournalEntry, JournalLine, User
+from .models import (
+    AuditLog,
+    BankTransfer,
+    Dimension,
+    Expense,
+    ExpenseLine,
+    Inquiry,
+    JournalEntry,
+    JournalLine,
+    User,
+)
+from .audit import log_action
+from .audit_mixin import AuditedModelMixin
 from .journal import (
     delete_bank_transfer_journals,
     delete_journal_entry,
@@ -109,6 +122,18 @@ class LoginView(APIView):
                 raise ValidationError(serializer.errors)
 
             response = login_service(serializer.validated_data)
+            email = serializer.validated_data.get("email")
+            actor = User.objects.filter(email=email).first()
+            log_action(
+                request,
+                action=AuditLog.Action.LOGIN,
+                entity_type="session",
+                entity_id=str(getattr(actor, "pk", "") or ""),
+                summary=f"User logged in ({getattr(actor, 'username', email) or email})",
+                metadata={"email": email},
+                user=actor,
+                tenant_id=getattr(actor, "tenant_id", None) or "",
+            )
 
             return Response(response, status=status.HTTP_200_OK)
 
@@ -131,6 +156,28 @@ class LoginView(APIView):
                 },
                 status=status.HTTP_401_UNAUTHORIZED,
             )
+
+
+class LogoutView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        log_action(
+            request,
+            action=AuditLog.Action.LOGOUT,
+            entity_type="session",
+            entity_id=str(getattr(user, "pk", "") or ""),
+            summary=f"User logged out ({getattr(user, 'username', '') or getattr(user, 'email', '')})",
+            user=user,
+            tenant_id=getattr(request, "tenant_id", None)
+            or getattr(user, "tenant_id", None)
+            or "",
+        )
+        return Response(
+            {"data": None, "message": "Logged out successfully"},
+            status=status.HTTP_200_OK,
+        )
 
 
 class AdminLoginView(APIView):
@@ -187,9 +234,10 @@ class IsTenantOrgAdmin(BasePermission):
         return bool(get_user_active_dimension_codes(user))
 
 
-class TenantStaffViewSet(ModelViewSet):
+class TenantStaffViewSet(AuditedModelMixin, ModelViewSet):
     """Org admin creates child users with UI module permissions (same tenant)."""
 
+    audit_entity_type = "tenant_staff"
     serializer_class = TenantStaffSerializer
     permission_classes = [IsAuthenticated, IsTenantOrgAdmin]
     http_method_names = ["get", "post", "put", "patch", "delete"]
@@ -207,6 +255,46 @@ class TenantStaffViewSet(ModelViewSet):
         ctx = super().get_serializer_context()
         ctx["parent_user"] = self.request.user
         return ctx
+
+
+class AuditLogViewSet(ModelViewSet):
+    """Tenant org admin read-only activity log."""
+
+    serializer_class = AuditLogSerializer
+    permission_classes = [IsAuthenticated, IsTenantOrgAdmin]
+    pagination_class = StandardResultsSetPagination
+    filter_backends = [filters.SearchFilter]
+    search_fields = ["actor_username", "summary", "entity_type", "entity_id", "action"]
+    http_method_names = ["get"]
+
+    def get_queryset(self):
+        tenant_ids = get_user_active_dimension_codes(self.request.user)
+        current = getattr(self.request, "tenant_id", None) or self.request.user.tenant_id
+        if current and current not in tenant_ids:
+            tenant_ids = list(tenant_ids) + [current]
+
+        queryset = AuditLog.objects.filter(
+            deleted_at__isnull=True,
+        ).filter(
+            Q(tenant_id__in=tenant_ids) | Q(actor=self.request.user)
+        )
+
+        action = (self.request.query_params.get("action") or "").strip().upper()
+        if action:
+            queryset = queryset.filter(action=action)
+
+        entity_type = (self.request.query_params.get("entity_type") or "").strip()
+        if entity_type:
+            queryset = queryset.filter(entity_type=entity_type)
+
+        date_from = (self.request.query_params.get("date_from") or "").strip()
+        date_to = (self.request.query_params.get("date_to") or "").strip()
+        if date_from:
+            queryset = queryset.filter(created_at__date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(created_at__date__lte=date_to)
+
+        return queryset.select_related("actor").order_by("-created_at")
 
 
 class AdminDimensionViewSet(ModelViewSet):
@@ -2059,7 +2147,8 @@ class AccountViewSet(ModelViewSet):
         )
 
 
-class ExpenseViewSet(ModelViewSet):
+class ExpenseViewSet(AuditedModelMixin, ModelViewSet):
+    audit_entity_type = "expense"
     serializer_class = ExpenseSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
@@ -2137,7 +2226,8 @@ class ExpenseViewSet(ModelViewSet):
         )
 
 
-class BankTransferViewSet(ModelViewSet):
+class BankTransferViewSet(AuditedModelMixin, ModelViewSet):
+    audit_entity_type = "bank_transfer"
     serializer_class = BankTransferSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination

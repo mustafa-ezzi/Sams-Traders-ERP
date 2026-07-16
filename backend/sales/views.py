@@ -18,6 +18,7 @@ from accounts.journal import (
     sync_salesman_commission_payment_journal,
 )
 from accounts.access_control import filter_queryset_by_allowed_salesmen, user_can_access_salesman
+from accounts.audit_mixin import AuditedModelMixin
 from accounts.models import JournalEntry
 from inventory.models import Product, ProductStock
 from inventory.models import PartyOpeningBalance
@@ -57,7 +58,8 @@ from accounts.models import Dimension
 from common.tenancy import get_shared_tenant_filter, get_shared_tenant_ids
 
 
-class SalesInvoiceViewSet(viewsets.ModelViewSet):
+class SalesInvoiceViewSet(AuditedModelMixin, viewsets.ModelViewSet):
+    audit_entity_type = "sales_invoice"
     serializer_class = SalesInvoiceSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
@@ -442,7 +444,8 @@ class SalesOrderViewSet(viewsets.ModelViewSet):
         return Response({"data": products})
 
 
-class SalesReturnViewSet(viewsets.ModelViewSet):
+class SalesReturnViewSet(AuditedModelMixin, viewsets.ModelViewSet):
+    audit_entity_type = "sales_return"
     serializer_class = SalesReturnSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
@@ -675,7 +678,8 @@ class SalesReturnViewSet(viewsets.ModelViewSet):
         )
 
 
-class SalesBankReceiptViewSet(viewsets.ModelViewSet):
+class SalesBankReceiptViewSet(AuditedModelMixin, viewsets.ModelViewSet):
+    audit_entity_type = "sales_bank_receipt"
     serializer_class = SalesBankReceiptSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
@@ -927,7 +931,8 @@ class SalesBankReceiptViewSet(viewsets.ModelViewSet):
         return Response({"data": payload})
 
 
-class SalesmanCommissionPaymentViewSet(viewsets.ModelViewSet):
+class SalesmanCommissionPaymentViewSet(AuditedModelMixin, viewsets.ModelViewSet):
+    audit_entity_type = "salesman_commission_payment"
     serializer_class = SalesmanCommissionPaymentSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
