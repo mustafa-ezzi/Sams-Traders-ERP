@@ -39,19 +39,48 @@ export const pickDefaultPaymentReference = ({
   tenantId = "",
   against = PAYMENT_AGAINST.OPENING_BALANCE,
 }) => {
-  const forDimension = sortOptionsOldestFirst(
+  const byAgainstAndDimension = sortOptionsOldestFirst(
     filterOptionsByDimension(options, tenantId, against),
   );
-  if (forDimension.length) {
-    return { against, option: forDimension[0] };
+  if (byAgainstAndDimension.length) {
+    return { against, option: byAgainstAndDimension[0] };
+  }
+
+  // Invoice should still auto-pick oldest even when current dimension has no rows.
+  if (against === PAYMENT_AGAINST.INVOICE) {
+    const anyDimensionInvoice = sortOptionsOldestFirst(
+      filterOptionsByDimension(options, "", PAYMENT_AGAINST.INVOICE),
+    );
+    if (anyDimensionInvoice.length) {
+      return { against, option: anyDimensionInvoice[0] };
+    }
+    return null;
   }
 
   if (against === PAYMENT_AGAINST.OPENING_BALANCE) {
-    return pickDefaultPaymentReference({
-      options,
-      tenantId,
-      against: PAYMENT_AGAINST.INVOICE,
-    });
+    // Prefer opening balance in selected dimension, then fallback to oldest invoice.
+    const invoiceByDimension = sortOptionsOldestFirst(
+      filterOptionsByDimension(options, tenantId, PAYMENT_AGAINST.INVOICE),
+    );
+    if (invoiceByDimension.length) {
+      return { against: PAYMENT_AGAINST.INVOICE, option: invoiceByDimension[0] };
+    }
+
+    const anyDimensionInvoice = sortOptionsOldestFirst(
+      filterOptionsByDimension(options, "", PAYMENT_AGAINST.INVOICE),
+    );
+    if (anyDimensionInvoice.length) {
+      return { against: PAYMENT_AGAINST.INVOICE, option: anyDimensionInvoice[0] };
+    }
+
+    return null;
+  }
+
+  const byAgainstAnyDimension = sortOptionsOldestFirst(
+    filterOptionsByDimension(options, "", against),
+  );
+  if (byAgainstAnyDimension.length) {
+    return { against, option: byAgainstAnyDimension[0] };
   }
 
   return null;
