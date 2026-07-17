@@ -2231,6 +2231,15 @@ class BankTransferViewSet(AuditedModelMixin, ModelViewSet):
     serializer_class = BankTransferSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
+    filter_backends = [filters.SearchFilter]
+    search_fields = [
+        "transfer_number",
+        "from_bank_account__name",
+        "from_bank_account__code",
+        "to_bank_account__name",
+        "to_bank_account__code",
+        "remarks",
+    ]
 
     def get_queryset(self):
         tenant_ids = get_shared_tenant_ids(self.request) or [self.request.user.tenant_id]
@@ -2241,6 +2250,7 @@ class BankTransferViewSet(AuditedModelMixin, ModelViewSet):
                 | Q(to_bank_account__tenant_id__in=tenant_ids)
             )
             .select_related("from_bank_account__parent", "to_bank_account__parent")
+            .distinct()
             .order_by("-date", "-created_at")
         )
 
