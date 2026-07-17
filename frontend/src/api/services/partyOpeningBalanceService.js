@@ -20,6 +20,7 @@ class PartyOpeningBalanceService {
     search = "",
     partyType = "",
     tenantId = "",
+    ordering = "",
   } = {}) {
     const response = await axiosInstance.get(BASE_URL, {
       params: {
@@ -27,6 +28,7 @@ class PartyOpeningBalanceService {
         limit,
         search,
         party_type: partyType,
+        ordering,
         ...(tenantId ? { tenant_id: tenantId } : {}),
       },
     });

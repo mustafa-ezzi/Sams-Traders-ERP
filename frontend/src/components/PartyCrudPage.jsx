@@ -10,6 +10,7 @@ import FormInput from "./ui/FormInput";
 import ConfirmModal from "./ui/ConfirmModal";
 import IconButton from "./ui/IconButton";
 import PageSizeSelect from "./ui/PageSizeSelect";
+import SortableHeader from "./ui/SortableHeader";
 import dimensionService from "../api/services/dimensionService";
 import { useToast } from "../context/ToastContext";
 import { useAuth } from "../context/AuthContext";
@@ -45,6 +46,21 @@ const defaultValues = {
 const selectClassName =
   "w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100";
 
+const partyOrderingFields = {
+  name: "name",
+  businessName: "business_name",
+  email: "email",
+  phone: "phone_number",
+  account: "account__code",
+  address: "address",
+};
+
+const getOrdering = (sortConfig, fields) => {
+  const field = fields[sortConfig.key];
+  if (!field) return "";
+  return sortConfig.direction === "desc" ? `-${field}` : field;
+};
+
 const PartyCrudPage = ({
   title,
   service,
@@ -72,6 +88,10 @@ const PartyCrudPage = ({
   const [total, setTotal] = useState(0);
   const [limit, setLimit] = useState(10);
   const [deleteId, setDeleteId] = useState("");
+  const [sortConfig, setSortConfig] = useState({
+    key: "businessName",
+    direction: "asc",
+  });
   const [openingBalances, setOpeningBalances] = useState([]);
   const [openingPartyOptions, setOpeningPartyOptions] = useState([]);
   const [openingDimensionOptions, setOpeningDimensionOptions] = useState([]);
@@ -85,6 +105,10 @@ const PartyCrudPage = ({
   const [openingPage, setOpeningPage] = useState(1);
   const [openingTotal, setOpeningTotal] = useState(0);
   const [openingLimit, setOpeningLimit] = useState(10);
+  const [openingSortConfig, setOpeningSortConfig] = useState({
+    key: "date",
+    direction: "desc",
+  });
   const [loadingRecord, setLoadingRecord] = useState(false);
   const toast = useToast();
   const { allowedDimensions } = useAuth();
@@ -132,7 +156,12 @@ const PartyCrudPage = ({
     [openingPartyOptions],
   );
 
-  const loadRecords = async (nextPage = page, nextSearch = search, nextLimit = limit) => {
+  const loadRecords = async (
+    nextPage = page,
+    nextSearch = search,
+    nextLimit = limit,
+    nextSortConfig = sortConfig,
+  ) => {
     setLoading(true);
     setError("");
     try {
@@ -140,6 +169,7 @@ const PartyCrudPage = ({
         page: nextPage,
         limit: nextLimit,
         search: nextSearch,
+        ordering: getOrdering(nextSortConfig, partyOrderingFields),
       });
       setRecords(response.data || []);
       setTotal(response.total || 0);
@@ -159,6 +189,7 @@ const PartyCrudPage = ({
     nextSearch = openingSearch,
     nextLimit = openingLimit,
     nextDimension = openingDimensionFilter,
+    nextSortConfig = openingSortConfig,
   ) => {
     if (!partyType || isFormView) return;
     setOpeningLoading(true);
@@ -169,6 +200,16 @@ const PartyCrudPage = ({
         search: nextSearch,
         partyType,
         tenantId: nextDimension,
+        ordering: getOrdering(nextSortConfig, {
+          party:
+            partyType === "customer"
+              ? "customer__business_name"
+              : "supplier__business_name",
+          dimension: "tenant_id",
+          date: "date",
+          amount: "amount",
+          remarks: "remarks",
+        }),
       });
       setOpeningBalances(response.data || []);
       setOpeningTotal(response.total || 0);
@@ -178,6 +219,39 @@ const PartyCrudPage = ({
     } finally {
       setOpeningLoading(false);
     }
+  };
+
+  const handleSort = (key) => {
+    const nextSortConfig = {
+      key,
+      direction:
+        sortConfig.key === key && sortConfig.direction === "asc"
+          ? "desc"
+          : "asc",
+    };
+    setSortConfig(nextSortConfig);
+    setPage(1);
+    loadRecords(1, search, limit, nextSortConfig);
+  };
+
+  const handleOpeningSort = (key) => {
+    const nextSortConfig = {
+      key,
+      direction:
+        openingSortConfig.key === key &&
+        openingSortConfig.direction === "asc"
+          ? "desc"
+          : "asc",
+    };
+    setOpeningSortConfig(nextSortConfig);
+    setOpeningPage(1);
+    loadOpeningBalances(
+      1,
+      openingSearch,
+      openingLimit,
+      openingDimensionFilter,
+      nextSortConfig,
+    );
   };
 
   useEffect(() => {
@@ -622,18 +696,23 @@ const PartyCrudPage = ({
                 <table className="w-full min-w-[1080px] text-sm">
                   <thead className="bg-[linear-gradient(180deg,#edf4ff,#e1ebff)] text-left">
                     <tr>
-                      <th className="px-5 py-4 font-bold text-slate-700">Name</th>
-                      <th className="px-5 py-4 font-bold text-slate-700">
-                        Business Name
-                      </th>
-                      <th className="px-5 py-4 font-bold text-slate-700">Email</th>
-                      <th className="px-5 py-4 font-bold text-slate-700">Phone</th>
-                      <th className="px-5 py-4 font-bold text-slate-700">
-                        Account
-                      </th>
-                      <th className="px-5 py-4 font-bold text-slate-700">
-                        Address
-                      </th>
+                      {[
+                        ["Name", "name"],
+                        ["Business Name", "businessName"],
+                        ["Email", "email"],
+                        ["Phone", "phone"],
+                        ["Account", "account"],
+                        ["Address", "address"],
+                      ].map(([label, key]) => (
+                        <SortableHeader
+                          key={key}
+                          className="px-5 py-4 font-bold text-slate-700"
+                          label={label}
+                          sortKey={key}
+                          sortConfig={sortConfig}
+                          onSort={handleSort}
+                        />
+                      ))}
                       <th className="px-5 py-4 text-right font-bold text-slate-700">
                         Actions
                       </th>
@@ -789,11 +868,24 @@ const PartyCrudPage = ({
                 <table className="w-full min-w-[760px] text-sm">
                   <thead className="bg-slate-50 text-left">
                     <tr>
-                      <th className="px-4 py-3 font-bold text-slate-700">{singularTitle}</th>
-                      <th className="px-4 py-3 font-bold text-slate-700">Dimension</th>
-                      <th className="px-4 py-3 font-bold text-slate-700">Date</th>
-                      <th className="px-4 py-3 font-bold text-slate-700 text-right">Amount</th>
-                      <th className="px-4 py-3 font-bold text-slate-700">Remarks</th>
+                      {[
+                        [singularTitle, "party"],
+                        ["Dimension", "dimension"],
+                        ["Date", "date"],
+                        ["Amount", "amount"],
+                        ["Remarks", "remarks"],
+                      ].map(([label, key]) => (
+                        <SortableHeader
+                          key={key}
+                          className={`px-4 py-3 font-bold text-slate-700 ${
+                            key === "amount" ? "text-right" : ""
+                          }`}
+                          label={label}
+                          sortKey={key}
+                          sortConfig={openingSortConfig}
+                          onSort={handleOpeningSort}
+                        />
+                      ))}
                       <th className="px-4 py-3 text-right font-bold text-slate-700">Actions</th>
                     </tr>
                   </thead>

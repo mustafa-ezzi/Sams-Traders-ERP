@@ -5,9 +5,21 @@ import Button from "../../../components/ui/Button";
 import FormInput from "../../../components/ui/FormInput";
 import ConfirmModal from "../../../components/ui/ConfirmModal";
 import StateView from "../../../components/StateView";
+import SortableHeader from "../../../components/ui/SortableHeader";
 import purchaseReturnService from "../../../api/services/purchaseReturnService";
 import { formatDecimal } from "../../../utils/format";
 import { useToast } from "../../../context/ToastContext";
+const orderingFields = {
+  return: "return_number",
+  date: "date",
+  supplier: "supplier__business_name",
+  invoice: "purchase_invoice__invoice_number",
+  amount: "gross_amount",
+};
+const getOrdering = (sortConfig) => {
+  const field = orderingFields[sortConfig.key] || "date";
+  return sortConfig.direction === "desc" ? `-${field}` : field;
+};
 const extractErrorMessage = (error) => {
   const data = error?.response?.data;
   if (!data) return "Something went wrong";
@@ -33,8 +45,16 @@ const GetAllPurchaseReturn = () => {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [deleteId, setDeleteId] = useState("");
+  const [sortConfig, setSortConfig] = useState({
+    key: "date",
+    direction: "desc",
+  });
   const limit = 10;
-  const loadReturns = async (nextPage = page, nextSearch = search) => {
+  const loadReturns = async (
+    nextPage = page,
+    nextSearch = search,
+    nextSortConfig = sortConfig,
+  ) => {
     setLoading(true);
     setError("");
     try {
@@ -42,6 +62,7 @@ const GetAllPurchaseReturn = () => {
         page: nextPage,
         limit,
         search: nextSearch,
+        ordering: getOrdering(nextSortConfig),
       });
       setRecords(response.data || []);
       setTotal(response.total || 0);
@@ -55,8 +76,20 @@ const GetAllPurchaseReturn = () => {
     }
   };
   useEffect(() => {
-    loadReturns(1, "");
+    loadReturns(1, "", sortConfig);
   }, []);
+  const handleSort = (key) => {
+    const nextSortConfig = {
+      key,
+      direction:
+        sortConfig.key === key && sortConfig.direction === "asc"
+          ? "desc"
+          : "asc",
+    };
+    setSortConfig(nextSortConfig);
+    setPage(1);
+    loadReturns(1, search, nextSortConfig);
+  };
   const confirmDelete = async () => {
     try {
       const response = await purchaseReturnService.remove(deleteId);
@@ -133,11 +166,22 @@ const GetAllPurchaseReturn = () => {
                   {" "}
                   <tr>
                     {" "}
-                    <th className="px-4 py-3">Return</th>{" "}
-                    <th className="px-4 py-3">Date</th>{" "}
-                    <th className="px-4 py-3">Supplier</th>{" "}
-                    <th className="px-4 py-3">Invoice</th>{" "}
-                    <th className="px-4 py-3">Amount</th>{" "}
+                    {[
+                      ["Return", "return"],
+                      ["Date", "date"],
+                      ["Supplier", "supplier"],
+                      ["Invoice", "invoice"],
+                      ["Amount", "amount"],
+                    ].map(([label, key]) => (
+                      <SortableHeader
+                        key={key}
+                        className="px-4 py-3"
+                        label={label}
+                        sortKey={key}
+                        sortConfig={sortConfig}
+                        onSort={handleSort}
+                      />
+                    ))}{" "}
                     <th className="px-4 py-3">Actions</th>{" "}
                   </tr>{" "}
                 </thead>{" "}

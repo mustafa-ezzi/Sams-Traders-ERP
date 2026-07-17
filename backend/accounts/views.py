@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
-from django.db.models import Count, Prefetch, Q, Sum
+from django.db.models import Count, Min, Prefetch, Q, Sum
 from django.db.models.functions import Coalesce, TruncMonth
 from django.utils.timezone import now
 from rest_framework import filters, status
@@ -2152,7 +2152,19 @@ class ExpenseViewSet(AuditedModelMixin, ModelViewSet):
     serializer_class = ExpenseSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
-    filter_backends = [filters.SearchFilter]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    ordering_fields = [
+        "expense_number",
+        "date",
+        "tenant_id",
+        "_line_tenant_id",
+        "_bank_name",
+        "_expense_name",
+        "_description",
+        "amount",
+        "remarks",
+    ]
+    ordering = ["-date", "-created_at"]
     search_fields = [
         "expense_number",
         "lines__bank_account__name",
@@ -2171,6 +2183,24 @@ class ExpenseViewSet(AuditedModelMixin, ModelViewSet):
             .prefetch_related(
                 "lines__bank_account",
                 "lines__expense_account",
+            )
+            .annotate(
+                _line_tenant_id=Min(
+                    "lines__tenant_id",
+                    filter=Q(lines__deleted_at__isnull=True),
+                ),
+                _bank_name=Min(
+                    "lines__bank_account__name",
+                    filter=Q(lines__deleted_at__isnull=True),
+                ),
+                _expense_name=Min(
+                    "lines__expense_account__name",
+                    filter=Q(lines__deleted_at__isnull=True),
+                ),
+                _description=Min(
+                    "lines__description",
+                    filter=Q(lines__deleted_at__isnull=True),
+                ),
             )
             .distinct()
             .order_by("-date", "-created_at")

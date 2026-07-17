@@ -5,9 +5,25 @@ import Button from "../../../components/ui/Button";
 import FormInput from "../../../components/ui/FormInput";
 import ConfirmModal from "../../../components/ui/ConfirmModal";
 import StateView from "../../../components/StateView";
+import SortableHeader from "../../../components/ui/SortableHeader";
 import expenseService from "../../../api/services/expenseService";
 import { formatDecimal } from "../../../utils/format";
 import { useToast } from "../../../context/ToastContext";
+
+const orderingFields = {
+  expense: "expense_number",
+  date: "date",
+  dimension: "_line_tenant_id",
+  bank: "_bank_name",
+  expenseCoa: "_expense_name",
+  description: "_description",
+  amount: "amount",
+  remarks: "remarks",
+};
+const getOrdering = (sortConfig) => {
+  const field = orderingFields[sortConfig.key] || "date";
+  return sortConfig.direction === "desc" ? `-${field}` : field;
+};
 
 const extractErrorMessage = (error) => {
   const data = error?.response?.data;
@@ -35,9 +51,17 @@ const GetAllExpense = () => {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [deleteId, setDeleteId] = useState("");
+  const [sortConfig, setSortConfig] = useState({
+    key: "date",
+    direction: "desc",
+  });
   const limit = 10;
 
-  const loadExpenses = async (nextPage = page, nextSearch = search) => {
+  const loadExpenses = async (
+    nextPage = page,
+    nextSearch = search,
+    nextSortConfig = sortConfig,
+  ) => {
     setLoading(true);
     setError("");
     try {
@@ -45,6 +69,7 @@ const GetAllExpense = () => {
         page: nextPage,
         limit,
         search: nextSearch,
+        ordering: getOrdering(nextSortConfig),
       });
       setRecords(response.data || []);
       setTotal(response.total || 0);
@@ -57,8 +82,21 @@ const GetAllExpense = () => {
   };
 
   useEffect(() => {
-    loadExpenses(1, "");
+    loadExpenses(1, "", sortConfig);
   }, []);
+
+  const handleSort = (key) => {
+    const nextSortConfig = {
+      key,
+      direction:
+        sortConfig.key === key && sortConfig.direction === "asc"
+          ? "desc"
+          : "asc",
+    };
+    setSortConfig(nextSortConfig);
+    setPage(1);
+    loadExpenses(1, search, nextSortConfig);
+  };
 
   const confirmDelete = async () => {
     try {
@@ -124,14 +162,25 @@ const GetAllExpense = () => {
               <table className="min-w-full divide-y divide-slate-200 text-sm">
                 <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.2em] text-slate-500 dark:bg-slate-900/60 dark:text-slate-400">
                   <tr>
-                    <th className="px-4 py-3">Expense</th>
-                    <th className="px-4 py-3">Date</th>
-                    <th className="px-4 py-3">Dimension</th>
-                    <th className="px-4 py-3">Bank</th>
-                    <th className="px-4 py-3">Expense COA</th>
-                    <th className="px-4 py-3">Description</th>
-                    <th className="px-4 py-3">Amount</th>
-                    <th className="px-4 py-3">Remarks</th>
+                    {[
+                      ["Expense", "expense"],
+                      ["Date", "date"],
+                      ["Dimension", "dimension"],
+                      ["Bank", "bank"],
+                      ["Expense COA", "expenseCoa"],
+                      ["Description", "description"],
+                      ["Amount", "amount"],
+                      ["Remarks", "remarks"],
+                    ].map(([label, key]) => (
+                      <SortableHeader
+                        key={key}
+                        className="px-4 py-3"
+                        label={label}
+                        sortKey={key}
+                        sortConfig={sortConfig}
+                        onSort={handleSort}
+                      />
+                    ))}
                     <th className="px-4 py-3">Actions</th>
                   </tr>
                 </thead>

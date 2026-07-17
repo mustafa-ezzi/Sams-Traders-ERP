@@ -328,7 +328,15 @@ class PurchaseReturnViewSet(AuditedModelMixin, viewsets.ModelViewSet):
     serializer_class = PurchaseReturnSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
-    filter_backends = [filters.SearchFilter]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    ordering_fields = [
+        "return_number",
+        "date",
+        "supplier__business_name",
+        "purchase_invoice__invoice_number",
+        "gross_amount",
+    ]
+    ordering = ["-date", "-created_at"]
     search_fields = [
         "return_number",
         "purchase_invoice__invoice_number",

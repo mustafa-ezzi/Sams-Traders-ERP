@@ -16,6 +16,15 @@ const filterLocalOptions = (options, query, getOptionLabel) => {
   );
 };
 
+const sortOptionsAlphabetically = (options, getOptionLabel) =>
+  [...(options || [])].sort((first, second) =>
+    String(getOptionLabel(first) || "").localeCompare(
+      String(getOptionLabel(second) || ""),
+      undefined,
+      { numeric: true, sensitivity: "base" },
+    ),
+  );
+
 const SearchableSelect = ({
   label,
   required = false,
@@ -53,9 +62,16 @@ const SearchableSelect = ({
       // user can pick another option without clearing first.
       const filterQuery =
         open && resolvedLabel && query === resolvedLabel ? "" : query;
-      return filterLocalOptions(localOptions, open ? filterQuery : "", getOptionLabel);
+      return sortOptionsAlphabetically(
+        filterLocalOptions(
+          localOptions,
+          open ? filterQuery : "",
+          getOptionLabel,
+        ),
+        getOptionLabel,
+      );
     }
-    return remoteOptions;
+    return sortOptionsAlphabetically(remoteOptions, getOptionLabel);
   }, [
     getOptionLabel,
     localOptions,

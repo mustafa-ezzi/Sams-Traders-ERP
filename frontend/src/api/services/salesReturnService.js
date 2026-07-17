@@ -17,9 +17,9 @@ const mapSalesReturn = (salesReturn) => ({
 });
 
 class SalesReturnService {
-  async list({ page = 1, limit = 20, search = "" }) {
+  async list({ page = 1, limit = 20, search = "", ordering = "" }) {
     const response = await axiosInstance.get(BASE_URL, {
-      params: { page, limit, search },
+      params: { page, limit, search, ordering },
     });
 
     const items = response.data.data || response.data.results || [];

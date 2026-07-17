@@ -1036,8 +1036,17 @@ class BasePartyViewSet(viewsets.ModelViewSet):
     serializer_class = PartySerializer
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
-    filter_backends = [filters.SearchFilter]
+    filter_backends = [filters.SearchFilter, OrderingFilter]
     search_fields = ["name", "business_name", "phone_number", "email"]
+    ordering_fields = [
+        "name",
+        "business_name",
+        "email",
+        "phone_number",
+        "account__code",
+        "address",
+    ]
+    ordering = ["business_name", "name"]
 
     party_model = None  # override in subclass
 
@@ -1121,6 +1130,16 @@ class PartyOpeningBalanceViewSet(AuditedModelMixin, SharedMasterViewSet):
         "remarks",
         "tenant_id",
     ]
+    filter_backends = [filters.SearchFilter, OrderingFilter]
+    ordering_fields = [
+        "customer__business_name",
+        "supplier__business_name",
+        "tenant_id",
+        "date",
+        "amount",
+        "remarks",
+    ]
+    ordering = ["-date", "-created_at"]
 
     def perform_create(self, serializer):
         serializer.save()

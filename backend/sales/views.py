@@ -449,7 +449,15 @@ class SalesReturnViewSet(AuditedModelMixin, viewsets.ModelViewSet):
     serializer_class = SalesReturnSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
-    filter_backends = [filters.SearchFilter]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    ordering_fields = [
+        "return_number",
+        "date",
+        "customer__business_name",
+        "sales_invoice__invoice_number",
+        "gross_amount",
+    ]
+    ordering = ["-date", "-created_at"]
     search_fields = [
         "return_number",
         "sales_invoice__invoice_number",
