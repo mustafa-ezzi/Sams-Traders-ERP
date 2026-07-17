@@ -251,6 +251,13 @@ const SalesmanReportsPage = () => {
           <ReportPrintWrapper
             title="Salesman Report"
             subtitle={`${report.from_date} to ${report.to_date}`}
+            metaLeft={[
+              { label: "Report Type", value: "Salesman Report" },
+              {
+                label: "Range",
+                value: `${report.from_date} to ${report.to_date}`,
+              },
+            ]}
           >
           <div className="space-y-6">
             <Card className="space-y-4">

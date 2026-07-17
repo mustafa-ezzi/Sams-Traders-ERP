@@ -1,17 +1,57 @@
 import { useState } from "react";
 import Button from "../ui/Button";
 import PrintPreviewShell from "./PrintPreviewShell";
+import ReportPrintLayout, {
+  getReportPrintUserLabel,
+} from "./ReportPrintLayout";
 
+const buildDefaultMeta = (title, subtitle, metaLeft, metaRight) => {
+  const left =
+    metaLeft ||
+    [
+      subtitle ? { label: "Range", value: subtitle } : null,
+      { label: "Report Type", value: title },
+    ].filter(Boolean);
+
+  const right =
+    metaRight ||
+    [
+      { label: "User", value: getReportPrintUserLabel() },
+      {
+        label: "Date",
+        value: new Date().toLocaleDateString("en-GB").replace(/\//g, "-"),
+      },
+    ];
+
+  return { left, right };
+};
+
+/**
+ * Opens a professional print voucher (not a raw screen snapshot).
+ * Pass `printContent` for a dedicated print body; otherwise screen `children`
+ * are restyled inside ReportPrintLayout for print.
+ */
 const ReportPrintButton = ({
   title,
   subtitle = "",
+  metaLeft,
+  metaRight,
+  printContent = null,
+  documentTitle = "",
   disabled = false,
   className = "",
   children,
 }) => {
   const [open, setOpen] = useState(false);
 
-  if (!children) return null;
+  if (!children && !printContent) return null;
+
+  const { left, right } = buildDefaultMeta(
+    title,
+    subtitle,
+    metaLeft,
+    metaRight,
+  );
 
   return (
     <>
@@ -42,9 +82,20 @@ const ReportPrintButton = ({
         <PrintPreviewShell
           title={title}
           subtitle={subtitle}
+          documentTitle={
+            documentTitle ||
+            `${String(title || "Report").replace(/\s+/g, "-")}`
+          }
           onClose={() => setOpen(false)}
+          bareSheet
         >
-          {children}
+          <ReportPrintLayout
+            title={String(title || "Report").toUpperCase()}
+            metaLeft={left}
+            metaRight={right}
+          >
+            {printContent || children}
+          </ReportPrintLayout>
         </PrintPreviewShell>
       ) : null}
     </>

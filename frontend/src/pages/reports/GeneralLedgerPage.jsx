@@ -91,6 +91,14 @@ const GeneralLedgerPage = () => {
           <ReportPrintWrapper
             title="General Ledger"
             subtitle={`${report.from_date} to ${report.to_date} · ${scopeLabel(report.tenant_scope)}`}
+            metaLeft={[
+              { label: "Report Type", value: "General Ledger" },
+              {
+                label: "Range",
+                value: `${report.from_date} to ${report.to_date}`,
+              },
+              { label: "Dimension", value: scopeLabel(report.tenant_scope) },
+            ]}
           >
             <div className="space-y-6">
               {(report.account_sections || []).map((section) => (

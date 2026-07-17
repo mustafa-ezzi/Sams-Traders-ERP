@@ -10,6 +10,10 @@ import { useToast } from "../../context/ToastContext";
 import customerService from "../../api/services/customerService";
 import supplierService from "../../api/services/supplierService";
 import ReportPrintWrapper from "../../components/print/ReportPrintWrapper";
+import {
+  ReportPrintSummaryGrid,
+  ReportPrintTable,
+} from "../../components/print/ReportPrintLayout";
 
 const selectClassName =
   "w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100";
@@ -44,6 +48,28 @@ const extractErrorMessage = (error) => {
 
   return "Something went wrong";
 };
+
+const PARTY_LEDGER_COLUMNS = [
+  { key: "sno", label: "S.No", width: "48px" },
+  { key: "id", label: "ID" },
+  { key: "document_type", label: "Doc Type" },
+  { key: "date", label: "Date", width: "90px" },
+  { key: "remarks", label: "Remarks" },
+  {
+    key: "credit",
+    label: "Credit",
+    align: "right",
+    type: "money",
+    width: "100px",
+  },
+  {
+    key: "debit",
+    label: "Debit",
+    align: "right",
+    type: "money",
+    width: "100px",
+  },
+];
 
 const PartyLedgerReportsPage = () => {
   const toast = useToast();
@@ -81,6 +107,40 @@ const PartyLedgerReportsPage = () => {
         .some((value) => String(value).toLowerCase().includes(term)),
     );
   }, [report, search]);
+
+  const printTableRows = useMemo(
+    () =>
+      (report?.rows || []).map((row, index) => ({
+        _rowKey: `${row.id}-${row.date}-${index}`,
+        sno: index + 1,
+        id: row.id,
+        document_type: row.document_type,
+        date: row.date,
+        remarks: row.remarks || "—",
+        credit: row.credit,
+        debit: row.debit,
+      })),
+    [report],
+  );
+
+  const printSummaryItems = useMemo(() => {
+    if (!report) return [];
+    const items = (report.summary?.document_totals || []).map((item) => ({
+      label: item.label,
+      value: item.amount,
+      money: true,
+    }));
+    items.push({
+      label: "Grand Total",
+      value: report.summary?.grand_total,
+      money: true,
+    });
+    return items;
+  }, [report]);
+
+  const dateRangeLabel = report
+    ? `${report.from_date || "Beginning"} to ${report.to_date || "Latest"}`
+    : "";
 
   useEffect(() => {
     const loadParties = async () => {
@@ -242,136 +302,151 @@ const PartyLedgerReportsPage = () => {
         {report ? (
           <ReportPrintWrapper
             title="Party Ledger"
-            subtitle={`${report.partner_name} · ${
-              (report.from_date || "Beginning") + " to " + (report.to_date || "Latest")
-            }`}
+            subtitle={`${report.partner_name} · ${dateRangeLabel}`}
+            documentTitle={`Party-Ledger-${report.partner_name || "Report"}`}
+            metaLeft={[
+              {
+                label: "Party Type",
+                value:
+                  report.partner_type === "customer" ? "Customer" : "Supplier",
+              },
+              { label: "Party", value: report.partner_name },
+              { label: "Range", value: dateRangeLabel },
+            ]}
+            printContent={
+              <>
+                <ReportPrintTable
+                  columns={PARTY_LEDGER_COLUMNS}
+                  rows={printTableRows}
+                />
+                <ReportPrintSummaryGrid items={printSummaryItems} />
+              </>
+            }
           >
-          <Card className="space-y-5">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <h3 className="text-xl font-bold text-slate-900">
-                  {report.partner_name}
-                </h3>
-                <p className="mt-1 text-sm text-slate-500">
-                  {report.partner_type === "customer" ? "Customer" : "Supplier"}{" "}
-                  ledger
-                </p>
-                <p className="mt-1 text-sm text-slate-500">
-                  {(report.from_date || "Beginning") +
-                    " to " +
-                    (report.to_date || "Latest")}
-                </p>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-right">
-                  <p className="text-xs uppercase tracking-wide text-slate-400">
-                    Credit
+            <Card className="space-y-5">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <h3 className="text-xl font-bold text-slate-900">
+                    {report.partner_name}
+                  </h3>
+                  <p className="mt-1 text-sm text-slate-500">
+                    {report.partner_type === "customer"
+                      ? "Customer"
+                      : "Supplier"}{" "}
+                    ledger
                   </p>
-                  <p className="mt-1 text-lg font-bold text-emerald-700">
-                    {formatDecimal(report.summary?.total_credit)}
-                  </p>
+                  <p className="mt-1 text-sm text-slate-500">{dateRangeLabel}</p>
                 </div>
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-right">
-                  <p className="text-xs uppercase tracking-wide text-slate-400">
-                    Debit
-                  </p>
-                  <p className="mt-1 text-lg font-bold text-rose-700">
-                    {formatDecimal(report.summary?.total_debit)}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-slate-900 px-4 py-3 text-right text-white">
-                  <p className="text-xs uppercase tracking-wide text-slate-300">
-                    Grand Total
-                  </p>
-                  <p className="mt-1 text-lg font-bold">
-                    {formatDecimal(report.summary?.grand_total)}
-                  </p>
-                </div>
-              </div>
-            </div>
 
-            <div className="max-w-md cl-no-print">
-              <FormInput
-                label="Search"
-                placeholder="Search by ID, type, date, or remarks"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
-
-            <div className="overflow-hidden rounded-[24px] border border-slate-200">
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-slate-200 text-sm">
-                  <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
-                    <tr>
-                      <th className="px-4 py-3">S.No</th>
-                      <th className="px-4 py-3">ID</th>
-                      <th className="px-4 py-3">Doc Type</th>
-                      <th className="px-4 py-3">Date</th>
-                      <th className="px-4 py-3">Remarks</th>
-                      <th className="px-4 py-3 text-right">Credit</th>
-                      <th className="px-4 py-3 text-right">Debit</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 bg-white">
-                    {filteredRows.map((row, index) => (
-                      <tr key={`${row.id}-${row.date}-${index}`}>
-                        <td className="px-4 py-3 text-slate-600">
-                          {index + 1}
-                        </td>
-                        <td className="px-4 py-3 font-semibold text-blue-700">
-                          {row.id}
-                        </td>
-                        <td className="px-4 py-3 text-slate-600">
-                          {row.document_type}
-                        </td>
-                        <td className="px-4 py-3 text-slate-600">{row.date}</td>
-                        <td className="px-4 py-3 text-slate-600">
-                          {row.remarks || "-"}
-                        </td>
-                        <td className="px-4 py-3 text-right font-semibold text-emerald-700">
-                          {formatDecimal(row.credit)}
-                        </td>
-                        <td className="px-4 py-3 text-right font-semibold text-rose-700">
-                          {formatDecimal(row.debit)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div className="rounded-[24px] border border-slate-200 bg-slate-50/80 px-5 py-5">
-              <h4 className="text-sm font-bold uppercase tracking-[0.2em] text-slate-500">
-                Summary
-              </h4>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-                {(report.summary?.document_totals || []).map((item) => (
-                  <div
-                    key={item.label}
-                    className="rounded-2xl border border-slate-200 bg-white px-4 py-4"
-                  >
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-right">
                     <p className="text-xs uppercase tracking-wide text-slate-400">
-                      {item.label}
+                      Credit
                     </p>
-                    <p className="mt-2 text-lg font-bold text-slate-900">
-                      {formatDecimal(item.amount)}
+                    <p className="mt-1 text-lg font-bold text-emerald-700">
+                      {formatDecimal(report.summary?.total_credit)}
                     </p>
                   </div>
-                ))}
-                <div className="rounded-2xl border border-slate-900 bg-slate-900 px-4 py-4 text-white">
-                  <p className="text-xs uppercase tracking-wide text-slate-300">
-                    Grand Total
-                  </p>
-                  <p className="mt-2 text-lg font-bold">
-                    {formatDecimal(report.summary?.grand_total)}
-                  </p>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-right">
+                    <p className="text-xs uppercase tracking-wide text-slate-400">
+                      Debit
+                    </p>
+                    <p className="mt-1 text-lg font-bold text-rose-700">
+                      {formatDecimal(report.summary?.total_debit)}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-900 px-4 py-3 text-right text-white">
+                    <p className="text-xs uppercase tracking-wide text-slate-300">
+                      Grand Total
+                    </p>
+                    <p className="mt-1 text-lg font-bold">
+                      {formatDecimal(report.summary?.grand_total)}
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
-          </Card>
+
+              <div className="max-w-md cl-no-print">
+                <FormInput
+                  label="Search"
+                  placeholder="Search by ID, type, date, or remarks"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+
+              <div className="overflow-hidden rounded-[24px] border border-slate-200">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-slate-200 text-sm">
+                    <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
+                      <tr>
+                        <th className="px-4 py-3">S.No</th>
+                        <th className="px-4 py-3">ID</th>
+                        <th className="px-4 py-3">Doc Type</th>
+                        <th className="px-4 py-3">Date</th>
+                        <th className="px-4 py-3">Remarks</th>
+                        <th className="px-4 py-3 text-right">Credit</th>
+                        <th className="px-4 py-3 text-right">Debit</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {filteredRows.map((row, index) => (
+                        <tr key={`${row.id}-${row.date}-${index}`}>
+                          <td className="px-4 py-3 text-slate-600">
+                            {index + 1}
+                          </td>
+                          <td className="px-4 py-3 font-semibold text-blue-700">
+                            {row.id}
+                          </td>
+                          <td className="px-4 py-3 text-slate-600">
+                            {row.document_type}
+                          </td>
+                          <td className="px-4 py-3 text-slate-600">{row.date}</td>
+                          <td className="px-4 py-3 text-slate-600">
+                            {row.remarks || "-"}
+                          </td>
+                          <td className="px-4 py-3 text-right font-semibold text-emerald-700">
+                            {formatDecimal(row.credit)}
+                          </td>
+                          <td className="px-4 py-3 text-right font-semibold text-rose-700">
+                            {formatDecimal(row.debit)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="rounded-[24px] border border-slate-200 bg-slate-50/80 px-5 py-5">
+                <h4 className="text-sm font-bold uppercase tracking-[0.2em] text-slate-500">
+                  Summary
+                </h4>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                  {(report.summary?.document_totals || []).map((item) => (
+                    <div
+                      key={item.label}
+                      className="rounded-2xl border border-slate-200 bg-white px-4 py-4"
+                    >
+                      <p className="text-xs uppercase tracking-wide text-slate-400">
+                        {item.label}
+                      </p>
+                      <p className="mt-2 text-lg font-bold text-slate-900">
+                        {formatDecimal(item.amount)}
+                      </p>
+                    </div>
+                  ))}
+                  <div className="rounded-2xl border border-slate-900 bg-slate-900 px-4 py-4 text-white">
+                    <p className="text-xs uppercase tracking-wide text-slate-300">
+                      Grand Total
+                    </p>
+                    <p className="mt-2 text-lg font-bold">
+                      {formatDecimal(report.summary?.grand_total)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </Card>
           </ReportPrintWrapper>
         ) : null}
       </StateView>

@@ -9,6 +9,9 @@ const PRINT_STYLE = `
       height: auto !important;
       overflow: visible !important;
       background: white !important;
+      color: #111827 !important;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
     }
     body > *:not(#cl-print-root) {
       display: none !important;
@@ -37,7 +40,8 @@ const PRINT_STYLE = `
       padding: 0 !important;
     }
     .cl-print-sheet,
-    .inv-print-sheet {
+    .inv-print-sheet,
+    .rpt-print-sheet {
       box-shadow: none !important;
       border-radius: 0 !important;
       max-width: none !important;
@@ -54,6 +58,7 @@ const PrintPreviewShell = ({
   title = "Print preview",
   subtitle = "",
   documentTitle = "",
+  bareSheet = false,
   onClose,
   children,
 }) => {
@@ -135,9 +140,15 @@ const PrintPreviewShell = ({
         </div>
 
         <div className="cl-print-scroll flex-1 overflow-y-auto p-4 md:p-8">
-          <div className="cl-print-sheet mx-auto max-w-[210mm] rounded-2xl bg-white p-6 shadow-2xl shadow-slate-900/20 print:shadow-none md:p-8">
-            {children}
-          </div>
+          {bareSheet ? (
+            <div className="cl-print-sheet mx-auto max-w-[210mm] rounded-sm bg-white p-8 shadow-2xl shadow-slate-900/20 print:shadow-none md:px-10 md:py-9">
+              {children}
+            </div>
+          ) : (
+            <div className="cl-print-sheet mx-auto max-w-[210mm] rounded-2xl bg-white p-6 shadow-2xl shadow-slate-900/20 print:shadow-none md:p-8">
+              {children}
+            </div>
+          )}
         </div>
       </div>
     </>,

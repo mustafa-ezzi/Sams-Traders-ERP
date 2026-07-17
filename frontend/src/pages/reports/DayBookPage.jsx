@@ -82,7 +82,18 @@ const DayBookPage = () => {
 
       <StateView loading={loadingReport} error={error} isEmpty={!loadingReport && !error && !report}>
         {report ? (
-          <ReportPrintWrapper title="Day Book" subtitle={`${report.from_date} to ${report.to_date} · ${scopeLabel(report.tenant_scope)}`}>
+          <ReportPrintWrapper
+            title="Day Book"
+            subtitle={`${report.from_date} to ${report.to_date} · ${scopeLabel(report.tenant_scope)}`}
+            metaLeft={[
+              { label: "Report Type", value: "Day Book" },
+              {
+                label: "Range",
+                value: `${report.from_date} to ${report.to_date}`,
+              },
+              { label: "Dimension", value: scopeLabel(report.tenant_scope) },
+            ]}
+          >
             <div className="space-y-6">
               {(report.entry_rows || []).map((entry) => (
                 <Card key={entry.entry_id} className="space-y-3">

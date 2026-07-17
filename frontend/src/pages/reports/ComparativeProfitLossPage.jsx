@@ -83,6 +83,18 @@ const ComparativeProfitLossPage = () => {
           <ReportPrintWrapper
             title="Comparative Profit & Loss"
             subtitle={`Current ${report.from_date} to ${report.to_date} vs previous ${report.previous_from_date} to ${report.previous_to_date} · ${scopeLabel(report.tenant_scope)}`}
+            metaLeft={[
+              { label: "Report Type", value: "Comparative Profit & Loss" },
+              {
+                label: "Current",
+                value: `${report.from_date} to ${report.to_date}`,
+              },
+              {
+                label: "Previous",
+                value: `${report.previous_from_date} to ${report.previous_to_date}`,
+              },
+              { label: "Dimension", value: scopeLabel(report.tenant_scope) },
+            ]}
           >
             <Card className="overflow-x-auto rounded-[24px] border border-slate-200 dark:border-slate-700">
               <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-700">

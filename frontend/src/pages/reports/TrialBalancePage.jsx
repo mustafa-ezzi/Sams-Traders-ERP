@@ -98,6 +98,11 @@ const TrialBalancePage = () => {
           <ReportPrintWrapper
             title="Trial Balance"
             subtitle={`As of ${report.as_of_date} · ${scopeLabel(report.tenant_scope)}`}
+            metaLeft={[
+              { label: "Report Type", value: "Trial Balance" },
+              { label: "As of", value: report.as_of_date },
+              { label: "Dimension", value: scopeLabel(report.tenant_scope) },
+            ]}
           >
             <Card className="space-y-4">
               <div className="grid gap-3 sm:grid-cols-3">

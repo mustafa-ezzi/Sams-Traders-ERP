@@ -132,6 +132,14 @@ const AccountStatementPage = () => {
           <ReportPrintWrapper
             title="Account Statement"
             subtitle={`${report.account_code} — ${report.account_name} · ${report.from_date} to ${report.to_date} · ${scopeLabel(report.tenant_scope)}`}
+            metaLeft={[
+              { label: "Account", value: `${report.account_code} — ${report.account_name}` },
+              {
+                label: "Range",
+                value: `${report.from_date} to ${report.to_date}`,
+              },
+              { label: "Dimension", value: scopeLabel(report.tenant_scope) },
+            ]}
           >
             <Card className="space-y-4">
               <div className="grid gap-3 sm:grid-cols-3">

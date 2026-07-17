@@ -130,6 +130,16 @@ const CoaCompletenessReportPage = () => {
                 ? "All Dimensions"
                 : report.tenant_scope || "Selected dimension"
             }
+            metaLeft={[
+              { label: "Report Type", value: "COA Completeness" },
+              {
+                label: "Dimension",
+                value:
+                  report.tenant_scope === "BOTH"
+                    ? "All Dimensions"
+                    : report.tenant_scope || "Selected dimension",
+              },
+            ]}
           >
           <div className="space-y-6">
             <div className="grid gap-3 md:grid-cols-4">

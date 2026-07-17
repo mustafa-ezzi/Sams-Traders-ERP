@@ -82,7 +82,18 @@ const ExpenseAnalysisPage = () => {
 
       <StateView loading={loadingReport} error={error} isEmpty={!loadingReport && !error && !report}>
         {report ? (
-          <ReportPrintWrapper title="Expense Analysis" subtitle={`${report.from_date} to ${report.to_date} · ${scopeLabel(report.tenant_scope)}`}>
+          <ReportPrintWrapper
+            title="Expense Analysis"
+            subtitle={`${report.from_date} to ${report.to_date} · ${scopeLabel(report.tenant_scope)}`}
+            metaLeft={[
+              { label: "Report Type", value: "Expense Analysis" },
+              {
+                label: "Range",
+                value: `${report.from_date} to ${report.to_date}`,
+              },
+              { label: "Dimension", value: scopeLabel(report.tenant_scope) },
+            ]}
+          >
             <div className="space-y-6">
               <Card>
                 <p className="text-sm text-slate-500">

@@ -256,6 +256,17 @@ const BalanceSheetPage = () => {
             subtitle={`As of ${report.as_of_date} · ${
               report.tenant_scope === "BOTH" ? "All Dimensions" : report.tenant_scope
             }`}
+            metaLeft={[
+              { label: "Report Type", value: "Balance Sheet" },
+              { label: "As of", value: report.as_of_date },
+              {
+                label: "Dimension",
+                value:
+                  report.tenant_scope === "BOTH"
+                    ? "All Dimensions"
+                    : report.tenant_scope,
+              },
+            ]}
           >
           <div className="space-y-6">
             <Card className="space-y-4">

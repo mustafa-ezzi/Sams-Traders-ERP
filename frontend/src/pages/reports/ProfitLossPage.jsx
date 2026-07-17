@@ -364,7 +364,14 @@ const ProfitLossPage = () => {
 
       <StateView loading={loadingReport} error={error}>
         {report ? (
-          <ReportPrintWrapper title="Profit & Loss" subtitle={printSubtitle}>
+          <ReportPrintWrapper
+            title="Profit & Loss"
+            subtitle={printSubtitle}
+            metaLeft={[
+              { label: "Report Type", value: "Profit & Loss" },
+              { label: "Range", value: printSubtitle },
+            ]}
+          >
             {reportContent}
           </ReportPrintWrapper>
         ) : null}

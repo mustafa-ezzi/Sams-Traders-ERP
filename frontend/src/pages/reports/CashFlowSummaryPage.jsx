@@ -84,7 +84,18 @@ const CashFlowSummaryPage = () => {
 
       <StateView loading={loadingReport} error={error} isEmpty={!loadingReport && !error && !report}>
         {report ? (
-          <ReportPrintWrapper title="Cash Flow Summary" subtitle={`${report.from_date} to ${report.to_date} · ${scopeLabel(report.tenant_scope)}`}>
+          <ReportPrintWrapper
+            title="Cash Flow Summary"
+            subtitle={`${report.from_date} to ${report.to_date} · ${scopeLabel(report.tenant_scope)}`}
+            metaLeft={[
+              { label: "Report Type", value: "Cash Flow Summary" },
+              {
+                label: "Range",
+                value: `${report.from_date} to ${report.to_date}`,
+              },
+              { label: "Dimension", value: scopeLabel(report.tenant_scope) },
+            ]}
+          >
             <div className="space-y-6">
               <Card className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 {[

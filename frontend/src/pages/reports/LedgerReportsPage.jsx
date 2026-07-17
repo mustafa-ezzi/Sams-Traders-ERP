@@ -354,6 +354,13 @@ const LedgerReportsPage = () => {
           <ReportPrintWrapper
             title="Ledger Report"
             subtitle={`${report.from_date} to ${report.to_date} · ${report.title}`}
+            metaLeft={[
+              { label: "Ledger", value: report.title },
+              {
+                label: "Range",
+                value: `${report.from_date} to ${report.to_date}`,
+              },
+            ]}
           >
           <Card className="space-y-4">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">

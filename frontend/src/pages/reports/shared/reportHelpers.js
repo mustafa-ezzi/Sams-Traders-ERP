@@ -36,3 +36,8 @@ export const resolveReportTenant = (tenantScope, tenantId, dimensions = []) => {
   return tenantScope || tenantId || "";
 };
 
+/** Standard left-column meta for report print vouchers. */
+export const reportPrintMetaLeft = (entries = []) =>
+  entries.filter((item) => item && item.label && item.value != null && item.value !== "");
+
+
