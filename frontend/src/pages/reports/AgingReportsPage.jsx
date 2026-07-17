@@ -84,7 +84,7 @@ const PartyAgingTable = ({ report, showDimension }) => {
             <tr>
               <th className="px-4 py-3">Party</th>
               {showDimension ? <th className="px-4 py-3">Dimension</th> : null}
-              <th className="px-4 py-3 text-right">Invoices</th>
+              <th className="px-4 py-3 text-right">Docs</th>
               {buckets.map((bucket) => (
                 <th key={bucket.key} className="px-4 py-3 text-right">
                   {bucket.label}
@@ -140,10 +140,10 @@ const InvoiceDetailTable = ({ report, showDimension, partyLabel }) => {
         <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-700">
           <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.15em] text-slate-500 dark:bg-slate-900/60 dark:text-slate-400">
             <tr>
-              <th className="px-4 py-3">Invoice</th>
+              <th className="px-4 py-3">Document</th>
               <th className="px-4 py-3">{partyLabel}</th>
               {showDimension ? <th className="px-4 py-3">Dimension</th> : null}
-              <th className="px-4 py-3">Invoice Date</th>
+              <th className="px-4 py-3">Date</th>
               <th className="px-4 py-3">Due Date</th>
               <th className="px-4 py-3 text-right">Days Overdue</th>
               <th className="px-4 py-3">Bucket</th>
@@ -315,8 +315,9 @@ const AgingReportsPage = () => {
             Aging Reports
           </h2>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Analyze outstanding receivables and payables by aging bucket. Aging
-            uses due date when set, otherwise invoice date.
+            Analyze outstanding receivables and payables by aging bucket. Includes
+            unpaid invoices and opening balances. Aging uses due date when set,
+            otherwise document date.
           </p>
         </div>
 
@@ -402,7 +403,7 @@ const AgingReportsPage = () => {
                   </p>
                   <p className="mt-1 font-semibold text-slate-700 dark:text-slate-200">
                     {report.summary?.party_count || 0} parties ·{" "}
-                    {report.summary?.invoice_count || 0} open invoices
+                    {report.summary?.invoice_count || 0} open documents
                   </p>
                 </div>
               </div>

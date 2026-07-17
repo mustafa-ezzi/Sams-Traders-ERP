@@ -677,6 +677,148 @@ def _purchase_invoice_line_totals(invoice, tenant_ids):
     }
 
 
+def _party_opening_document_number(opening_balance):
+    from accounts.journal import _party_opening_reference
+
+    return _party_opening_reference(opening_balance)
+
+
+def _ensure_aging_party_row(party_map, *, party, tenant_id, dimension_names):
+    party_id = str(party.id)
+    party_key = (tenant_id, party_id)
+    if party_key not in party_map:
+        party_map[party_key] = {
+            "party_id": party_id,
+            "party_name": party.business_name or party.name or "",
+            "tenant_id": tenant_id,
+            "dimension_name": dimension_names.get(tenant_id, tenant_id),
+            "buckets": _empty_aging_buckets(),
+            "total": Decimal("0.00"),
+            "invoice_count": 0,
+        }
+    return party_map[party_key]
+
+
+def _add_aging_balance(
+    *,
+    party_map,
+    bucket_totals,
+    detail_rows,
+    party,
+    tenant_id,
+    dimension_names,
+    document_id,
+    document_number,
+    document_date,
+    due_date,
+    basis_date,
+    as_of_date,
+    net_amount,
+    settled_amount,
+    balance,
+):
+    if balance <= 0:
+        return Decimal("0.00")
+
+    days_overdue = max(0, (as_of_date - basis_date).days)
+    bucket = _aging_bucket_for_days(days_overdue)
+    party_row = _ensure_aging_party_row(
+        party_map,
+        party=party,
+        tenant_id=tenant_id,
+        dimension_names=dimension_names,
+    )
+    party_row["buckets"][bucket] = _money(party_row["buckets"][bucket] + balance)
+    party_row["total"] = _money(party_row["total"] + balance)
+    party_row["invoice_count"] += 1
+    bucket_totals[bucket] = _money(bucket_totals[bucket] + balance)
+
+    detail_rows.append(
+        {
+            "invoice_id": str(document_id),
+            "document_number": document_number,
+            "party_id": party_row["party_id"],
+            "party_name": party_row["party_name"],
+            "tenant_id": tenant_id,
+            "dimension_name": party_row["dimension_name"],
+            "invoice_date": document_date.isoformat() if document_date else "",
+            "due_date": due_date.isoformat() if due_date else "",
+            "aging_basis_date": basis_date.isoformat(),
+            "days_overdue": days_overdue,
+            "bucket": bucket,
+            "bucket_label": AGING_BUCKET_LABELS[bucket],
+            "net_amount": str(_money(net_amount)),
+            "settled_amount": str(_money(settled_amount)),
+            "balance_amount": str(balance),
+        }
+    )
+    return balance
+
+
+def _append_opening_balances_to_aging(
+    *,
+    tenant_ids,
+    as_of_date,
+    party_type,
+    party_attr,
+    financials_fn,
+    settled_key,
+    dimension_names,
+    party_map,
+    bucket_totals,
+    detail_rows,
+):
+    """Include unpaid party opening balances in AR/AP aging (same as party ledger)."""
+    from inventory.models import PartyOpeningBalance
+
+    openings = (
+        PartyOpeningBalance.objects.filter(
+            tenant_id__in=tenant_ids,
+            party_type=party_type,
+            deleted_at__isnull=True,
+        )
+        .select_related(party_attr)
+        .order_by("date", "created_at")
+    )
+
+    added = Decimal("0.00")
+    for opening in openings:
+        party = getattr(opening, party_attr, None)
+        if party is None:
+            continue
+
+        financials = financials_fn(opening)
+        balance = _money(financials.get("balance_amount", 0))
+        if balance <= 0:
+            continue
+
+        net_amount = _money(
+            financials.get("opening_amount", financials.get("net_amount", 0))
+        )
+        settled_amount = _money(financials.get(settled_key, 0))
+        added = _money(
+            added
+            + _add_aging_balance(
+                party_map=party_map,
+                bucket_totals=bucket_totals,
+                detail_rows=detail_rows,
+                party=party,
+                tenant_id=opening.tenant_id,
+                dimension_names=dimension_names,
+                document_id=opening.id,
+                document_number=_party_opening_document_number(opening),
+                document_date=opening.date,
+                due_date=None,
+                basis_date=opening.date,
+                as_of_date=as_of_date,
+                net_amount=net_amount,
+                settled_amount=settled_amount,
+                balance=balance,
+            )
+        )
+    return added
+
+
 def _build_invoice_aging_report(
     *,
     tenant_ids,
@@ -687,10 +829,14 @@ def _build_invoice_aging_report(
     line_totals_fn,
     settled_keys,
     report_type,
+    opening_party_type=None,
+    opening_financials_fn=None,
+    opening_settled_key=None,
 ):
     """
-    Build AR/AP aging from unpaid invoice balances.
-    Aging is based on due_date when set, otherwise invoice date.
+    Build AR/AP aging from unpaid invoice balances plus unpaid party opening balances.
+    Invoice aging uses due_date when set, otherwise invoice date.
+    Opening balances age from their opening date.
     """
     dimension_names = _dimension_name_map(tenant_ids)
     bucket_totals = _empty_aging_buckets()
@@ -706,8 +852,6 @@ def _build_invoice_aging_report(
 
         party = getattr(invoice, party_attr)
         basis_date = invoice.due_date or invoice.date
-        days_overdue = max(0, (as_of_date - basis_date).days)
-        bucket = _aging_bucket_for_days(days_overdue)
         for line_tenant_id, scoped_line_total in line_totals.items():
             net_amount = _allocated_invoice_amount(
                 invoice,
@@ -719,49 +863,43 @@ def _build_invoice_aging_report(
                 for key in settled_keys
             )
             balance = max(_money(net_amount - settled_amount), Decimal("0.00"))
-            if balance <= 0:
-                continue
-
-            party_id = str(party.id)
-            party_key = (line_tenant_id, party_id)
-            if party_key not in party_map:
-                party_map[party_key] = {
-                    "party_id": party_id,
-                    "party_name": party.business_name or party.name or "",
-                    "tenant_id": line_tenant_id,
-                    "dimension_name": dimension_names.get(line_tenant_id, line_tenant_id),
-                    "buckets": _empty_aging_buckets(),
-                    "total": Decimal("0.00"),
-                    "invoice_count": 0,
-                }
-
-            party_row = party_map[party_key]
-            party_row["buckets"][bucket] = _money(party_row["buckets"][bucket] + balance)
-            party_row["total"] = _money(party_row["total"] + balance)
-            party_row["invoice_count"] += 1
-
-            bucket_totals[bucket] = _money(bucket_totals[bucket] + balance)
-            total_outstanding = _money(total_outstanding + balance)
-
-            detail_rows.append(
-                {
-                    "invoice_id": str(invoice.id),
-                    "document_number": invoice.invoice_number,
-                    "party_id": party_id,
-                    "party_name": party_row["party_name"],
-                    "tenant_id": line_tenant_id,
-                    "dimension_name": party_row["dimension_name"],
-                    "invoice_date": invoice.date.isoformat(),
-                    "due_date": invoice.due_date.isoformat() if invoice.due_date else "",
-                    "aging_basis_date": basis_date.isoformat(),
-                    "days_overdue": days_overdue,
-                    "bucket": bucket,
-                    "bucket_label": AGING_BUCKET_LABELS[bucket],
-                    "net_amount": str(_money(net_amount)),
-                    "settled_amount": str(_money(settled_amount)),
-                    "balance_amount": str(balance),
-                }
+            total_outstanding = _money(
+                total_outstanding
+                + _add_aging_balance(
+                    party_map=party_map,
+                    bucket_totals=bucket_totals,
+                    detail_rows=detail_rows,
+                    party=party,
+                    tenant_id=line_tenant_id,
+                    dimension_names=dimension_names,
+                    document_id=invoice.id,
+                    document_number=invoice.invoice_number,
+                    document_date=invoice.date,
+                    due_date=invoice.due_date,
+                    basis_date=basis_date,
+                    as_of_date=as_of_date,
+                    net_amount=net_amount,
+                    settled_amount=settled_amount,
+                    balance=balance,
+                )
             )
+
+    if opening_party_type and opening_financials_fn and opening_settled_key:
+        total_outstanding = _money(
+            total_outstanding
+            + _append_opening_balances_to_aging(
+                tenant_ids=tenant_ids,
+                as_of_date=as_of_date,
+                party_type=opening_party_type,
+                party_attr=party_attr,
+                financials_fn=opening_financials_fn,
+                settled_key=opening_settled_key,
+                dimension_names=dimension_names,
+                party_map=party_map,
+                bucket_totals=bucket_totals,
+                detail_rows=detail_rows,
+            )
+        )
 
     party_rows = sorted(
         party_map.values(),
@@ -795,8 +933,12 @@ def _build_invoice_aging_report(
 
 
 def build_receivable_aging_report(tenant_ids, as_of_date):
+    from inventory.models import PartyOpeningBalance
     from sales.models import SalesInvoice
-    from sales.services import get_sales_invoice_financials
+    from sales.services import (
+        get_customer_opening_balance_financials,
+        get_sales_invoice_financials,
+    )
 
     queryset = (
         SalesInvoice.objects.filter(deleted_at__isnull=True)
@@ -814,12 +956,19 @@ def build_receivable_aging_report(tenant_ids, as_of_date):
         line_totals_fn=_sales_invoice_line_totals,
         settled_keys=("returned_amount", "received_amount"),
         report_type="receivable",
+        opening_party_type=PartyOpeningBalance.PartyType.CUSTOMER,
+        opening_financials_fn=get_customer_opening_balance_financials,
+        opening_settled_key="received_amount",
     )
 
 
 def build_payable_aging_report(tenant_ids, as_of_date):
+    from inventory.models import PartyOpeningBalance
     from purchase.models import PurchaseInvoice
-    from purchase.services import get_purchase_invoice_financials
+    from purchase.services import (
+        get_purchase_invoice_financials,
+        get_supplier_opening_balance_financials,
+    )
 
     queryset = (
         PurchaseInvoice.objects.filter(deleted_at__isnull=True)
@@ -837,6 +986,9 @@ def build_payable_aging_report(tenant_ids, as_of_date):
         line_totals_fn=_purchase_invoice_line_totals,
         settled_keys=("returned_amount", "paid_amount"),
         report_type="payable",
+        opening_party_type=PartyOpeningBalance.PartyType.SUPPLIER,
+        opening_financials_fn=get_supplier_opening_balance_financials,
+        opening_settled_key="paid_amount",
     )
 
 
