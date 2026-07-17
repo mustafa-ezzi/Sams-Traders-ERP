@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 import Button from "./ui/Button";
+import GlobalSearch from "./GlobalSearch";
 import dimensionService from "../api/services/dimensionService";
 
 /* ─────────────────────────────────────────────────────────────────
@@ -1159,7 +1160,7 @@ const Layout = () => {
             </button>
 
             {/* Page identity */}
-            <div className="flex-1 min-w-0">
+            <div className="min-w-0 shrink-0 max-w-[40%] hidden sm:block">
               <div className="flex items-baseline gap-2">
                 <span className="text-[10px] font-bold uppercase tracking-[0.25em] text-blue-500">
                   {pageMeta.eyebrow}
@@ -1170,6 +1171,8 @@ const Layout = () => {
                 </h1>
               </div>
             </div>
+
+            <GlobalSearch />
 
             {/* Right actions */}
             <div className="flex shrink-0 items-center gap-2">
