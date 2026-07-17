@@ -26,6 +26,68 @@ from .models import (
     Warehouse,
 )
 
+class NamedDropdownOptionSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    name = serializers.CharField()
+    tenant_id = serializers.CharField(required=False, allow_blank=True)
+
+
+class CategoryDropdownOptionSerializer(NamedDropdownOptionSerializer):
+    inventory_account = serializers.UUIDField(
+        source="inventory_account_id",
+        required=False,
+        allow_null=True,
+    )
+
+
+class PartyDropdownOptionSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    tenant_id = serializers.CharField(required=False, allow_blank=True)
+    name = serializers.CharField()
+    business_name = serializers.CharField()
+    account = serializers.UUIDField(source="account_id", allow_null=True)
+
+
+class SalesmanDropdownOptionSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    code = serializers.CharField()
+    name = serializers.CharField()
+    commission_on_sales = serializers.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+    )
+    commission_on_recovery = serializers.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+    )
+
+
+class WarehouseDropdownOptionSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    name = serializers.CharField()
+    location = serializers.CharField(required=False, allow_blank=True)
+
+
+class RawMaterialDropdownOptionSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    tenant_id = serializers.CharField(required=False, allow_blank=True)
+    name = serializers.CharField()
+    brand_name = serializers.CharField(source="brand.name", required=False, allow_blank=True)
+    purchase_unit = serializers.UUIDField(source="purchase_unit_id")
+    purchase_price = serializers.DecimalField(max_digits=12, decimal_places=2)
+    quantity = serializers.DecimalField(max_digits=12, decimal_places=2)
+
+
+class ProductDropdownOptionSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    tenant_id = serializers.CharField(required=False, allow_blank=True)
+    sku = serializers.CharField(required=False, allow_blank=True)
+    name = serializers.CharField()
+    product_type = serializers.CharField()
+    unit = serializers.UUIDField(source="unit_id", allow_null=True)
+    net_amount = serializers.DecimalField(max_digits=12, decimal_places=2)
+    quantity = serializers.DecimalField(max_digits=12, decimal_places=2)
+
 
 def validate_account_mapping(
     account,

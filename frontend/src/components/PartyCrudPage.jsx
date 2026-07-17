@@ -279,40 +279,7 @@ const PartyCrudPage = ({
 
     setOpeningPartyLoading(true);
     try {
-      const rows = [];
-      const seenIds = new Set();
-      let nextPage = 1;
-      const perPage = 100;
-      let keepLoading = true;
-
-      while (keepLoading) {
-        const response = await service.list({
-          page: nextPage,
-          limit: perPage,
-          search: "",
-        });
-
-        const data = response.data || response.results || [];
-        data.forEach((row) => {
-          if (!row?.id || seenIds.has(row.id)) return;
-          seenIds.add(row.id);
-          rows.push(row);
-        });
-
-        const total =
-          Number(response.total ?? response.count ?? rows.length) || rows.length;
-        const hasNext =
-          Boolean(response.next) ||
-          (Number.isFinite(total) ? rows.length < total : data.length === perPage);
-
-        if (!hasNext || data.length === 0) {
-          keepLoading = false;
-        } else {
-          nextPage += 1;
-        }
-      }
-
-      setOpeningPartyOptions(rows);
+      setOpeningPartyOptions((await service.options()) || []);
     } catch {
       toast.error(`Failed to load ${title.toLowerCase()} for opening accounts`);
       setOpeningPartyOptions([]);

@@ -104,12 +104,12 @@ const ProductPage = () => {
   useEffect(() => {
     load(1, "");
     Promise.all([
-      unitService.list({ page: 1, limit: 100, search: "" }),
+      unitService.options(),
       accountService.list(),
     ])
       .then(([unitRes, accountRes]) => {
         const flatAccounts = flattenAccountTree(accountRes || []);
-        setUnitOptions(unitRes.data || []);
+        setUnitOptions(unitRes || []);
         setInventoryAccounts(getPostableInventoryAccounts(flatAccounts));
         setCogsAccounts(
           getSelectablePostingAccounts(flatAccounts, "COGS"),

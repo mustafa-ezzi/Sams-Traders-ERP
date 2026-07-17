@@ -170,12 +170,12 @@ const ProductFormPage = () => {
 
   const loadProductSetupOptions = useCallback(async (selectedTenantId = "") => {
     const [brandRes, unitRes] = await Promise.all([
-      brandService.list({ page: 1, limit: 100, search: "" }, selectedTenantId),
-      unitService.list({ page: 1, limit: 100, search: "" }, selectedTenantId),
+      brandService.options(selectedTenantId),
+      unitService.options(selectedTenantId),
     ]);
 
-    setBrandOptions(brandRes.data || []);
-    setUnitOptions(unitRes.data || []);
+    setBrandOptions(brandRes || []);
+    setUnitOptions(unitRes || []);
   }, []);
 
   const loadAccountOptions = useCallback(async (selectedTenantId) => {
@@ -207,19 +207,13 @@ const ProductFormPage = () => {
       }
 
       const [rawMaterialRes, productOptionsRes] = await Promise.all([
-        rawMaterialService.list(
-          { page: 1, limit: 100, search: "" },
-          selectedTenantId,
-        ),
-        productService.list(
-          { page: 1, limit: 100, search: "" },
-          selectedTenantId,
-        ),
+        rawMaterialService.options(selectedTenantId),
+        productService.options(selectedTenantId),
       ]);
 
-      setRawMaterialOptions(rawMaterialRes.data || []);
+      setRawMaterialOptions(rawMaterialRes || []);
       setComponentProductOptions(
-        (productOptionsRes.data || []).filter(
+        (productOptionsRes || []).filter(
           (item) =>
             (item.product_type === "FINISHED_GOOD" ||
               item.product_type === "READY_MADE" ||

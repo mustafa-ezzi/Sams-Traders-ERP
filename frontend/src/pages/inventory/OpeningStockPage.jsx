@@ -86,11 +86,11 @@ const OpeningStockPage = () => {
     setLoadingOptions(true);
     try {
       const [warehouseResponse, rawMaterialResponse] = await Promise.all([
-        warehouseService.list({ page: 1, limit: 100, search: "" }),
-        rawMaterialService.list({ page: 1, limit: 100, search: "" }),
+        warehouseService.options(),
+        rawMaterialService.options(),
       ]);
-      setWarehouses(warehouseResponse.data || []);
-      setRawMaterials(rawMaterialResponse.data || []);
+      setWarehouses(warehouseResponse || []);
+      setRawMaterials(rawMaterialResponse || []);
     } catch {
       toast.error("Failed to load warehouse and raw material dropdown data");
     } finally {

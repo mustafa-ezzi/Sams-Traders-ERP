@@ -36,6 +36,12 @@ export const createMasterService = (resource, options = {}) => {
       });
       return response.data;
     },
+    async options(tenantId = "") {
+      const response = await axiosInstance.get(`/inventory/${resource}/options/`, {
+        headers: tenantHeader(tenantId),
+      });
+      return response.data.data || [];
+    },
     async getById(id) {
       const response = await axiosInstance.get(`/inventory/${resource}/${id}`);
       return response.data;

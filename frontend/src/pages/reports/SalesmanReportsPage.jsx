@@ -13,7 +13,6 @@ import { useAuth } from "../../context/AuthContext";
 import ReportPrintWrapper from "../../components/print/ReportPrintWrapper";
 import {
   extractErrorMessage,
-  fetchAllForTenant,
   resolveReportTenant,
   selectClassName,
   startOfYear,
@@ -112,10 +111,7 @@ const SalesmanReportsPage = () => {
           tenantId,
           dimensions,
         );
-        const salesmanItems = await fetchAllForTenant(
-          salesmanService,
-          scopeTenant,
-        );
+        const salesmanItems = await salesmanService.options(scopeTenant);
         setSalesmen(salesmanItems);
       } catch {
         setSalesmen([]);

@@ -11,6 +11,14 @@ const rawMaterialService = {
     });
     return response.data;
   },
+  async options(tenantId = "") {
+    const response = await axiosInstance.get("/inventory/raw-materials/options/", {
+      headers: tenantId
+        ? { "x-tenant-id": tenantId, "x-tenant-ids": tenantId }
+        : {},
+    });
+    return response.data.data || [];
+  },
   async getById(id) {
     const response = await axiosInstance.get(`/inventory/raw-materials/${id}/`);
     return response.data;

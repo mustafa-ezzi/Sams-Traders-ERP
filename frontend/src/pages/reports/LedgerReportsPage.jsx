@@ -15,7 +15,6 @@ import { useAuth } from "../../context/AuthContext";
 import ReportPrintWrapper from "../../components/print/ReportPrintWrapper";
 import {
   extractErrorMessage,
-  fetchAllForTenant,
   resolveReportTenant,
   selectClassName,
 } from "./shared/reportHelpers";
@@ -154,8 +153,8 @@ const LedgerReportsPage = () => {
           const partiesByDimension = await Promise.all(
             dimensions.map(async (dimension) => {
               const [suppliersForDim, customersForDim] = await Promise.all([
-                fetchAllForTenant(supplierService, dimension.code),
-                fetchAllForTenant(customerService, dimension.code),
+                supplierService.options(dimension.code),
+                customerService.options(dimension.code),
               ]);
               return { suppliersForDim, customersForDim };
             }),
@@ -172,8 +171,8 @@ const LedgerReportsPage = () => {
           );
         } else {
           const [supplierRows, customerRows] = await Promise.all([
-            fetchAllForTenant(supplierService, form.tenantScope),
-            fetchAllForTenant(customerService, form.tenantScope),
+            supplierService.options(form.tenantScope),
+            customerService.options(form.tenantScope),
           ]);
           setSuppliers(supplierRows);
           setCustomers(customerRows);

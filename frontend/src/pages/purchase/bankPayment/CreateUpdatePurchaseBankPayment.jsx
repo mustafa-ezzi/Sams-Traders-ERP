@@ -145,10 +145,10 @@ const CreateUpdatePurchaseBankPayment = () => {
     const loadSetup = async () => {
       try {
         const [supplierResponse, banks] = await Promise.all([
-          supplierService.list({ page: 1, limit: 200, search: "" }),
+          supplierService.options(),
           bankTransferService.listBankAccounts(),
         ]);
-        setSuppliers(supplierResponse.data || []);
+        setSuppliers(supplierResponse || []);
         setBankAccounts(banks || []);
       } catch {
         toast.error("Failed to load payment setup options");

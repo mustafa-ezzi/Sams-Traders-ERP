@@ -41,6 +41,19 @@ class SalesOrderService {
     return mapOrder(response.data);
   }
 
+  async options({ invoiced = "" } = {}) {
+    const params = {};
+    if (invoiced === true || invoiced === false) {
+      params.invoiced = invoiced ? "true" : "false";
+    }
+    const response = await axiosInstance.get(`${BASE_URL}options/`, { params });
+    return (response.data.data || []).map((order) => ({
+      ...order,
+      customer: { business_name: order.customer_name || "" },
+      isInvoiced: Boolean(order.is_invoiced),
+    }));
+  }
+
   async create(payload) {
     const response = await axiosInstance.post(BASE_URL, payload);
     return {

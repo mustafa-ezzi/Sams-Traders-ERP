@@ -36,16 +36,3 @@ export const resolveReportTenant = (tenantScope, tenantId, dimensions = []) => {
   return tenantScope || tenantId || "";
 };
 
-export const fetchAllForTenant = async (service, tenant = "", params = {}) => {
-  const limit = 100;
-  let page = 1;
-  let total = 0;
-  const rows = [];
-  do {
-    const response = await service.list({ page, limit, search: "", ...params }, tenant);
-    rows.push(...(response.data || []));
-    total = response.total || rows.length;
-    page += 1;
-  } while (rows.length < total);
-  return rows;
-};

@@ -29,6 +29,12 @@ const productService = {
     });
     return response.data;
   },
+  async options(tenantId = "") {
+    const response = await axiosInstance.get("/inventory/products/options/", {
+      headers: tenantHeader(tenantId),
+    });
+    return response.data.data || [];
+  },
   async getById(id, tenantId = "") {
     const response = await axiosInstance.get(`/inventory/products/${id}/`, {
       headers: tenantHeader(tenantId),

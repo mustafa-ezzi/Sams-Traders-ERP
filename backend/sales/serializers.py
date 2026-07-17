@@ -562,6 +562,18 @@ class SalesOrderLineSerializer(serializers.ModelSerializer):
         return attrs
 
 
+class SalesOrderDropdownOptionSerializer(serializers.ModelSerializer):
+    customer_name = serializers.CharField(source="customer.business_name")
+    is_invoiced = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SalesOrder
+        fields = ["id", "order_number", "customer_name", "is_invoiced"]
+
+    def get_is_invoiced(self, obj):
+        return bool(getattr(obj, "_is_invoiced", False))
+
+
 class SalesOrderSerializer(serializers.ModelSerializer):
     customer = CustomerMiniSerializer(read_only=True)
     customer_id = serializers.UUIDField(write_only=True)

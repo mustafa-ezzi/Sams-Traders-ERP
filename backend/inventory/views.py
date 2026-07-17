@@ -32,18 +32,25 @@ from .models import (
 )
 from .serializers import (
     BrandSerializer,
+    CategoryDropdownOptionSerializer,
     CategorySerializer,
     get_category_account_for_tenant,
+    NamedDropdownOptionSerializer,
     OpeningStockSerializer,
+    PartyDropdownOptionSerializer,
     PartySerializer,
     PartyOpeningBalanceSerializer,
+    ProductDropdownOptionSerializer,
     SalesmanSerializer,
+    SalesmanDropdownOptionSerializer,
     ProductionSerializer,
     ProductSerializer,
+    RawMaterialDropdownOptionSerializer,
     RawMaterialDetailedSerializer,
     RawMaterialSerializer,
     SizeSerializer,
     UnitSerializer,
+    WarehouseDropdownOptionSerializer,
     WarehouseSerializer,
 )
 from .pagination import StandardResultsSetPagination
@@ -92,7 +99,22 @@ def get_product_stock_total(tenant_id, product_ids):
     }
 
 
-class BaseTenantViewSet(ModelViewSet):
+class UnpaginatedOptionsMixin:
+    option_serializer_class = NamedDropdownOptionSerializer
+    option_ordering = ("name", "id")
+
+    @action(detail=False, methods=["get"], url_path="options")
+    def dropdown_options(self, request):
+        queryset = self.get_queryset().order_by(*self.option_ordering)
+        serializer = self.option_serializer_class(
+            queryset,
+            many=True,
+            context=self.get_serializer_context(),
+        )
+        return Response({"data": serializer.data})
+
+
+class BaseTenantViewSet(UnpaginatedOptionsMixin, ModelViewSet):
     """Common behavior for tenant isolation + soft delete"""
 
     permission_classes = [IsAuthenticated]
@@ -135,6 +157,7 @@ class BrandViewSet(SharedMasterViewSet):
 class CategoryViewSet(SharedMasterViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
+    option_serializer_class = CategoryDropdownOptionSerializer
 
     @action(detail=True, methods=["post"], url_path="apply-coa-defaults")
     def apply_coa_defaults(self, request, pk=None):
@@ -188,12 +211,13 @@ class UnitViewSet(SharedMasterViewSet):
     serializer_class = UnitSerializer
 
 
-class RawMaterialViewSet(ModelViewSet):
+class RawMaterialViewSet(UnpaginatedOptionsMixin, ModelViewSet):
     queryset = RawMaterial.objects.all()
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter]
     search_fields = ["name"]
+    option_serializer_class = RawMaterialDropdownOptionSerializer
 
     def get_serializer_class(self):
         """Use simple serializer for create/update, detailed for list/retrieve"""
@@ -246,10 +270,11 @@ class RawMaterialViewSet(ModelViewSet):
         return Response({"data": None, "message": "Raw material deleted successfully"})
 
 
-class ProductViewSet(viewsets.ModelViewSet):
+class ProductViewSet(UnpaginatedOptionsMixin, viewsets.ModelViewSet):
     serializer_class = ProductSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
+    option_serializer_class = ProductDropdownOptionSerializer
     filter_backends = [filters.SearchFilter, OrderingFilter]
     search_fields = ["name", "sku"]
     ordering_fields = [
@@ -1032,7 +1057,7 @@ class ProductionViewSet(viewsets.ModelViewSet):
         )
 
 
-class BasePartyViewSet(viewsets.ModelViewSet):
+class BasePartyViewSet(UnpaginatedOptionsMixin, viewsets.ModelViewSet):
     serializer_class = PartySerializer
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
@@ -1047,6 +1072,8 @@ class BasePartyViewSet(viewsets.ModelViewSet):
         "address",
     ]
     ordering = ["business_name", "name"]
+    option_serializer_class = PartyDropdownOptionSerializer
+    option_ordering = ("business_name", "name", "id")
 
     party_model = None  # override in subclass
 
@@ -1186,6 +1213,7 @@ class SalesmanViewSet(SharedMasterViewSet):
     queryset = Salesman.objects.all()
     serializer_class = SalesmanSerializer
     search_fields = ["code", "name", "email", "phone_number"]
+    option_serializer_class = SalesmanDropdownOptionSerializer
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -1196,12 +1224,13 @@ class SalesmanViewSet(SharedMasterViewSet):
         )
 
 
-class WarehouseViewSet(viewsets.ModelViewSet):
+class WarehouseViewSet(UnpaginatedOptionsMixin, viewsets.ModelViewSet):
     serializer_class = WarehouseSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
     filter_backends = [filters.SearchFilter]
     search_fields = ["name", "location"]
+    option_serializer_class = WarehouseDropdownOptionSerializer
 
     def get_queryset(self):
         search = self.request.query_params.get("search", "")

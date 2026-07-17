@@ -21,22 +21,6 @@ const emptyForm = {
   },
 };
 
-const fetchAllSalesmen = async () => {
-  const limit = 100;
-  let page = 1;
-  let total = 0;
-  const salesmen = [];
-
-  do {
-    const response = await salesmanService.list({ page, limit, search: "" });
-    salesmen.push(...(response.data || []));
-    total = response.total || salesmen.length;
-    page += 1;
-  } while (salesmen.length < total);
-
-  return salesmen;
-};
-
 const TenantStaffPage = () => {
   const toast = useToast();
   const [rows, setRows] = useState([]);
@@ -77,7 +61,8 @@ const TenantStaffPage = () => {
   }, []);
 
   useEffect(() => {
-    fetchAllSalesmen()
+    salesmanService
+      .options()
       .then(setSalesmen)
       .catch(() => setSalesmen([]));
   }, []);

@@ -7,7 +7,6 @@ import SearchableSelect from "../../../components/ui/SearchableSelect";
 import supplierService from "../../../api/services/supplierService";
 import purchaseReturnService from "../../../api/services/purchaseReturnService";
 import { formatDecimal } from "../../../utils/format";
-import { fetchAllPages } from "../../../utils/fetchAllPages";
 import { useToast } from "../../../context/ToastContext";
 const toNumber = (value) => {
   const parsedValue = Number(value);
@@ -56,7 +55,7 @@ const CreateUpdatePurchaseReturn = () => {
   );
   const loadSuppliers = async () => {
     try {
-      setSuppliers(await fetchAllPages(supplierService, { search: "" }));
+      setSuppliers(await supplierService.options());
     } catch {
       toast.error("Failed to load suppliers");
     }

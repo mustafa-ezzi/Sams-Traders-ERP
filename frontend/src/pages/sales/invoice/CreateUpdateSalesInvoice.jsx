@@ -94,27 +94,6 @@ const extractErrorMessage = (error) => {
   return "Something went wrong";
 };
 
-const fetchAllPendingSalesOrders = async ({ search = "" } = {}) => {
-  const limit = 100;
-  let page = 1;
-  let total = 0;
-  const orders = [];
-
-  do {
-    const response = await salesOrderService.list({
-      page,
-      limit,
-      search,
-      invoiced: false,
-    });
-    orders.push(...(response.data || []));
-    total = response.total || orders.length;
-    page += 1;
-  } while (orders.length < total);
-
-  return orders;
-};
-
 const CreateUpdateSalesInvoice = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -190,47 +169,6 @@ const CreateUpdateSalesInvoice = () => {
     () => salesmen.find((salesman) => salesman.id === form.salesmanId) || null,
     [form.salesmanId, salesmen],
   );
-  const searchCustomers = useCallback(async (query) => {
-    const response = await customerService.list({
-      page: 1,
-      limit: 20,
-      search: query,
-    });
-    return response.data || [];
-  }, []);
-  const resolveCustomer = useCallback(
-    async (customerId) =>
-      customers.find((customer) => customer.id === customerId) ||
-      customerService.getById(customerId),
-    [customers],
-  );
-  const searchSalesmen = useCallback(async (query) => {
-    const response = await salesmanService.list({
-      page: 1,
-      limit: 20,
-      search: query,
-    });
-    return response.data || [];
-  }, []);
-  const resolveSalesman = useCallback(
-    async (salesmanId) =>
-      salesmen.find((salesman) => salesman.id === salesmanId) ||
-      salesmanService.getById(salesmanId),
-    [salesmen],
-  );
-  const searchPendingSalesOrders = useCallback(
-    async (query) => {
-      if (!query.trim()) return openOrders;
-      return fetchAllPendingSalesOrders({ search: query });
-    },
-    [openOrders],
-  );
-  const resolveSalesOrder = useCallback(
-    async (salesOrderId) =>
-      openOrders.find((order) => order.id === salesOrderId) ||
-      salesOrderService.getById(salesOrderId),
-    [openOrders],
-  );
   const getSalesOrderLabel = useCallback((order) => {
     const customerName = order.customer?.business_name || "Customer";
     const status = order.isInvoiced ? "invoiced" : "pending";
@@ -279,15 +217,15 @@ const CreateUpdateSalesInvoice = () => {
   };
   useEffect(() => {
     Promise.all([
-      customerService.list({ page: 1, limit: 100, search: "" }),
-      warehouseService.list({ page: 1, limit: 100, search: "" }),
-      salesmanService.list({ page: 1, limit: 100, search: "" }),
-      fetchAllPendingSalesOrders(),
+      customerService.options(),
+      warehouseService.options(),
+      salesmanService.options(),
+      salesOrderService.options({ invoiced: false }),
     ])
       .then(([customerResponse, warehouseResponse, salesmanResponse, orderResponse]) => {
-        setCustomers(customerResponse.data || []);
-        setWarehouses(warehouseResponse.data || []);
-        setSalesmen(salesmanResponse.data || []);
+        setCustomers(customerResponse || []);
+        setWarehouses(warehouseResponse || []);
+        setSalesmen(salesmanResponse || []);
         setOpenOrders(orderResponse || []);
       })
       .catch(() => toast.error("Failed to load sales setup options"));
@@ -607,8 +545,7 @@ const CreateUpdateSalesInvoice = () => {
               required
               value={form.customerId}
               onChange={handleCustomerSelect}
-              onSearch={searchCustomers}
-              resolveValue={resolveCustomer}
+              options={customers}
               getOptionLabel={(customer) =>
                 customer.business_name || customer.name || "Customer"
               }
@@ -636,8 +573,7 @@ const CreateUpdateSalesInvoice = () => {
                 label="Salesman"
                 value={form.salesmanId}
                 onChange={handleSalesmanSelect}
-                onSearch={searchSalesmen}
-                resolveValue={resolveSalesman}
+                options={salesmen}
                 getOptionLabel={(salesman) =>
                   `${salesman.code ? `${salesman.code} - ` : ""}${salesman.name} (${toNumber(
                     salesman.commission_on_sales,
@@ -656,8 +592,7 @@ const CreateUpdateSalesInvoice = () => {
                 label="Sales Order"
                 value={form.salesOrderId}
                 onChange={handleSalesOrderSelect}
-                onSearch={searchPendingSalesOrders}
-                resolveValue={resolveSalesOrder}
+                options={openOrders}
                 getOptionLabel={getSalesOrderLabel}
                 placeholder="Search pending sales order"
               />

@@ -266,7 +266,7 @@ class PurchaseInvoiceViewSet(AuditedModelMixin, viewsets.ModelViewSet):
             product_queryset = product_queryset.filter(name__icontains=search)
 
         items = []
-        for product in product_queryset[:100]:
+        for product in product_queryset:
             quantity = Decimal("0.00")
             if warehouse_id:
                 stock = ProductStock.objects.filter(
@@ -298,7 +298,7 @@ class PurchaseInvoiceViewSet(AuditedModelMixin, viewsets.ModelViewSet):
         if search:
             raw_queryset = raw_queryset.filter(name__icontains=search)
 
-        for raw_material in raw_queryset[:100]:
+        for raw_material in raw_queryset:
             quantity = Decimal("0.00")
             if warehouse_id:
                 stock = Stock.objects.filter(

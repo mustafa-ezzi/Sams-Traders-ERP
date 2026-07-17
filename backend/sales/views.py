@@ -42,6 +42,7 @@ from sales.models import (
 from sales.serializers import (
     SalesBankReceiptSerializer,
     SalesInvoiceSerializer,
+    SalesOrderDropdownOptionSerializer,
     SalesOrderSerializer,
     SalesReturnInvoiceLinePreviewSerializer,
     SalesReturnSerializer,
@@ -266,7 +267,7 @@ class SalesInvoiceViewSet(AuditedModelMixin, viewsets.ModelViewSet):
             queryset = queryset.filter(name__icontains=search)
 
         products = []
-        for product in queryset[:500]:
+        for product in queryset:
             quantity = Decimal("0.00")
             if warehouse_id:
                 stock = ProductStock.objects.filter(
@@ -394,6 +395,16 @@ class SalesOrderViewSet(viewsets.ModelViewSet):
             status=status.HTTP_200_OK,
         )
 
+    @action(detail=False, methods=["get"], url_path="options")
+    def dropdown_options(self, request):
+        queryset = (
+            self.filter_queryset(self.get_queryset())
+            .select_related("customer")
+            .order_by("order_number", "id")
+        )
+        serializer = SalesOrderDropdownOptionSerializer(queryset, many=True)
+        return Response({"data": serializer.data})
+
     @action(detail=False, methods=["get"], url_path="product-options")
     def product_options(self, request):
         tenant_ids = get_shared_tenant_ids(request)
@@ -414,7 +425,7 @@ class SalesOrderViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(name__icontains=search)
 
         products = []
-        for product in queryset[:500]:
+        for product in queryset:
             quantity = Decimal("0.00")
             if warehouse_id:
                 stock = ProductStock.objects.filter(

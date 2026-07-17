@@ -16,7 +16,6 @@ import ReportPrintWrapper from "../../components/print/ReportPrintWrapper";
 import { formatDecimal } from "../../utils/format";
 import {
   extractErrorMessage,
-  fetchAllForTenant,
   resolveReportTenant,
   selectClassName,
 } from "./shared/reportHelpers";
@@ -148,10 +147,10 @@ const SalesReportPage = () => {
         );
         const [customerItems, productItems, salesmanItems, warehouseItems] =
           await Promise.all([
-            fetchAllForTenant(customerService, scopeTenant),
-            fetchAllForTenant(productService, scopeTenant),
-            fetchAllForTenant(salesmanService, scopeTenant),
-            fetchAllForTenant(warehouseService, scopeTenant),
+            customerService.options(scopeTenant),
+            productService.options(scopeTenant),
+            salesmanService.options(scopeTenant),
+            warehouseService.options(scopeTenant),
           ]);
         setCustomers(customerItems);
         setProducts(productItems);

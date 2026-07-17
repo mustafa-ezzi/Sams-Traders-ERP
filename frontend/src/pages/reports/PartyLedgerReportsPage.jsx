@@ -14,20 +14,6 @@ import ReportPrintWrapper from "../../components/print/ReportPrintWrapper";
 const selectClassName =
   "w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100";
 
-const fetchAll = async (service) => {
-  const limit = 100;
-  let page = 1;
-  let total = 0;
-  const rows = [];
-  do {
-    const response = await service.list({ page, limit, search: "" });
-    rows.push(...(response.data || []));
-    total = response.total || rows.length;
-    page += 1;
-  } while (rows.length < total);
-  return rows;
-};
-
 const extractErrorMessage = (error) => {
   const data = error?.response?.data;
 
@@ -102,8 +88,8 @@ const PartyLedgerReportsPage = () => {
       setError("");
       try {
         const [customerItems, supplierItems] = await Promise.all([
-          fetchAll(customerService),
-          fetchAll(supplierService),
+          customerService.options(),
+          supplierService.options(),
         ]);
 
         setCustomers(customerItems);

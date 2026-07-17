@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Card from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
@@ -63,20 +63,6 @@ const CreateUpdatePurchaseInvoice = () => {
     () => Math.max(grossAmount - toNumber(form.invoiceDiscount), 0),
     [grossAmount, form.invoiceDiscount],
   );
-  const searchSuppliers = useCallback(async (query) => {
-    const response = await supplierService.list({
-      page: 1,
-      limit: 20,
-      search: query,
-    });
-    return response.data || [];
-  }, []);
-  const resolveSupplier = useCallback(
-    async (supplierId) =>
-      suppliers.find((supplier) => supplier.id === supplierId) ||
-      supplierService.getById(supplierId),
-    [suppliers],
-  );
   const handleSupplierSelect = (supplierId, supplier) => {
     handleChange("supplierId", supplierId);
     if (supplier) {
@@ -98,12 +84,12 @@ const CreateUpdatePurchaseInvoice = () => {
   };
   useEffect(() => {
     Promise.all([
-      supplierService.list({ page: 1, limit: 100, search: "" }),
-      warehouseService.list({ page: 1, limit: 100, search: "" }),
+      supplierService.options(),
+      warehouseService.options(),
     ])
       .then(([supplierResponse, warehouseResponse]) => {
-        setSuppliers(supplierResponse.data || []);
-        setWarehouses(warehouseResponse.data || []);
+        setSuppliers(supplierResponse || []);
+        setWarehouses(warehouseResponse || []);
       })
       .catch(() => toast.error("Failed to load purchase setup options"));
   }, [toast]);
@@ -319,8 +305,7 @@ const CreateUpdatePurchaseInvoice = () => {
               required
               value={form.supplierId}
               onChange={handleSupplierSelect}
-              onSearch={searchSuppliers}
-              resolveValue={resolveSupplier}
+              options={suppliers}
               getOptionLabel={(supplier) =>
                 supplier.business_name || supplier.name || "Supplier"
               }

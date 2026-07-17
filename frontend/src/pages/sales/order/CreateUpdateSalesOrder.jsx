@@ -48,6 +48,7 @@ const CreateUpdateSalesOrder = () => {
   const navigate = useNavigate();
   const toast = useToast();
   const editingId = id || "";
+  const [customers, setCustomers] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
   const [productOptions, setProductOptions] = useState([]);
   const [form, setForm] = useState({
@@ -104,27 +105,13 @@ const CreateUpdateSalesOrder = () => {
   };
 
   useEffect(() => {
-    warehouseService
-      .list({ page: 1, limit: 100, search: "" })
-      .then((warehouseResponse) => {
-        setWarehouses(warehouseResponse.data || []);
+    Promise.all([customerService.options(), warehouseService.options()])
+      .then(([customerOptions, warehouseOptions]) => {
+        setCustomers(customerOptions || []);
+        setWarehouses(warehouseOptions || []);
       })
-      .catch(() => toast.error("Failed to load warehouse options"));
+      .catch(() => toast.error("Failed to load customer and warehouse options"));
   }, [toast]);
-
-  const searchCustomers = useCallback(async (search) => {
-    const response = await customerService.list({
-      page: 1,
-      limit: 20,
-      search,
-    });
-    return response.data || [];
-  }, []);
-
-  const resolveCustomer = useCallback(
-    async (customerId) => customerService.getById(customerId),
-    [],
-  );
 
   const getCustomerLabel = useCallback(
     (customer) => customer.business_name || customer.name || "Unnamed customer",
@@ -331,8 +318,7 @@ const CreateUpdateSalesOrder = () => {
               value={form.customerId}
               placeholder="Type customer name to search…"
               onChange={(customerId) => handleChange("customerId", customerId)}
-              onSearch={searchCustomers}
-              resolveValue={resolveCustomer}
+              options={customers}
               getOptionLabel={getCustomerLabel}
             />
             <div className="space-y-1">

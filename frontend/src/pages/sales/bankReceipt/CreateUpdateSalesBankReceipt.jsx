@@ -60,27 +60,6 @@ const extractErrorMessage = (error) => {
   return "Something went wrong";
 };
 
-const fetchAll = async (service, baseParams = {}, tenantId = "") => {
-  const rows = [];
-  const perPage = 100;
-  let nextPage = 1;
-  let keepLoading = true;
-  while (keepLoading) {
-    const response = await service.list(
-      { ...baseParams, page: nextPage, limit: perPage },
-      tenantId,
-    );
-    const data = response.data || [];
-    rows.push(...data);
-    const total =
-      Number(response.total ?? response.count ?? rows.length) || rows.length;
-    const hasNext = Boolean(response.next) || rows.length < total;
-    if (!hasNext || data.length === 0) keepLoading = false;
-    else nextPage += 1;
-  }
-  return rows;
-};
-
 const filterBankAccounts = (flatAccounts) =>
   flatAccounts.filter(
     (account) =>
@@ -190,15 +169,15 @@ const CreateUpdateSalesBankReceipt = () => {
   useEffect(() => {
     const loadSetup = async () => {
       try {
-        const [dimensionItems, salesmanResponse, allCustomers] =
+        const [dimensionItems, allSalesmen, allCustomers] =
           await Promise.all([
             dimensionService.list(),
-            salesmanService.list({ page: 1, limit: 200, search: "" }),
-            fetchAll(customerService, { search: "" }),
+            salesmanService.options(),
+            customerService.options(),
           ]);
         setDimensions(dimensionItems || []);
         setCustomers(allCustomers || []);
-        setSalesmen(salesmanResponse.data || []);
+        setSalesmen(allSalesmen || []);
         const defaultTenant =
           tenantId || dimensionItems?.[0]?.code || "";
         setLines((current) => {

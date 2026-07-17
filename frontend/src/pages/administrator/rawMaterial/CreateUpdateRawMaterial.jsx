@@ -15,7 +15,6 @@ import SearchableSelect from "../../../components/ui/SearchableSelect";
 import { useToast } from "../../../context/ToastContext";
 import { useAuth } from "../../../context/AuthContext";
 import DimensionCreateSelector from "../../../components/ui/DimensionCreateSelector";
-import { fetchAllPages } from "../../../utils/fetchAllPages";
 import {
   flattenAccountTree,
   formatAccountLabel,
@@ -76,9 +75,9 @@ const CreateUpdateRawMaterial = () => {
     setLoadingOptions(true);
     try {
       const [brandRes, categoryRes, unitRes, accountRes] = await Promise.all([
-        fetchAllPages(brandService, { search: "" }),
-        fetchAllPages(categoryService, { search: "" }),
-        fetchAllPages(unitService, { search: "" }),
+        brandService.options(),
+        categoryService.options(),
+        unitService.options(),
         accountService.list(),
       ]);
       setBrands(brandRes || []);

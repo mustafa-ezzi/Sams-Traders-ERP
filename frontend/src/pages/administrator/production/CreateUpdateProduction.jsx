@@ -44,11 +44,11 @@ const CreateUpdateProduction = () => {
     setLoadingOptions(true);
     try {
       const [warehouseResponse, productResponse] = await Promise.all([
-        warehouseService.list({ page: 1, limit: 100, search: "" }),
-        productService.list({ page: 1, limit: 100, search: "" }),
+        warehouseService.options(),
+        productService.options(),
       ]);
-      setWarehouses(warehouseResponse.data || []);
-      const assemblyProducts = (productResponse.data || []).filter(
+      setWarehouses(warehouseResponse || []);
+      const assemblyProducts = (productResponse || []).filter(
         (item) =>
           item.product_type === "ASSEMBLY_PRODUCT" ||
           item.product_type === "MANUFACTURED",

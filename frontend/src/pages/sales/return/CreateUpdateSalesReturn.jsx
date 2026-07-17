@@ -7,7 +7,6 @@ import SearchableSelect from "../../../components/ui/SearchableSelect";
 import customerService from "../../../api/services/customerService";
 import salesReturnService from "../../../api/services/salesReturnService";
 import { formatDecimal } from "../../../utils/format";
-import { fetchAllPages } from "../../../utils/fetchAllPages";
 import { useToast } from "../../../context/ToastContext";
 const toNumber = (value) => {
   const parsedValue = Number(value);
@@ -56,7 +55,7 @@ const CreateUpdateSalesReturn = () => {
   );
   const loadCustomers = async () => {
     try {
-      setCustomers(await fetchAllPages(customerService, { search: "" }));
+      setCustomers(await customerService.options());
     } catch {
       toast.error("Failed to load customers");
     }

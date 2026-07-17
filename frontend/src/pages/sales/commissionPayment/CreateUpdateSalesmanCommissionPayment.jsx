@@ -8,7 +8,6 @@ import accountService from "../../../api/services/accountService";
 import salesmanService from "../../../api/services/salesmanService";
 import salesmanCommissionPaymentService from "../../../api/services/salesmanCommissionPaymentService";
 import { formatDecimal } from "../../../utils/format";
-import { fetchAllPages } from "../../../utils/fetchAllPages";
 import {
   flattenAccountTree,
   formatAccountLabel,
@@ -67,7 +66,7 @@ const CreateUpdateSalesmanCommissionPayment = () => {
   const loadSetupData = async () => {
     try {
       const [salesmanResponse, accountsResponse] = await Promise.all([
-        fetchAllPages(salesmanService, { search: "" }),
+        salesmanService.options(),
         accountService.list(),
       ]);
       setSalesmen(salesmanResponse || []);
