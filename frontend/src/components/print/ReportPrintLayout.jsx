@@ -144,14 +144,20 @@ const ReportPrintLayout = ({
   title,
   brandName,
   logoSrc = "/logo.png",
+  company = null,
   metaLeft = [],
   metaRight = [],
   children,
 }) => {
-  const brand = brandName || getReportPrintBrand().name;
-  const logo = logoSrc || getReportPrintBrand().logoSrc;
+  const defaults = getReportPrintBrand();
+  const brand = brandName || company?.name || defaults.name;
+  const logo = logoSrc || defaults.logoSrc;
   const userLabel = getReportPrintUserLabel();
   const printedOn = formatPrintDate();
+  const companyAddress = company?.address || "";
+  const companyPhone = company?.phone || "";
+  const companyEmail = company?.email || "";
+  const companyNtn = company?.ntn || "";
 
   const leftMeta =
     metaLeft.length > 0
@@ -178,18 +184,32 @@ const ReportPrintLayout = ({
             {title}
           </h1>
         </div>
-        <div className="flex shrink-0 items-center gap-2.5">
-          <img
-            src={logo}
-            alt=""
-            className="h-9 w-9 object-contain"
-            onError={(event) => {
-              event.currentTarget.style.display = "none";
-            }}
-          />
-          <span className="text-[18px] font-semibold tracking-tight text-slate-700">
-            {brand}
-          </span>
+        <div className="flex shrink-0 items-start gap-2.5 text-right">
+          <div className="min-w-0">
+            <div className="flex items-center justify-end gap-2">
+              <img
+                src={logo}
+                alt=""
+                className="h-9 w-9 object-contain"
+                onError={(event) => {
+                  event.currentTarget.style.display = "none";
+                }}
+              />
+              <span className="text-[18px] font-semibold tracking-tight text-slate-700">
+                {brand}
+              </span>
+            </div>
+            {(companyAddress || companyPhone || companyEmail || companyNtn) && (
+              <div className="mt-1.5 space-y-0.5 text-[10px] leading-relaxed text-slate-500">
+                {companyAddress ? (
+                  <p className="whitespace-pre-wrap">{companyAddress}</p>
+                ) : null}
+                {companyPhone ? <p>{companyPhone}</p> : null}
+                {companyEmail ? <p>{companyEmail}</p> : null}
+                {companyNtn ? <p>NTN: {companyNtn}</p> : null}
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
