@@ -138,6 +138,13 @@ const GetAllSalesBankReceipt = () => {
               placeholder="Search receipt, customer, invoice, bank"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  setPage(1);
+                  loadReceipts(1, search, sortConfig);
+                }
+              }}
             />
             <Button
               variant="secondary"

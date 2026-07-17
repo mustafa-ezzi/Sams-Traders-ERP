@@ -3,12 +3,12 @@ import { useNavigate, useParams } from "react-router-dom";
 import Card from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
 import FormInput from "../../../components/ui/FormInput";
+import SearchableSelect from "../../../components/ui/SearchableSelect";
 import customerService from "../../../api/services/customerService";
 import salesReturnService from "../../../api/services/salesReturnService";
 import { formatDecimal } from "../../../utils/format";
+import { fetchAllPages } from "../../../utils/fetchAllPages";
 import { useToast } from "../../../context/ToastContext";
-const selectClassName =
-  "w-full rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/90 px-4 py-3 text-sm text-slate-800 dark:text-slate-100 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/40";
 const toNumber = (value) => {
   const parsedValue = Number(value);
   return Number.isFinite(parsedValue) ? parsedValue : 0;
@@ -56,12 +56,7 @@ const CreateUpdateSalesReturn = () => {
   );
   const loadCustomers = async () => {
     try {
-      const response = await customerService.list({
-        page: 1,
-        limit: 100,
-        search: "",
-      });
-      setCustomers(response.data || []);
+      setCustomers(await fetchAllPages(customerService, { search: "" }));
     } catch {
       toast.error("Failed to load customers");
     }
@@ -290,49 +285,29 @@ const CreateUpdateSalesReturn = () => {
               value={form.date}
               onChange={(e) => handleChange("date", e.target.value)}
             />{" "}
-            <div className="space-y-1">
-              {" "}
-              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 dark:text-slate-500">
-                {" "}
-                Customer <span className="text-rose-500">*</span>{" "}
-              </label>{" "}
-              <select
-                className={selectClassName}
-                value={form.customerId}
-                onChange={(e) => handleCustomerChange(e.target.value)}
-              >
-                {" "}
-                <option value="">Select Customer</option>{" "}
-                {customers.map((customer) => (
-                  <option key={customer.id} value={customer.id}>
-                    {" "}
-                    {customer.business_name}{" "}
-                  </option>
-                ))}{" "}
-              </select>{" "}
-            </div>{" "}
-            <div className="space-y-1">
-              {" "}
-              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 dark:text-slate-500">
-                {" "}
-                Ref Invoice No <span className="text-rose-500">*</span>{" "}
-              </label>{" "}
-              <select
-                className={selectClassName}
-                value={form.salesInvoiceId}
-                onChange={(e) => handleInvoiceChange(e.target.value)}
-                disabled={!form.customerId}
-              >
-                {" "}
-                <option value="">Select Sales Invoice</option>{" "}
-                {invoiceOptions.map((invoice) => (
-                  <option key={invoice.id} value={invoice.id}>
-                    {" "}
-                    {invoice.invoice_number}{" "}
-                  </option>
-                ))}{" "}
-              </select>{" "}
-            </div>{" "}
+            <SearchableSelect
+              label="Customer"
+              required
+              value={form.customerId}
+              options={customers}
+              onChange={handleCustomerChange}
+              getOptionLabel={(customer) =>
+                customer.business_name || customer.name || "Customer"
+              }
+              placeholder="Search customer…"
+              showAllOptions
+            />
+            <SearchableSelect
+              label="Ref Invoice No"
+              required
+              value={form.salesInvoiceId}
+              options={invoiceOptions}
+              onChange={handleInvoiceChange}
+              getOptionLabel={(invoice) => invoice.invoice_number}
+              placeholder="Search sales invoice…"
+              disabled={!form.customerId}
+              showAllOptions
+            />
             <FormInput
               label="Remarks"
               placeholder="Reason or notes for this return"

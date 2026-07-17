@@ -99,6 +99,13 @@ const GetAllSalesmanCommissionPayment = () => {
               placeholder="Search voucher, salesman, invoice"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  setPage(1);
+                  loadPayments(1, search);
+                }
+              }}
             />
             <Button
               variant="secondary"

@@ -133,6 +133,13 @@ const GetAllSalesOrder = () => {
               placeholder="Search order, customer, warehouse"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  setPage(1);
+                  loadOrders(1, search);
+                }
+              }}
             />
             <Button
               variant="secondary"

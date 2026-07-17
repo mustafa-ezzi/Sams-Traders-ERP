@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Button from "../../components/ui/Button";
 import Card from "../../components/ui/Card";
 import ConfirmModal from "../../components/ui/ConfirmModal";
@@ -26,6 +26,22 @@ const AdminUsersPage = () => {
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState("");
   const [deleteId, setDeleteId] = useState("");
+  const [search, setSearch] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
+
+  const filteredUsers = useMemo(() => {
+    const term = appliedSearch.trim().toLowerCase();
+    if (!term) return users;
+    return users.filter((user) =>
+      [
+        user.username,
+        user.email,
+        user.business_name,
+        user.tenant_role,
+        user.account_kind,
+      ].some((value) => String(value || "").toLowerCase().includes(term)),
+    );
+  }, [appliedSearch, users]);
 
   const loadUsers = async () => {
     setLoading(true);
@@ -192,6 +208,29 @@ const AdminUsersPage = () => {
         </form>
       </Card>
 
+      <Card>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <FormInput
+            placeholder="Search users"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                setAppliedSearch(search);
+              }
+            }}
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => setAppliedSearch(search)}
+          >
+            Search
+          </Button>
+        </div>
+      </Card>
+
       <StateView
         loading={loading}
         error={error}
@@ -224,7 +263,7 @@ const AdminUsersPage = () => {
                 </tr>
               </thead>
               <tbody>
-                {users.map((user) => (
+                {filteredUsers.map((user) => (
                   <tr
                     key={user.id}
                     className="border-t border-slate-100 bg-white"

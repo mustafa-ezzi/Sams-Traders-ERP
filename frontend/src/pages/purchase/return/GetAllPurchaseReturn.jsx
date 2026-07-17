@@ -96,6 +96,13 @@ const GetAllPurchaseReturn = () => {
               placeholder="Search return, invoice, supplier"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  setPage(1);
+                  loadReturns(1, search);
+                }
+              }}
             />{" "}
             <Button
               variant="secondary"

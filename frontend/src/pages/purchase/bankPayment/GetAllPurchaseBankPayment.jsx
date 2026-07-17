@@ -137,6 +137,13 @@ const GetAllPurchaseBankPayment = () => {
               placeholder="Search payment, supplier, invoice, bank"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  setPage(1);
+                  loadPayments(1, search, sortConfig);
+                }
+              }}
             />
             <Button
               variant="secondary"

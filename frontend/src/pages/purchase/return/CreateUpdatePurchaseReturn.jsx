@@ -3,12 +3,12 @@ import { useNavigate, useParams } from "react-router-dom";
 import Card from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
 import FormInput from "../../../components/ui/FormInput";
+import SearchableSelect from "../../../components/ui/SearchableSelect";
 import supplierService from "../../../api/services/supplierService";
 import purchaseReturnService from "../../../api/services/purchaseReturnService";
 import { formatDecimal } from "../../../utils/format";
+import { fetchAllPages } from "../../../utils/fetchAllPages";
 import { useToast } from "../../../context/ToastContext";
-const selectClassName =
-  "w-full rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/90 px-4 py-3 text-sm text-slate-800 dark:text-slate-100 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/40";
 const toNumber = (value) => {
   const parsedValue = Number(value);
   return Number.isFinite(parsedValue) ? parsedValue : 0;
@@ -56,12 +56,7 @@ const CreateUpdatePurchaseReturn = () => {
   );
   const loadSuppliers = async () => {
     try {
-      const response = await supplierService.list({
-        page: 1,
-        limit: 100,
-        search: "",
-      });
-      setSuppliers(response.data || []);
+      setSuppliers(await fetchAllPages(supplierService, { search: "" }));
     } catch {
       toast.error("Failed to load suppliers");
     }
@@ -296,49 +291,29 @@ const CreateUpdatePurchaseReturn = () => {
               value={form.date}
               onChange={(e) => handleChange("date", e.target.value)}
             />{" "}
-            <div className="space-y-1">
-              {" "}
-              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 dark:text-slate-500">
-                {" "}
-                Supplier <span className="text-rose-500">*</span>{" "}
-              </label>{" "}
-              <select
-                className={selectClassName}
-                value={form.supplierId}
-                onChange={(e) => handleSupplierChange(e.target.value)}
-              >
-                {" "}
-                <option value="">Select Supplier</option>{" "}
-                {suppliers.map((supplier) => (
-                  <option key={supplier.id} value={supplier.id}>
-                    {" "}
-                    {supplier.business_name}{" "}
-                  </option>
-                ))}{" "}
-              </select>{" "}
-            </div>{" "}
-            <div className="space-y-1">
-              {" "}
-              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 dark:text-slate-500">
-                {" "}
-                Purchase Invoice <span className="text-rose-500">*</span>{" "}
-              </label>{" "}
-              <select
-                className={selectClassName}
-                value={form.purchaseInvoiceId}
-                onChange={(e) => handleInvoiceChange(e.target.value)}
-                disabled={!form.supplierId}
-              >
-                {" "}
-                <option value="">Select Purchase Invoice</option>{" "}
-                {invoiceOptions.map((invoice) => (
-                  <option key={invoice.id} value={invoice.id}>
-                    {" "}
-                    {invoice.invoice_number}{" "}
-                  </option>
-                ))}{" "}
-              </select>{" "}
-            </div>{" "}
+            <SearchableSelect
+              label="Supplier"
+              required
+              value={form.supplierId}
+              options={suppliers}
+              onChange={handleSupplierChange}
+              getOptionLabel={(supplier) =>
+                supplier.business_name || supplier.name || "Supplier"
+              }
+              placeholder="Search supplier…"
+              showAllOptions
+            />
+            <SearchableSelect
+              label="Purchase Invoice"
+              required
+              value={form.purchaseInvoiceId}
+              options={invoiceOptions}
+              onChange={handleInvoiceChange}
+              getOptionLabel={(invoice) => invoice.invoice_number}
+              placeholder="Search purchase invoice…"
+              disabled={!form.supplierId}
+              showAllOptions
+            />
             <FormInput
               label="Remarks"
               placeholder="Reason or notes for this return"

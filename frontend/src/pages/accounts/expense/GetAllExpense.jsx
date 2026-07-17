@@ -94,6 +94,13 @@ const GetAllExpense = () => {
               placeholder="Search expense, bank, COA, remarks"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  setPage(1);
+                  loadExpenses(1, search);
+                }
+              }}
             />
             <Button
               variant="secondary"

@@ -3,18 +3,17 @@ import { useNavigate, useParams } from "react-router-dom";
 import Card from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
 import FormInput from "../../../components/ui/FormInput";
+import SearchableSelect from "../../../components/ui/SearchableSelect";
 import accountService from "../../../api/services/accountService";
 import salesmanService from "../../../api/services/salesmanService";
 import salesmanCommissionPaymentService from "../../../api/services/salesmanCommissionPaymentService";
 import { formatDecimal } from "../../../utils/format";
+import { fetchAllPages } from "../../../utils/fetchAllPages";
 import {
   flattenAccountTree,
   formatAccountLabel,
 } from "../../../utils/accounts";
 import { useToast } from "../../../context/ToastContext";
-
-const selectClassName =
-  "w-full rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/90 px-4 py-3 text-sm text-slate-800 dark:text-slate-100 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/40";
 
 const createDefaultForm = () => ({
   date: new Date().toISOString().slice(0, 10),
@@ -68,14 +67,10 @@ const CreateUpdateSalesmanCommissionPayment = () => {
   const loadSetupData = async () => {
     try {
       const [salesmanResponse, accountsResponse] = await Promise.all([
-        salesmanService.list({
-          page: 1,
-          limit: 100,
-          search: "",
-        }),
+        fetchAllPages(salesmanService, { search: "" }),
         accountService.list(),
       ]);
-      setSalesmen(salesmanResponse.data || []);
+      setSalesmen(salesmanResponse || []);
       const flatAccounts = flattenAccountTree(
         Array.isArray(accountsResponse)
           ? accountsResponse
@@ -292,45 +287,32 @@ const CreateUpdateSalesmanCommissionPayment = () => {
               onChange={(e) => handleChange("date", e.target.value)}
             />
 
-            <div className="space-y-1">
-              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                Salesman <span className="text-rose-500">*</span>
-              </label>
-              <select
-                className={selectClassName}
-                value={form.salesmanId}
-                onChange={(e) => handleSalesmanChange(e.target.value)}
-              >
-                <option value="">Select Salesman</option>
-                {salesmen.map((salesman) => (
-                  <option key={salesman.id} value={salesman.id}>
-                    {salesman.code ? `${salesman.code} - ` : ""}
-                    {salesman.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <SearchableSelect
+              label="Salesman"
+              required
+              value={form.salesmanId}
+              options={salesmen}
+              onChange={handleSalesmanChange}
+              getOptionLabel={(salesman) =>
+                `${salesman.code ? `${salesman.code} - ` : ""}${salesman.name}`
+              }
+              placeholder="Search salesman…"
+              showAllOptions
+            />
 
-            <div className="space-y-1">
-              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                Selected Salesman&apos;s Invoice{" "}
-                <span className="text-rose-500">*</span>
-              </label>
-              <select
-                className={selectClassName}
-                value={form.salesInvoiceId}
-                onChange={(e) => handleInvoiceChange(e.target.value)}
-                disabled={!form.salesmanId}
-              >
-                <option value="">Select Invoice</option>
-                {invoiceOptions.map((invoice) => (
-                  <option key={invoice.id} value={invoice.id}>
-                    {invoice.invoice_number} | Pending{" "}
-                    {formatDecimal(invoice.pending_amount)}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <SearchableSelect
+              label="Selected Salesman's Invoice"
+              required
+              value={form.salesInvoiceId}
+              options={invoiceOptions}
+              onChange={handleInvoiceChange}
+              getOptionLabel={(invoice) =>
+                `${invoice.invoice_number} | Pending ${formatDecimal(invoice.pending_amount)}`
+              }
+              placeholder="Search invoice…"
+              disabled={!form.salesmanId}
+              showAllOptions
+            />
 
             <FormInput
               label="Payment *"
@@ -342,25 +324,18 @@ const CreateUpdateSalesmanCommissionPayment = () => {
               onChange={(e) => handleChange("payment", e.target.value)}
             />
 
-            <div className="space-y-1">
-              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                Payment Account <span className="text-rose-500">*</span>
-              </label>
-              <select
-                className={selectClassName}
-                value={form.paymentAccountId}
-                onChange={(e) =>
-                  handleChange("paymentAccountId", e.target.value)
-                }
-              >
-                <option value="">Select Cash / Bank Account</option>
-                {paymentAccounts.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {formatAccountLabel(account)}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <SearchableSelect
+              label="Payment Account"
+              required
+              value={form.paymentAccountId}
+              options={paymentAccounts}
+              onChange={(paymentAccountId) =>
+                handleChange("paymentAccountId", paymentAccountId)
+              }
+              getOptionLabel={(account) => formatAccountLabel(account)}
+              placeholder="Search cash / bank account…"
+              showAllOptions
+            />
 
             <FormInput
               label="Remarks"

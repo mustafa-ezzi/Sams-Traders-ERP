@@ -100,6 +100,12 @@ const GetAllProduction = () => {
               placeholder="Search by warehouse or product"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  load(1, search);
+                }
+              }}
             />{" "}
             <Button variant="secondary" onClick={() => load(1, search)}>
               {" "}

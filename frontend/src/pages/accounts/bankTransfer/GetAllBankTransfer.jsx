@@ -99,6 +99,13 @@ const GetAllBankTransfer = () => {
               placeholder="Search transfer, bank, remarks"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  setPage(1);
+                  loadTransfers(1);
+                }
+              }}
             />
             <Button
               variant="secondary"

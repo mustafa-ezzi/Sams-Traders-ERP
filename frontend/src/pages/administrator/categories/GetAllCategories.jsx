@@ -132,6 +132,12 @@ const GetAllCategories = () => {
               placeholder="Search categories"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  loadRecords(1, search);
+                }
+              }}
             />{" "}
             <Button variant="secondary" onClick={() => loadRecords(1, search)}>
               {" "}

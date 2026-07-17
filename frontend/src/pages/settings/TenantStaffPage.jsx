@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import FormInput from "../../components/ui/FormInput";
@@ -47,6 +47,17 @@ const TenantStaffPage = () => {
   const [editingId, setEditingId] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleteId, setDeleteId] = useState("");
+  const [search, setSearch] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
+
+  const filteredRows = useMemo(() => {
+    const term = appliedSearch.trim().toLowerCase();
+    if (!term) return rows;
+    return rows.filter((row) =>
+      [row.username, row.email, row.tenant_role]
+        .some((value) => String(value || "").toLowerCase().includes(term)),
+    );
+  }, [appliedSearch, rows]);
 
   const load = async () => {
     setLoading(true);
@@ -318,6 +329,29 @@ const TenantStaffPage = () => {
         onConfirm={onDelete}
       />
 
+      <Card>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <FormInput
+            placeholder="Search login, email, or role"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                setAppliedSearch(search);
+              }
+            }}
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => setAppliedSearch(search)}
+          >
+            Search
+          </Button>
+        </div>
+      </Card>
+
       <StateView
         loading={loading}
         error={error}
@@ -338,7 +372,7 @@ const TenantStaffPage = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {rows.map((row) => (
+                {filteredRows.map((row) => (
                   <tr key={row.id}>
                     <td className="px-4 py-3 font-semibold text-slate-800">
                       {row.username}

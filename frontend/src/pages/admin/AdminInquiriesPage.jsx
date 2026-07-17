@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import FormInput from "../../components/ui/FormInput";
@@ -14,6 +14,23 @@ const AdminInquiriesPage = () => {
   const [error, setError] = useState("");
   const [replyingId, setReplyingId] = useState("");
   const [replyText, setReplyText] = useState("");
+  const [search, setSearch] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
+
+  const filteredRows = useMemo(() => {
+    const term = appliedSearch.trim().toLowerCase();
+    if (!term) return rows;
+    return rows.filter((row) =>
+      [
+        row.user_name,
+        row.tenant_id,
+        row.subject,
+        row.message,
+        row.admin_reply,
+        row.status,
+      ].some((value) => String(value || "").toLowerCase().includes(term)),
+    );
+  }, [appliedSearch, rows]);
 
   const loadRows = async () => {
     setLoading(true);
@@ -37,6 +54,28 @@ const AdminInquiriesPage = () => {
       title="User Inquiries"
       subtitle="Support requests submitted by ERP users."
     >
+      <Card>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <FormInput
+            placeholder="Search inquiries"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                setAppliedSearch(search);
+              }
+            }}
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => setAppliedSearch(search)}
+          >
+            Search
+          </Button>
+        </div>
+      </Card>
       <StateView
         loading={loading}
         error={error}
@@ -66,7 +105,7 @@ const AdminInquiriesPage = () => {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row) => (
+                {filteredRows.map((row) => (
                   <tr
                     key={row.id}
                     className="border-t border-slate-100 bg-white align-top"

@@ -22,20 +22,21 @@ const WarehousePage = () => {
   const [error, setError] = useState("");
   const [editingId, setEditingId] = useState("");
   const [deleteId, setDeleteId] = useState("");
+  const [search, setSearch] = useState("");
   const toast = useToast();
   const form = useForm({
     resolver: zodResolver(schema),
     defaultValues: { name: "", location: "" },
   });
 
-  const loadRecords = async () => {
+  const loadRecords = async (nextSearch = search) => {
     setLoading(true);
     setError("");
     try {
       const response = await warehouseService.list({
         page: 1,
-        limit: 20,
-        search: "",
+        limit: 100,
+        search: nextSearch,
       });
       setRecords(response.data || []);
     } catch (loadError) {
@@ -95,9 +96,31 @@ const WarehousePage = () => {
       />
 
       <Card className="bg-[linear-gradient(135deg,rgba(255,255,255,0.92),rgba(240,248,255,0.96))]">
-        <h2 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900">
-          Warehouses
-        </h2>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <h2 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900">
+            Warehouses
+          </h2>
+          <div className="flex gap-2">
+            <FormInput
+              placeholder="Search warehouse or location"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  loadRecords(search);
+                }
+              }}
+            />
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => loadRecords(search)}
+            >
+              Search
+            </Button>
+          </div>
+        </div>
       </Card>
 
       <Card>

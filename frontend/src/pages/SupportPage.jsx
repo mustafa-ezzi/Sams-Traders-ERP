@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
 import FormInput from "../components/ui/FormInput";
@@ -14,6 +14,18 @@ const SupportPage = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
+
+  const filteredRows = useMemo(() => {
+    const term = appliedSearch.trim().toLowerCase();
+    if (!term) return rows;
+    return rows.filter((row) =>
+      [row.subject, row.message, row.admin_reply, row.status].some((value) =>
+        String(value || "").toLowerCase().includes(term),
+      ),
+    );
+  }, [appliedSearch, rows]);
 
   const loadRows = async () => {
     setLoading(true);
@@ -86,6 +98,29 @@ const SupportPage = () => {
         </form>
       </Card>
 
+      <Card>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <FormInput
+            placeholder="Search support inquiries"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                setAppliedSearch(search);
+              }
+            }}
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => setAppliedSearch(search)}
+          >
+            Search
+          </Button>
+        </div>
+      </Card>
+
       <StateView
         loading={loading}
         error={error}
@@ -115,7 +150,7 @@ const SupportPage = () => {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row) => (
+                {filteredRows.map((row) => (
                   <tr
                     key={row.id}
                     className="border-t border-gray-100 bg-white"

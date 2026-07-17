@@ -11,9 +11,11 @@ import accountService from "../../../api/services/accountService";
 import Card from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
 import FormInput from "../../../components/ui/FormInput";
+import SearchableSelect from "../../../components/ui/SearchableSelect";
 import { useToast } from "../../../context/ToastContext";
 import { useAuth } from "../../../context/AuthContext";
 import DimensionCreateSelector from "../../../components/ui/DimensionCreateSelector";
+import { fetchAllPages } from "../../../utils/fetchAllPages";
 import {
   flattenAccountTree,
   formatAccountLabel,
@@ -38,8 +40,6 @@ const defaultValues = {
   inventory_account: "",
   purchase_price: 0,
 };
-const selectClassName =
-  "w-full rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/90 px-4 py-3 text-sm text-slate-800 dark:text-slate-100 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/40";
 const CreateUpdateRawMaterial = () => {
   const navigate = useNavigate();
   const { id } = useParams();
@@ -56,7 +56,9 @@ const CreateUpdateRawMaterial = () => {
   const [inventoryAccounts, setInventoryAccounts] = useState([]);
   const toast = useToast();
   const form = useForm({ resolver: zodResolver(schema), defaultValues });
+  const selectedBrandId = form.watch("brand");
   const selectedCategoryId = form.watch("category");
+  const selectedUnitId = form.watch("purchase_unit");
   const selectedInventoryAccountId = form.watch("inventory_account");
   const categoryMap = useMemo(
     () =>
@@ -74,14 +76,14 @@ const CreateUpdateRawMaterial = () => {
     setLoadingOptions(true);
     try {
       const [brandRes, categoryRes, unitRes, accountRes] = await Promise.all([
-        brandService.list({ page: 1, limit: 100, search: "" }),
-        categoryService.list({ page: 1, limit: 100, search: "" }),
-        unitService.list({ page: 1, limit: 100, search: "" }),
+        fetchAllPages(brandService, { search: "" }),
+        fetchAllPages(categoryService, { search: "" }),
+        fetchAllPages(unitService, { search: "" }),
         accountService.list(),
       ]);
-      setBrands(brandRes.data || []);
-      setCategories(categoryRes.data || []);
-      setUnits(unitRes.data || []);
+      setBrands(brandRes || []);
+      setCategories(categoryRes || []);
+      setUnits(unitRes || []);
       setInventoryAccounts(
         getPostableInventoryAccounts(flattenAccountTree(accountRes || [])),
       );
@@ -188,69 +190,54 @@ const CreateUpdateRawMaterial = () => {
               error={form.formState.errors.name?.message}
               {...form.register("name")}
             />{" "}
-            <div className="space-y-2">
-              {" "}
-              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
-                {" "}
-                Brand <span className="text-rose-500">*</span>{" "}
-              </label>{" "}
-              <select
-                className={selectClassName}
-                {...form.register("brand")}
-                disabled={loadingOptions}
-              >
-                {" "}
-                <option value="">Select brand</option>{" "}
-                {brands.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {" "}
-                    {item.name}{" "}
-                  </option>
-                ))}{" "}
-              </select>{" "}
-            </div>{" "}
-            <div className="space-y-2">
-              {" "}
-              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
-                {" "}
-                Category <span className="text-rose-500">*</span>{" "}
-              </label>{" "}
-              <select
-                className={selectClassName}
-                {...form.register("category")}
-                disabled={loadingOptions}
-              >
-                {" "}
-                <option value="">Select category</option>{" "}
-                {categories.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {" "}
-                    {item.name}{" "}
-                  </option>
-                ))}{" "}
-              </select>{" "}
-            </div>{" "}
-            <div className="space-y-2">
-              {" "}
-              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
-                {" "}
-                Purchase Unit <span className="text-rose-500">*</span>{" "}
-              </label>{" "}
-              <select
-                className={selectClassName}
-                {...form.register("purchase_unit")}
-                disabled={loadingOptions}
-              >
-                {" "}
-                <option value="">Select purchase unit</option>{" "}
-                {units.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {" "}
-                    {item.name}{" "}
-                  </option>
-                ))}{" "}
-              </select>{" "}
-            </div>{" "}
+            <SearchableSelect
+              label="Brand"
+              required
+              value={selectedBrandId}
+              options={brands}
+              onChange={(brand) =>
+                form.setValue("brand", brand, {
+                  shouldDirty: true,
+                  shouldValidate: true,
+                })
+              }
+              getOptionLabel={(item) => item.name}
+              placeholder="Search brand…"
+              disabled={loadingOptions}
+              showAllOptions
+            />
+            <SearchableSelect
+              label="Category"
+              required
+              value={selectedCategoryId}
+              options={categories}
+              onChange={(category) =>
+                form.setValue("category", category, {
+                  shouldDirty: true,
+                  shouldValidate: true,
+                })
+              }
+              getOptionLabel={(item) => item.name}
+              placeholder="Search category…"
+              disabled={loadingOptions}
+              showAllOptions
+            />
+            <SearchableSelect
+              label="Purchase Unit"
+              required
+              value={selectedUnitId}
+              options={units}
+              onChange={(purchaseUnit) =>
+                form.setValue("purchase_unit", purchaseUnit, {
+                  shouldDirty: true,
+                  shouldValidate: true,
+                })
+              }
+              getOptionLabel={(item) => item.name}
+              placeholder="Search purchase unit…"
+              disabled={loadingOptions}
+              showAllOptions
+            />
             <div className="space-y-2">
               {" "}
               <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
@@ -258,7 +245,7 @@ const CreateUpdateRawMaterial = () => {
                 Inventory Account{" "}
               </label>{" "}
               <input
-                className={`${selectClassName} bg-slate-50 dark:bg-slate-900/60 text-slate-600 dark:text-slate-300`}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 outline-none dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300"
                 value={
                   selectedInventoryAccount
                     ? formatAccountLabel(selectedInventoryAccount)

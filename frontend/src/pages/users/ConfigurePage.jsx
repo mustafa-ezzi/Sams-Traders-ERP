@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import dimensionService from "../../api/services/dimensionService";
 import Card from "../../components/ui/Card";
@@ -17,6 +17,22 @@ const ConfigurePage = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [search, setSearch] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
+
+  const filteredDimensions = useMemo(() => {
+    const term = appliedSearch.trim().toLowerCase();
+    if (!term) return dimensions;
+    return dimensions.filter((dimension) =>
+      [
+        dimension.code,
+        dimension.sku_code,
+        dimension.name,
+        dimension.phone_number,
+        dimension.email,
+      ].some((value) => String(value || "").toLowerCase().includes(term)),
+    );
+  }, [appliedSearch, dimensions]);
 
   const extractErrorMessage = (loadError) =>
     loadError?.response?.data?.detail ||
@@ -104,9 +120,30 @@ const ConfigurePage = () => {
               sales and purchase invoice prints.
             </p>
           </div>
-          <Button type="button" onClick={() => navigate("/users/configure/create")}>
-            Add Company
-          </Button>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <input
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100 sm:w-72"
+              placeholder="Search company configuration"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  setAppliedSearch(search);
+                }
+              }}
+            />
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setAppliedSearch(search)}
+            >
+              Search
+            </Button>
+            <Button type="button" onClick={() => navigate("/users/configure/create")}>
+              Add Company
+            </Button>
+          </div>
         </div>
       </Card>
 
@@ -133,7 +170,7 @@ const ConfigurePage = () => {
                 </tr>
               </thead>
               <tbody>
-                {dimensions.map((dimension) => (
+                {filteredDimensions.map((dimension) => (
                   <tr
                     key={dimension.id}
                     className="border-t border-slate-100 bg-white"
