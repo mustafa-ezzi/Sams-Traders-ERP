@@ -513,22 +513,17 @@ class PurchaseReturnSerializer(serializers.ModelSerializer):
         invoice = self.context.get("purchase_invoice")
         excluded_ids = self.context.get("excluded_return_line_ids")
 
-        # ✅ Only run when single instance (NOT list)
+        # Only when updating a single return (not list)
         if excluded_ids is None and isinstance(self.instance, PurchaseReturn):
             excluded_ids = list(
-                self.instance.lines.filter(deleted_at__isnull=True)
-                .values_list("id", flat=True)
+                self.instance.lines.filter(deleted_at__isnull=True).values_list(
+                    "id", flat=True
+                )
             )
 
-        excluded_ids = excluded_ids or []
-
-        fields["lines"].child.context.update(
-            {
-                **self.context,
-                "purchase_invoice": invoice,
-                "excluded_return_line_ids": excluded_ids,
-            }
-        )
+        # Nested line serializers read root._context (DRF Field.context → root).
+        self._context["purchase_invoice"] = invoice
+        self._context["excluded_return_line_ids"] = excluded_ids or []
 
         return fields
 

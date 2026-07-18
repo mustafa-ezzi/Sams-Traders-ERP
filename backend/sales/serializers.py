@@ -233,13 +233,10 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
                 self.instance.lines.filter(deleted_at__isnull=True).values_list("id", flat=True)
             )
 
-        fields["lines"].child.context.update(
-            {
-                **self.context,
-                "warehouse": warehouse,
-                "excluded_sale_line_ids": excluded_ids or [],
-            }
-        )
+        # Nested line serializers read root._context (DRF Field.context → root).
+        self._context["warehouse"] = warehouse
+        self._context["excluded_sale_line_ids"] = excluded_ids or []
+
         return fields
 
     def validate_customer_id(self, value):
@@ -961,16 +958,17 @@ class SalesReturnSerializer(serializers.ModelSerializer):
 
         if excluded_ids is None and isinstance(self.instance, SalesReturn):
             excluded_ids = list(
-                self.instance.lines.filter(deleted_at__isnull=True).values_list("id", flat=True)
+                self.instance.lines.filter(deleted_at__isnull=True).values_list(
+                    "id", flat=True
+                )
             )
 
-        fields["lines"].child.context.update(
-            {
-                **self.context,
-                "sales_invoice": invoice,
-                "excluded_return_line_ids": excluded_ids or [],
-            }
-        )
+        # Nested line serializers read root._context (DRF Field.context → root).
+        # Write exclusions onto the root context so update validation excludes
+        # this return's existing lines.
+        self._context["sales_invoice"] = invoice
+        self._context["excluded_return_line_ids"] = excluded_ids or []
+
         return fields
 
     def validate_customer_id(self, value):

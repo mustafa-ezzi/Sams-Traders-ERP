@@ -665,9 +665,8 @@ class SalesReturnViewSet(AuditedModelMixin, viewsets.ModelViewSet):
                 excluded_return_line_ids=excluded_return_line_ids,
             )
             current_return_qty = existing_quantities.get(str(invoice_line.id), Decimal("0.00"))
-            max_return_quantity = quantize_money(
-                metrics["available_return_quantity"] + current_return_qty
-            )
+            # available_return_quantity already excludes this return's lines
+            max_return_quantity = metrics["available_return_quantity"]
             payload.append(
                 {
                     "sales_invoice_line_id": invoice_line.id,
