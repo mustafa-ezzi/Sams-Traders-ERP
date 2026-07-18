@@ -251,6 +251,7 @@ const SalesmanReportsPage = () => {
           <ReportPrintWrapper
             title="Salesman Report"
             subtitle={`${report.from_date} to ${report.to_date}`}
+            orientation="landscape"
             metaLeft={[
               { label: "Report Type", value: "Salesman Report" },
               {

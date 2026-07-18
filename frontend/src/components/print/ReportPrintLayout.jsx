@@ -5,10 +5,18 @@ export const REPORT_PRINT_FONT =
 
 /** Styles applied inside the print sheet so screen UI becomes a clean voucher. */
 export const REPORT_PRINT_BODY_STYLE = `
+  .rpt-print-sheet {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
   .rpt-print-body {
     color: #1f2937 !important;
-    font-size: 11px;
-    line-height: 1.45;
+    font-size: 10px;
+    line-height: 1.35;
+    max-width: 100%;
+    overflow-x: auto;
   }
   .rpt-print-body .cl-no-print {
     display: none !important;
@@ -40,7 +48,7 @@ export const REPORT_PRINT_BODY_STYLE = `
   .rpt-print-body h3,
   .rpt-print-body h4 {
     color: #111827 !important;
-    font-size: 13px !important;
+    font-size: 12px !important;
     font-weight: 700 !important;
     letter-spacing: 0.02em;
     margin-bottom: 6px;
@@ -48,11 +56,17 @@ export const REPORT_PRINT_BODY_STYLE = `
   .rpt-print-body p {
     color: #4b5563 !important;
   }
+  .rpt-print-body [class*="overflow"] {
+    overflow-x: auto !important;
+    max-width: 100% !important;
+  }
   .rpt-print-body table {
     width: 100% !important;
+    max-width: 100% !important;
+    table-layout: fixed !important;
     border-collapse: collapse !important;
-    margin-top: 8px;
-    margin-bottom: 14px;
+    margin-top: 6px;
+    margin-bottom: 12px;
   }
   .rpt-print-body thead,
   .rpt-print-body th {
@@ -60,14 +74,17 @@ export const REPORT_PRINT_BODY_STYLE = `
   }
   .rpt-print-body th {
     color: #111827 !important;
-    font-size: 10px !important;
+    font-size: 8px !important;
     font-weight: 700 !important;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
-    padding: 8px 10px !important;
+    letter-spacing: 0.02em;
+    padding: 5px 4px !important;
     border-bottom: 1px solid #d1d5db !important;
     text-align: left;
-    white-space: nowrap;
+    white-space: normal !important;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    line-height: 1.2;
   }
   .rpt-print-body th.text-right,
   .rpt-print-body td.text-right {
@@ -75,24 +92,32 @@ export const REPORT_PRINT_BODY_STYLE = `
   }
   .rpt-print-body td {
     color: #1f2937 !important;
-    font-size: 11px !important;
-    padding: 9px 10px !important;
+    font-size: 8.5px !important;
+    padding: 5px 4px !important;
     border-bottom: 1px solid #e5e7eb !important;
     vertical-align: top;
+    white-space: normal !important;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    line-height: 1.25;
   }
   .rpt-print-body tbody tr:last-child td {
     border-bottom: 1px solid #d1d5db !important;
-  }
-  .rpt-print-body .overflow-hidden,
-  .rpt-print-body .overflow-x-auto,
-  .rpt-print-body [class*="overflow"] {
-    overflow: visible !important;
   }
   .rpt-print-body .space-y-6 > * + *,
   .rpt-print-body .space-y-5 > * + *,
   .rpt-print-body .space-y-4 > * + *,
   .rpt-print-body .space-y-3 > * + * {
-    margin-top: 12px !important;
+    margin-top: 10px !important;
+  }
+  .rpt-print-body [class*="grid-cols"] {
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 6px !important;
+  }
+  .rpt-print-body [class*="grid-cols"] > * {
+    min-width: 0 !important;
+    padding: 6px !important;
   }
 `;
 
@@ -173,7 +198,7 @@ const ReportPrintLayout = ({
 
   return (
     <article
-      className="rpt-print-sheet mx-auto max-w-[210mm] bg-white text-slate-800 print:max-w-none"
+      className="rpt-print-sheet mx-auto w-full max-w-full overflow-x-hidden bg-white text-slate-800 print:max-w-none"
       style={{ fontFamily: REPORT_PRINT_FONT }}
     >
       <style>{REPORT_PRINT_BODY_STYLE}</style>

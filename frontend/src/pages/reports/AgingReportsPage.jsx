@@ -385,6 +385,7 @@ const AgingReportsPage = () => {
           <ReportPrintWrapper
             title={tabMeta.title}
             subtitle={`As of ${report.as_of_date}`}
+            orientation="landscape"
             metaLeft={[
               { label: "Report Type", value: tabMeta.title },
               { label: "As of", value: report.as_of_date },

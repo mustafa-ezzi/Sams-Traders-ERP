@@ -69,6 +69,7 @@ const ReportPrintButton = ({
   buttonLabel = "Print preview",
   disabled = false,
   className = "",
+  orientation = "portrait",
   children,
 }) => {
   const [open, setOpen] = useState(false);
@@ -118,6 +119,7 @@ const ReportPrintButton = ({
           }
           onClose={() => setOpen(false)}
           bareSheet
+          orientation={orientation}
         >
           <ReportPrintLayout
             title={String(title || "Report").toUpperCase()}

@@ -15,6 +15,7 @@ const ReportPrintWrapper = ({
   metaRight,
   printContent = null,
   documentTitle = "",
+  orientation = "portrait",
   children,
 }) => {
   const { allowedDimensions } = useAuth();
@@ -59,6 +60,7 @@ const ReportPrintWrapper = ({
     metaRight,
     printContent,
     documentTitle,
+    orientation,
   };
 
   return (

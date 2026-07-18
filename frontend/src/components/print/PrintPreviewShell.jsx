@@ -1,9 +1,9 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import Button from "../ui/Button";
 
-const PRINT_STYLE = `
-  @page { margin: 12mm; size: A4; }
+const buildPrintStyle = (orientation = "portrait") => `
+  @page { margin: 10mm; size: A4 ${orientation}; }
   @media print {
     html, body {
       height: auto !important;
@@ -45,8 +45,10 @@ const PRINT_STYLE = `
       box-shadow: none !important;
       border-radius: 0 !important;
       max-width: none !important;
+      width: 100% !important;
       margin: 0 !important;
       padding: 0 !important;
+      overflow: visible !important;
     }
     .cl-no-print {
       display: none !important;
@@ -59,12 +61,21 @@ const PrintPreviewShell = ({
   subtitle = "",
   documentTitle = "",
   bareSheet = false,
+  orientation = "portrait",
   onClose,
   children,
 }) => {
   const handlePrint = useCallback(() => {
     window.print();
   }, []);
+
+  const printStyle = useMemo(
+    () => buildPrintStyle(orientation === "landscape" ? "landscape" : "portrait"),
+    [orientation],
+  );
+
+  const sheetMaxWidth =
+    orientation === "landscape" ? "max-w-[297mm]" : "max-w-[210mm]";
 
   useEffect(() => {
     const onKey = (event) => {
@@ -90,7 +101,7 @@ const PrintPreviewShell = ({
 
   return createPortal(
     <>
-      <style>{PRINT_STYLE}</style>
+      <style>{printStyle}</style>
       <div
         id="cl-print-root"
         className="cl-print-overlay fixed inset-0 z-[220] flex flex-col bg-slate-900/60 backdrop-blur-[2px]"
@@ -141,11 +152,15 @@ const PrintPreviewShell = ({
 
         <div className="cl-print-scroll flex-1 overflow-y-auto p-4 md:p-8">
           {bareSheet ? (
-            <div className="cl-print-sheet mx-auto max-w-[210mm] rounded-sm bg-white p-8 shadow-2xl shadow-slate-900/20 print:shadow-none md:px-10 md:py-9">
+            <div
+              className={`cl-print-sheet mx-auto ${sheetMaxWidth} w-full overflow-x-hidden rounded-sm bg-white p-6 shadow-2xl shadow-slate-900/20 print:shadow-none md:px-8 md:py-7`}
+            >
               {children}
             </div>
           ) : (
-            <div className="cl-print-sheet mx-auto max-w-[210mm] rounded-2xl bg-white p-6 shadow-2xl shadow-slate-900/20 print:shadow-none md:p-8">
+            <div
+              className={`cl-print-sheet mx-auto ${sheetMaxWidth} w-full overflow-x-hidden rounded-2xl bg-white p-6 shadow-2xl shadow-slate-900/20 print:shadow-none md:p-8`}
+            >
               {children}
             </div>
           )}
