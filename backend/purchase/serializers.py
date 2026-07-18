@@ -397,22 +397,45 @@ class PurchaseReturnLineSerializer(serializers.ModelSerializer):
             "max_return_quantity",
         ]
 
+    def _editing_purchase_return(self):
+        root = getattr(self, "root", None)
+        instance = getattr(root, "instance", None)
+        if isinstance(instance, PurchaseReturn):
+            return instance
+        return None
+
     def _get_excluded_ids(self):
-        return self.context.get("excluded_return_line_ids", [])
+        excluded = self.context.get("excluded_return_line_ids")
+        if excluded:
+            return list(excluded)
+        editing = self._editing_purchase_return()
+        if editing is None:
+            return []
+        return list(
+            editing.lines.filter(deleted_at__isnull=True).values_list("id", flat=True)
+        )
+
+    def _get_excluded_purchase_return_id(self):
+        excluded = self.context.get("excluded_purchase_return_id")
+        if excluded:
+            return excluded
+        editing = self._editing_purchase_return()
+        return editing.id if editing is not None else None
+
+    def _metrics_for(self, invoice_line):
+        return get_purchase_return_line_metrics(
+            invoice_line,
+            excluded_return_line_ids=self._get_excluded_ids(),
+            excluded_purchase_return_id=self._get_excluded_purchase_return_id(),
+        )
 
     def get_sold_quantity(self, obj):
-        metrics = get_purchase_return_line_metrics(
-            obj.purchase_invoice_line,
-            excluded_return_line_ids=self._get_excluded_ids(),
-        )
-        return str(metrics["sold_quantity"])
+        return str(self._metrics_for(obj.purchase_invoice_line)["sold_quantity"])
 
     def get_max_return_quantity(self, obj):
-        metrics = get_purchase_return_line_metrics(
-            obj.purchase_invoice_line,
-            excluded_return_line_ids=self._get_excluded_ids(),
+        return str(
+            self._metrics_for(obj.purchase_invoice_line)["available_return_quantity"]
         )
-        return str(metrics["available_return_quantity"])
 
     def validate_purchase_invoice_line_id(self, value):
         tenant_ids = get_shared_tenant_ids(self.context["request"])
@@ -449,10 +472,7 @@ class PurchaseReturnLineSerializer(serializers.ModelSerializer):
             deleted_at__isnull=True,
             invoice__deleted_at__isnull=True,
         )
-        metrics = get_purchase_return_line_metrics(
-            invoice_line,
-            excluded_return_line_ids=self._get_excluded_ids(),
-        )
+        metrics = self._metrics_for(invoice_line)
         quantity = quantize_money(attrs.get("quantity", 0))
 
         if quantity <= 0:
@@ -512,18 +532,21 @@ class PurchaseReturnSerializer(serializers.ModelSerializer):
 
         invoice = self.context.get("purchase_invoice")
         excluded_ids = self.context.get("excluded_return_line_ids")
+        excluded_return_id = self.context.get("excluded_purchase_return_id")
 
-        # Only when updating a single return (not list)
-        if excluded_ids is None and isinstance(self.instance, PurchaseReturn):
-            excluded_ids = list(
-                self.instance.lines.filter(deleted_at__isnull=True).values_list(
-                    "id", flat=True
+        if isinstance(self.instance, PurchaseReturn):
+            if excluded_ids is None:
+                excluded_ids = list(
+                    self.instance.lines.filter(deleted_at__isnull=True).values_list(
+                        "id", flat=True
+                    )
                 )
-            )
+            if excluded_return_id is None:
+                excluded_return_id = self.instance.id
 
-        # Nested line serializers read root._context (DRF Field.context → root).
         self._context["purchase_invoice"] = invoice
         self._context["excluded_return_line_ids"] = excluded_ids or []
+        self._context["excluded_purchase_return_id"] = excluded_return_id
 
         return fields
 

@@ -633,6 +633,7 @@ class SalesReturnViewSet(AuditedModelMixin, viewsets.ModelViewSet):
             raise ValidationError({"sales_invoice_id": "Sales invoice not found."})
 
         excluded_return_line_ids = []
+        excluded_sales_return_id = None
         existing_quantities = {}
         if sales_return_id:
             try:
@@ -644,6 +645,7 @@ class SalesReturnViewSet(AuditedModelMixin, viewsets.ModelViewSet):
             except SalesReturn.DoesNotExist:
                 raise ValidationError({"sales_return_id": "Sales return not found."})
 
+            excluded_sales_return_id = current_return.id
             excluded_return_line_ids = list(
                 current_return.lines.filter(deleted_at__isnull=True).values_list("id", flat=True)
             )
@@ -663,6 +665,7 @@ class SalesReturnViewSet(AuditedModelMixin, viewsets.ModelViewSet):
             metrics = get_sales_return_line_metrics(
                 invoice_line,
                 excluded_return_line_ids=excluded_return_line_ids,
+                excluded_sales_return_id=excluded_sales_return_id,
             )
             current_return_qty = existing_quantities.get(str(invoice_line.id), Decimal("0.00"))
             # available_return_quantity already excludes this return's lines

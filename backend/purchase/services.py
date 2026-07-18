@@ -13,19 +13,30 @@ def quantize_money(value):
     return Decimal(value).quantize(TWO_PLACES, rounding=ROUND_HALF_UP)
 
 
-def get_purchase_return_line_metrics(invoice_line, excluded_return_line_ids=None):
+def get_purchase_return_line_metrics(
+    invoice_line,
+    excluded_return_line_ids=None,
+    excluded_purchase_return_id=None,
+):
+    """
+    Remaining returnable qty for a purchase invoice line.
+
+    On edit, exclude the return being edited so its quantity is available again.
+    """
     excluded_return_line_ids = excluded_return_line_ids or []
 
+    queryset = PurchaseReturnLine.objects.filter(
+        purchase_invoice_line=invoice_line,
+        deleted_at__isnull=True,
+        purchase_return__deleted_at__isnull=True,
+    )
+    if excluded_purchase_return_id:
+        queryset = queryset.exclude(purchase_return_id=excluded_purchase_return_id)
+    if excluded_return_line_ids:
+        queryset = queryset.exclude(id__in=excluded_return_line_ids)
+
     returned_total = (
-        PurchaseReturnLine.objects.filter(
-            tenant_id=invoice_line.tenant_id,
-            purchase_invoice_line=invoice_line,
-            deleted_at__isnull=True,
-            purchase_return__deleted_at__isnull=True,
-        )
-        .exclude(id__in=excluded_return_line_ids)
-        .aggregate(total=Sum("quantity"))["total"]
-        or Decimal("0.00")
+        queryset.aggregate(total=Sum("quantity"))["total"] or Decimal("0.00")
     )
 
     current_stock = (

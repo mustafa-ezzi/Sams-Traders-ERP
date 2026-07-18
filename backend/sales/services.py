@@ -50,19 +50,31 @@ def get_available_sale_quantity(tenant_id, warehouse_id, product_id, excluded_sa
     return quantize_money(current_stock + excluded_quantity)
 
 
-def get_sales_return_line_metrics(invoice_line, excluded_return_line_ids=None):
+def get_sales_return_line_metrics(
+    invoice_line,
+    excluded_return_line_ids=None,
+    excluded_sales_return_id=None,
+):
+    """
+    Remaining returnable qty for an invoice line.
+
+    On edit, pass excluded_sales_return_id (and/or excluded_return_line_ids) so
+    the return being edited does not consume its own quantity.
+    """
     excluded_return_line_ids = excluded_return_line_ids or []
 
+    queryset = SalesReturnLine.objects.filter(
+        sales_invoice_line=invoice_line,
+        deleted_at__isnull=True,
+        sales_return__deleted_at__isnull=True,
+    )
+    if excluded_sales_return_id:
+        queryset = queryset.exclude(sales_return_id=excluded_sales_return_id)
+    if excluded_return_line_ids:
+        queryset = queryset.exclude(id__in=excluded_return_line_ids)
+
     returned_total = (
-        SalesReturnLine.objects.filter(
-            tenant_id=invoice_line.tenant_id,
-            sales_invoice_line=invoice_line,
-            deleted_at__isnull=True,
-            sales_return__deleted_at__isnull=True,
-        )
-        .exclude(id__in=excluded_return_line_ids)
-        .aggregate(total=Sum("quantity"))["total"]
-        or Decimal("0.00")
+        queryset.aggregate(total=Sum("quantity"))["total"] or Decimal("0.00")
     )
 
     remaining_invoice_quantity = max(
