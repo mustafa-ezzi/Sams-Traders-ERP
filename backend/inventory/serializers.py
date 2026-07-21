@@ -1372,8 +1372,8 @@ class PartyOpeningBalanceSerializer(serializers.ModelSerializer):
 
     def validate_amount(self, value):
         amount = self._quantize_amount(value)
-        if amount <= 0:
-            raise serializers.ValidationError("Opening amount must be greater than zero.")
+        if amount == 0:
+            raise serializers.ValidationError("Opening amount cannot be zero.")
         return amount
 
     def _resolve_target_tenant_id(self, attrs, request, allowed_tenant_ids):

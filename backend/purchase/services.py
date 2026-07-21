@@ -125,10 +125,7 @@ def get_supplier_opening_balance_financials(opening_balance, excluded_payment_id
         or Decimal("0.00")
     )
     paid_amount = quantize_money(paid_amount)
-    balance_amount = max(
-        quantize_money(opening_amount - paid_amount),
-        Decimal("0.00"),
-    )
+    balance_amount = quantize_money(opening_amount - paid_amount)
 
     return {
         "opening_amount": opening_amount,

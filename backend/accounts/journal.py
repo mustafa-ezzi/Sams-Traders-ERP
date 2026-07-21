@@ -916,7 +916,8 @@ def _resolve_opening_balance_party_account(party, field_label, tenant_id):
 
 def _build_party_opening_balance_lines(opening_balance):
     equity_account = resolve_opening_equity_account(opening_balance.tenant_id)
-    amount = quantize_money(opening_balance.amount)
+    signed_amount = quantize_money(opening_balance.amount)
+    amount = abs(signed_amount)
     tenant_id = opening_balance.tenant_id
 
     if opening_balance.party_type == PartyOpeningBalance.PartyType.CUSTOMER:
@@ -926,19 +927,37 @@ def _build_party_opening_balance_lines(opening_balance):
             "Customer",
             tenant_id,
         )
+        if signed_amount >= 0:
+            return [
+                {
+                    "account": party_account,
+                    "debit": amount,
+                    "credit": Decimal("0.00"),
+                    "line_description": "Customer Opening Balance",
+                    "people_type": "Customer",
+                    "people_name": customer.business_name,
+                },
+                {
+                    "account": equity_account,
+                    "debit": Decimal("0.00"),
+                    "credit": amount,
+                    "line_description": "Opening Balance Equity",
+                },
+            ]
+
         return [
             {
                 "account": party_account,
-                "debit": amount,
-                "credit": Decimal("0.00"),
-                "line_description": "Customer Opening Balance",
+                "debit": Decimal("0.00"),
+                "credit": amount,
+                "line_description": "Customer Opening Balance (Negative)",
                 "people_type": "Customer",
                 "people_name": customer.business_name,
             },
             {
                 "account": equity_account,
-                "debit": Decimal("0.00"),
-                "credit": amount,
+                "debit": amount,
+                "credit": Decimal("0.00"),
                 "line_description": "Opening Balance Equity",
             },
         ]
@@ -949,18 +968,36 @@ def _build_party_opening_balance_lines(opening_balance):
         "Supplier",
         tenant_id,
     )
+    if signed_amount >= 0:
+        return [
+            {
+                "account": equity_account,
+                "debit": amount,
+                "credit": Decimal("0.00"),
+                "line_description": "Opening Balance Equity",
+            },
+            {
+                "account": party_account,
+                "debit": Decimal("0.00"),
+                "credit": amount,
+                "line_description": "Supplier Opening Balance",
+                "people_type": "Supplier",
+                "people_name": supplier.business_name,
+            },
+        ]
+
     return [
         {
             "account": equity_account,
-            "debit": amount,
-            "credit": Decimal("0.00"),
+            "debit": Decimal("0.00"),
+            "credit": amount,
             "line_description": "Opening Balance Equity",
         },
         {
             "account": party_account,
-            "debit": Decimal("0.00"),
-            "credit": amount,
-            "line_description": "Supplier Opening Balance",
+            "debit": amount,
+            "credit": Decimal("0.00"),
+            "line_description": "Supplier Opening Balance (Negative)",
             "people_type": "Supplier",
             "people_name": supplier.business_name,
         },

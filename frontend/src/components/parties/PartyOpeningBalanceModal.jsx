@@ -115,8 +115,8 @@ const PartyOpeningBalanceModal = ({
       setError("Please select an opening date.");
       return;
     }
-    if (!amount || Number(amount) <= 0) {
-      setError("Opening amount must be greater than zero.");
+    if (!amount || Number(amount) === 0) {
+      setError("Opening amount cannot be zero.");
       return;
     }
 
@@ -209,7 +209,6 @@ const PartyOpeningBalanceModal = ({
           <FormInput
             label="Opening Amount"
             type="number"
-            min="0.01"
             step="0.01"
             required
             placeholder="0.00"

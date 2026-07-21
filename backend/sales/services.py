@@ -143,10 +143,7 @@ def get_customer_opening_balance_financials(opening_balance, excluded_receipt_id
         or Decimal("0.00")
     )
     received_amount = quantize_money(received_amount)
-    balance_amount = max(
-        quantize_money(opening_amount - received_amount),
-        Decimal("0.00"),
-    )
+    balance_amount = quantize_money(opening_amount - received_amount)
 
     return {
         "opening_amount": opening_amount,
