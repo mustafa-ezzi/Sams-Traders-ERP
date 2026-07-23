@@ -17,6 +17,7 @@ import {
   todayIso,
 } from "./shared/reportHelpers";
 import SortableReportTable from "./shared/SortableReportTable";
+import { REPORT_PATHS, ReportLink, sourceDocumentPath } from "./shared/reportLinks";
 
 const CashFlowSummaryPage = () => {
   const toast = useToast();
@@ -70,7 +71,14 @@ const CashFlowSummaryPage = () => {
         key: "name",
         label: "Account",
         getValue: (row) => `${row.code || ""} ${row.name || ""}`,
-        render: (row) => `${row.code} — ${row.name}`,
+        render: (row) => (
+          <ReportLink
+            to={REPORT_PATHS.account(row.account_id)}
+            title="Open account"
+          >
+            {row.code} — {row.name}
+          </ReportLink>
+        ),
       },
     ];
     if (showDimension) {
@@ -113,12 +121,30 @@ const CashFlowSummaryPage = () => {
   const movementColumns = useMemo(
     () => [
       { key: "date", label: "Date" },
-      { key: "reference", label: "Reference" },
+      {
+        key: "reference",
+        label: "Reference",
+        render: (row) => (
+          <ReportLink
+            to={sourceDocumentPath(row.source_type, row.source_id)}
+            title="Open document"
+          >
+            {row.reference}
+          </ReportLink>
+        ),
+      },
       {
         key: "account_name",
         label: "Account",
         getValue: (row) => `${row.account_code || ""} ${row.account_name || ""}`,
-        render: (row) => `${row.account_code} — ${row.account_name}`,
+        render: (row) => (
+          <ReportLink
+            to={REPORT_PATHS.account(row.account_id)}
+            title="Open account"
+          >
+            {row.account_code} — {row.account_name}
+          </ReportLink>
+        ),
       },
       { key: "description", label: "Description" },
       {

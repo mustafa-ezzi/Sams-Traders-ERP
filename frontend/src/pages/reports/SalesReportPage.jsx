@@ -16,6 +16,7 @@ import { useToast } from "../../context/ToastContext";
 import ReportPrintWrapper from "../../components/print/ReportPrintWrapper";
 import { formatDecimal } from "../../utils/format";
 import SortableReportTable from "./shared/SortableReportTable";
+import { REPORT_PATHS, ReportLink } from "./shared/reportLinks";
 import {
   extractErrorMessage,
   resolveReportTenant,
@@ -292,11 +293,53 @@ const SalesReportPage = ({ section = "summary" }) => {
 
   const invoiceColumns = useMemo(
     () => [
-      { key: "invoice_number", label: "Invoice", strong: true },
+      {
+        key: "invoice_number",
+        label: "Invoice",
+        strong: true,
+        render: (row) => (
+          <ReportLink
+            to={REPORT_PATHS.salesInvoice(row.invoice_id)}
+            title="Open sales invoice"
+          >
+            {row.invoice_number}
+          </ReportLink>
+        ),
+      },
       { key: "date", label: "Date" },
-      { key: "customer_name", label: "Customer" },
-      { key: "warehouse_name", label: "Warehouse" },
-      { key: "salesman_name", label: "Salesman" },
+      {
+        key: "customer_name",
+        label: "Customer",
+        render: (row) => (
+          <ReportLink
+            to={REPORT_PATHS.partyLedger("customer", row.customer_id)}
+            title="Open party ledger"
+          >
+            {row.customer_name}
+          </ReportLink>
+        ),
+      },
+      {
+        key: "warehouse_name",
+        label: "Warehouse",
+        render: (row) => (
+          <ReportLink to={REPORT_PATHS.warehouses()} title="Open warehouses">
+            {row.warehouse_name}
+          </ReportLink>
+        ),
+      },
+      {
+        key: "salesman_name",
+        label: "Salesman",
+        render: (row) => (
+          <ReportLink
+            to={REPORT_PATHS.salesman(row.salesman_id)}
+            title="Open salesman"
+          >
+            {row.salesman_name || "—"}
+          </ReportLink>
+        ),
+      },
       ...(showDimension
         ? [{ key: "dimension_name", label: "Dimension" }]
         : []),
@@ -369,7 +412,19 @@ const SalesReportPage = ({ section = "summary" }) => {
               title="By Product"
               rows={report.product_rows || []}
               columns={[
-                { key: "product_name", label: "Product", strong: true },
+                {
+                  key: "product_name",
+                  label: "Product",
+                  strong: true,
+                  render: (row) => (
+                    <ReportLink
+                      to={REPORT_PATHS.product(row.product_id)}
+                      title="Open product"
+                    >
+                      {row.product_name}
+                    </ReportLink>
+                  ),
+                },
                 { key: "sku", label: "SKU" },
                 { key: "unit", label: "Unit" },
                 { key: "invoice_count", label: "Invoices", align: "right" },
@@ -443,7 +498,19 @@ const SalesReportPage = ({ section = "summary" }) => {
               title="By Customer"
               rows={report.customer_rows || []}
               columns={[
-                { key: "customer_name", label: "Customer", strong: true },
+                {
+                  key: "customer_name",
+                  label: "Customer",
+                  strong: true,
+                  render: (row) => (
+                    <ReportLink
+                      to={REPORT_PATHS.partyLedger("customer", row.customer_id)}
+                      title="Open party ledger"
+                    >
+                      {row.customer_name}
+                    </ReportLink>
+                  ),
+                },
                 ...commonAmountColumns,
               ]}
               emptyMessage="No customer sales found."
@@ -458,7 +525,19 @@ const SalesReportPage = ({ section = "summary" }) => {
               title="By Salesman"
               rows={report.salesman_rows || []}
               columns={[
-                { key: "salesman_name", label: "Salesman", strong: true },
+                {
+                  key: "salesman_name",
+                  label: "Salesman",
+                  strong: true,
+                  render: (row) => (
+                    <ReportLink
+                      to={REPORT_PATHS.salesman(row.salesman_id)}
+                      title="Open salesman"
+                    >
+                      {row.salesman_name}
+                    </ReportLink>
+                  ),
+                },
                 { key: "salesman_code", label: "Code" },
                 ...commonAmountColumns,
               ]}
@@ -474,7 +553,19 @@ const SalesReportPage = ({ section = "summary" }) => {
               title="By Warehouse"
               rows={report.warehouse_rows || []}
               columns={[
-                { key: "warehouse_name", label: "Warehouse", strong: true },
+                {
+                  key: "warehouse_name",
+                  label: "Warehouse",
+                  strong: true,
+                  render: (row) => (
+                    <ReportLink
+                      to={REPORT_PATHS.warehouses()}
+                      title="Open warehouses"
+                    >
+                      {row.warehouse_name}
+                    </ReportLink>
+                  ),
+                },
                 ...commonAmountColumns,
               ]}
               emptyMessage="No warehouse sales found."
@@ -512,10 +603,44 @@ const SalesReportPage = ({ section = "summary" }) => {
               title="Returns Linked To These Sales"
               rows={report.return_rows || []}
               columns={[
-                { key: "return_number", label: "Return", strong: true },
+                {
+                  key: "return_number",
+                  label: "Return",
+                  strong: true,
+                  render: (row) => (
+                    <ReportLink
+                      to={REPORT_PATHS.salesReturn(row.return_id)}
+                      title="Open sales return"
+                    >
+                      {row.return_number}
+                    </ReportLink>
+                  ),
+                },
                 { key: "date", label: "Date" },
-                { key: "invoice_number", label: "Invoice" },
-                { key: "customer_name", label: "Customer" },
+                {
+                  key: "invoice_number",
+                  label: "Invoice",
+                  render: (row) => (
+                    <ReportLink
+                      to={REPORT_PATHS.salesInvoice(row.invoice_id)}
+                      title="Open sales invoice"
+                    >
+                      {row.invoice_number}
+                    </ReportLink>
+                  ),
+                },
+                {
+                  key: "customer_name",
+                  label: "Customer",
+                  render: (row) => (
+                    <ReportLink
+                      to={REPORT_PATHS.partyLedger("customer", row.customer_id)}
+                      title="Open party ledger"
+                    >
+                      {row.customer_name}
+                    </ReportLink>
+                  ),
+                },
                 {
                   key: "amount",
                   label: "Amount",
@@ -536,10 +661,44 @@ const SalesReportPage = ({ section = "summary" }) => {
               title="Receipts Linked To These Sales"
               rows={report.receipt_rows || []}
               columns={[
-                { key: "receipt_number", label: "Receipt", strong: true },
+                {
+                  key: "receipt_number",
+                  label: "Receipt",
+                  strong: true,
+                  render: (row) => (
+                    <ReportLink
+                      to={REPORT_PATHS.salesReceipt(row.receipt_id)}
+                      title="Open bank receipt"
+                    >
+                      {row.receipt_number}
+                    </ReportLink>
+                  ),
+                },
                 { key: "date", label: "Date" },
-                { key: "invoice_number", label: "Invoice" },
-                { key: "customer_name", label: "Customer" },
+                {
+                  key: "invoice_number",
+                  label: "Invoice",
+                  render: (row) => (
+                    <ReportLink
+                      to={REPORT_PATHS.salesInvoice(row.invoice_id)}
+                      title="Open sales invoice"
+                    >
+                      {row.invoice_number}
+                    </ReportLink>
+                  ),
+                },
+                {
+                  key: "customer_name",
+                  label: "Customer",
+                  render: (row) => (
+                    <ReportLink
+                      to={REPORT_PATHS.partyLedger("customer", row.customer_id)}
+                      title="Open party ledger"
+                    >
+                      {row.customer_name}
+                    </ReportLink>
+                  ),
+                },
                 { key: "bank_account", label: "Bank" },
                 {
                   key: "amount",

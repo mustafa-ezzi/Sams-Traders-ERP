@@ -1,17 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import FormInput from "../../components/ui/FormInput";
+import SearchableSelect from "../../components/ui/SearchableSelect";
 import StateView from "../../components/StateView";
 import accountService from "../../api/services/accountService";
 import dimensionService from "../../api/services/dimensionService";
+import salesmanService from "../../api/services/salesmanService";
 import { formatDecimal } from "../../utils/format";
 import { useToast } from "../../context/ToastContext";
 import { useAuth } from "../../context/AuthContext";
 import ReportPrintWrapper from "../../components/print/ReportPrintWrapper";
 import SortableReportTable from "./shared/SortableReportTable";
-import { selectClassName } from "./shared/reportHelpers";
+import {
+  resolveReportTenant,
+  selectClassName,
+} from "./shared/reportHelpers";
+import { REPORT_PATHS, ReportLink } from "./shared/reportLinks";
 
 const BUCKET_STYLES = {
   current:
@@ -44,22 +49,11 @@ const extractErrorMessage = (error) => {
   return "Something went wrong";
 };
 
-const partyLedgerHref = (partnerType, partyId) =>
-  `/reports/party-ledger?partner_type=${encodeURIComponent(partnerType)}&partner_id=${encodeURIComponent(partyId)}`;
-
-const PartyLink = ({ partnerType, partyId, children }) => {
-  if (!partyId) {
-    return <span>{children}</span>;
-  }
-  return (
-    <Link
-      to={partyLedgerHref(partnerType, partyId)}
-      className="font-semibold text-blue-700 underline-offset-2 hover:underline dark:text-blue-400"
-      title="Open party ledger"
-    >
-      {children}
-    </Link>
-  );
+const agingDocumentPath = (partnerType, row) => {
+  if (row.document_kind === "opening" || !row.invoice_id) return null;
+  return partnerType === "supplier"
+    ? REPORT_PATHS.purchaseInvoice(row.invoice_id)
+    : REPORT_PATHS.salesInvoice(row.invoice_id);
 };
 
 const BucketSummary = ({ buckets, bucketTotals, totalOutstanding }) => (
@@ -99,9 +93,12 @@ const PartyAgingTable = ({ report, showDimension, partnerType }) => {
         label: "Party",
         strong: true,
         render: (row) => (
-          <PartyLink partnerType={partnerType} partyId={row.party_id}>
+          <ReportLink
+            to={REPORT_PATHS.partyLedger(partnerType, row.party_id)}
+            title="Open party ledger"
+          >
             {row.party_name}
-          </PartyLink>
+          </ReportLink>
         ),
       },
     ];
@@ -160,14 +157,29 @@ const InvoiceDetailTable = ({ report, showDimension, partyLabel, partnerType }) 
 
   const columns = useMemo(() => {
     const cols = [
-      { key: "document_number", label: "Document", strong: true },
+      {
+        key: "document_number",
+        label: "Document",
+        strong: true,
+        render: (row) => (
+          <ReportLink
+            to={agingDocumentPath(partnerType, row)}
+            title="Open invoice"
+          >
+            {row.document_number}
+          </ReportLink>
+        ),
+      },
       {
         key: "party_name",
         label: partyLabel,
         render: (row) => (
-          <PartyLink partnerType={partnerType} partyId={row.party_id}>
+          <ReportLink
+            to={REPORT_PATHS.partyLedger(partnerType, row.party_id)}
+            title="Open party ledger"
+          >
             {row.party_name}
-          </PartyLink>
+          </ReportLink>
         ),
       },
     ];
@@ -255,6 +267,7 @@ const AgingReportsPage = () => {
   const { tenantId } = useAuth();
   const [activeTab, setActiveTab] = useState("receivable");
   const [dimensions, setDimensions] = useState([]);
+  const [salesmen, setSalesmen] = useState([]);
   const [loadingSetup, setLoadingSetup] = useState(false);
   const [loadingReport, setLoadingReport] = useState(false);
   const [error, setError] = useState("");
@@ -263,6 +276,7 @@ const AgingReportsPage = () => {
   const [form, setForm] = useState({
     tenantScope: tenantId,
     asOfDate: new Date().toISOString().slice(0, 10),
+    salesmanId: "",
   });
 
   const report = activeTab === "receivable" ? receivableReport : payableReport;
@@ -290,19 +304,37 @@ const AgingReportsPage = () => {
   );
 
   useEffect(() => {
-    const loadDimensions = async () => {
+    dimensionService
+      .list()
+      .then((items) => setDimensions(items || []))
+      .catch(() => setDimensions([]));
+  }, []);
+
+  useEffect(() => {
+    const loadSalesmen = async () => {
+      if (!form.tenantScope) return;
+      if (form.tenantScope === "BOTH" && !dimensions.length) return;
       setLoadingSetup(true);
       try {
-        const items = await dimensionService.list();
-        setDimensions(items || []);
+        const scopeTenant = resolveReportTenant(
+          form.tenantScope,
+          tenantId,
+          dimensions,
+        );
+        const salesmanItems = await salesmanService.options(scopeTenant);
+        setSalesmen(salesmanItems || []);
       } catch {
-        setDimensions([]);
+        setSalesmen([]);
       } finally {
         setLoadingSetup(false);
       }
     };
-    loadDimensions();
-  }, []);
+    loadSalesmen();
+  }, [dimensions, form.tenantScope, tenantId]);
+
+  useEffect(() => {
+    setForm((current) => ({ ...current, salesmanId: "" }));
+  }, [form.tenantScope]);
 
   const handleChange = (field, value) => {
     setForm((current) => ({ ...current, [field]: value }));
@@ -323,11 +355,18 @@ const AgingReportsPage = () => {
         tenant_scope: form.tenantScope,
         as_of_date: form.asOfDate,
       };
+      const receivableParams = { ...params };
+      if (form.salesmanId) {
+        receivableParams.salesman_id = form.salesmanId;
+      }
       const headerTenant =
         form.tenantScope === "BOTH" ? tenantId : form.tenantScope;
 
       const [receivable, payable] = await Promise.all([
-        accountService.getReceivableAgingReport(params, headerTenant),
+        accountService.getReceivableAgingReport(
+          receivableParams,
+          headerTenant,
+        ),
         accountService.getPayableAgingReport(params, headerTenant),
       ]);
 
@@ -352,13 +391,13 @@ const AgingReportsPage = () => {
           </h2>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
             Analyze outstanding receivables and payables by aging bucket. Click
-            a party name to open that party&apos;s ledger. Aging uses due date
-            when set, otherwise document date.
+            a party name to open that party&apos;s ledger. Salesman filter
+            applies to receivables (sales invoices).
           </p>
         </div>
 
         <form
-          className="grid grid-cols-1 gap-4 md:grid-cols-4 md:items-end"
+          className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4 md:items-end"
           onSubmit={handleGenerate}
         >
           <div className="space-y-1">
@@ -386,11 +425,20 @@ const AgingReportsPage = () => {
             value={form.asOfDate}
             onChange={(e) => handleChange("asOfDate", e.target.value)}
           />
-          <div className="md:col-span-2 flex justify-end">
-            <Button type="submit" disabled={loadingReport || loadingSetup}>
-              {loadingReport ? "Generating…" : "Generate Report"}
-            </Button>
-          </div>
+          <SearchableSelect
+            label="Salesman"
+            value={form.salesmanId}
+            disabled={loadingSetup}
+            options={salesmen}
+            onChange={(salesmanId) => handleChange("salesmanId", salesmanId)}
+            getOptionLabel={(salesman) =>
+              `${salesman.code ? `${salesman.code} - ` : ""}${salesman.name || "Salesman"}`
+            }
+            placeholder="All salesmen (receivables)"
+          />
+          <Button type="submit" disabled={loadingReport || loadingSetup}>
+            {loadingReport ? "Generating…" : "Generate Report"}
+          </Button>
         </form>
       </Card>
 

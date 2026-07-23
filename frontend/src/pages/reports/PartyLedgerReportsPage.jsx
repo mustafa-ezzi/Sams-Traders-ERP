@@ -17,6 +17,11 @@ import {
 } from "../../components/print/ReportPrintLayout";
 import SortableHeader from "../../components/ui/SortableHeader";
 import { useClientSort } from "./shared/useClientSort";
+import {
+  documentTypePath,
+  ReportLink,
+  sourceDocumentPath,
+} from "./shared/reportLinks";
 
 const selectClassName =
   "w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100";
@@ -484,7 +489,21 @@ const PartyLedgerReportsPage = () => {
                             {index + 1}
                           </td>
                           <td className="px-4 py-3 font-semibold text-blue-700">
-                            {row.id}
+                            <ReportLink
+                              to={
+                                sourceDocumentPath(
+                                  row.source_type,
+                                  row.source_id,
+                                ) ||
+                                documentTypePath(
+                                  row.document_type,
+                                  row.source_id,
+                                )
+                              }
+                              title="Open document"
+                            >
+                              {row.id}
+                            </ReportLink>
                           </td>
                           <td className="px-4 py-3 text-slate-600">
                             {row.document_type}

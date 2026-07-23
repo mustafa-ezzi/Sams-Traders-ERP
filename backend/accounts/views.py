@@ -1516,6 +1516,7 @@ class AccountViewSet(ModelViewSet):
     def receivable_aging_report(self, request):
         tenant_scope = request.query_params.get("tenant_scope") or request.user.tenant_id
         as_of_date_raw = request.query_params.get("as_of_date")
+        salesman_id = request.query_params.get("salesman_id") or None
 
         if as_of_date_raw:
             try:
@@ -1525,16 +1526,22 @@ class AccountViewSet(ModelViewSet):
         else:
             as_of_date = date.today()
 
+        if salesman_id and not user_can_access_salesman(request.user, salesman_id):
+            raise ValidationError({"salesman_id": "You do not have access to this salesman."})
+
         tenant_ids = self._resolve_tenant_ids(tenant_scope)
         payload = build_receivable_aging_report(
             tenant_ids=tenant_ids,
             as_of_date=as_of_date,
+            salesman_id=salesman_id,
+            salesman_ids=get_user_allowed_salesman_ids(request.user),
         )
 
         return Response(
             {
                 "data": {
                     "tenant_scope": tenant_scope,
+                    "salesman_id": salesman_id or "",
                     **payload,
                 }
             }

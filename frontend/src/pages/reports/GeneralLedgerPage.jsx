@@ -18,6 +18,7 @@ import {
   todayIso,
 } from "./shared/reportHelpers";
 import { useClientSort } from "./shared/useClientSort";
+import { REPORT_PATHS, ReportLink, sourceDocumentPath } from "./shared/reportLinks";
 
 const AccountMovementsTable = ({ rows }) => {
   const { sortedRows, sortConfig, handleSort } = useClientSort(rows || [], {
@@ -78,7 +79,14 @@ const AccountMovementsTable = ({ rows }) => {
           {sortedRows.map((row, index) => (
             <tr key={`${row.id}-${index}`}>
               <td className="px-4 py-3">{row.date}</td>
-              <td className="px-4 py-3">{row.reference || "—"}</td>
+              <td className="px-4 py-3">
+                <ReportLink
+                  to={sourceDocumentPath(row.source_type, row.source_id)}
+                  title="Open document"
+                >
+                  {row.reference || "—"}
+                </ReportLink>
+              </td>
               <td className="px-4 py-3">{row.document_type}</td>
               <td className="px-4 py-3">{row.remarks}</td>
               <td className="px-4 py-3 text-right">{formatDecimal(row.debit)}</td>
@@ -179,7 +187,12 @@ const GeneralLedgerPage = () => {
                 <Card key={`${section.tenant_id}-${section.account_id}`} className="space-y-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">
-                      {section.code} — {section.name}
+                      <ReportLink
+                        to={REPORT_PATHS.account(section.account_id)}
+                        title="Open account"
+                      >
+                        {section.code} — {section.name}
+                      </ReportLink>
                       {showDimension ? ` · ${section.dimension_name}` : ""}
                     </h3>
                     <p className="text-sm text-slate-500">Opening: {formatDecimal(section.opening_balance)}</p>

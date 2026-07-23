@@ -20,10 +20,29 @@ import {
   todayIso,
 } from "./shared/reportHelpers";
 import SortableReportTable from "./shared/SortableReportTable";
+import {
+  documentTypePath,
+  ReportLink,
+  sourceDocumentPath,
+} from "./shared/reportLinks";
 
 const STATEMENT_COLUMNS = [
   { key: "date", label: "Date" },
-  { key: "id", label: "Reference" },
+  {
+    key: "id",
+    label: "Reference",
+    render: (row) => (
+      <ReportLink
+        to={
+          sourceDocumentPath(row.source_type, row.source_id) ||
+          documentTypePath(row.document_type, row.source_id)
+        }
+        title="Open document"
+      >
+        {row.id}
+      </ReportLink>
+    ),
+  },
   { key: "document_type", label: "Type" },
   { key: "remarks", label: "Remarks" },
   {

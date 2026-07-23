@@ -17,6 +17,7 @@ import {
   todayIso,
 } from "./shared/reportHelpers";
 import SortableReportTable from "./shared/SortableReportTable";
+import { REPORT_PATHS, ReportLink } from "./shared/reportLinks";
 
 const ExpenseAnalysisPage = () => {
   const toast = useToast();
@@ -70,7 +71,14 @@ const ExpenseAnalysisPage = () => {
         key: "account_name",
         label: "Account",
         getValue: (row) => `${row.account_code || ""} ${row.account_name || ""}`,
-        render: (row) => `${row.account_code} — ${row.account_name}`,
+        render: (row) => (
+          <ReportLink
+            to={REPORT_PATHS.account(row.expense_account_id)}
+            title="Open account"
+          >
+            {row.account_code} — {row.account_name}
+          </ReportLink>
+        ),
       },
     ];
     if (showDimension) {
@@ -97,13 +105,32 @@ const ExpenseAnalysisPage = () => {
 
   const detailColumns = useMemo(() => {
     const cols = [
-      { key: "expense_number", label: "Voucher", strong: true },
+      {
+        key: "expense_number",
+        label: "Voucher",
+        strong: true,
+        render: (row) => (
+          <ReportLink
+            to={REPORT_PATHS.expense(row.expense_id)}
+            title="Open expense"
+          >
+            {row.expense_number}
+          </ReportLink>
+        ),
+      },
       { key: "date", label: "Date" },
       {
         key: "account_name",
         label: "Account",
         getValue: (row) => `${row.account_code || ""} ${row.account_name || ""}`,
-        render: (row) => `${row.account_code} — ${row.account_name}`,
+        render: (row) => (
+          <ReportLink
+            to={REPORT_PATHS.account(row.expense_account_id)}
+            title="Open account"
+          >
+            {row.account_code} — {row.account_name}
+          </ReportLink>
+        ),
       },
       { key: "bank_account_name", label: "Bank" },
       {

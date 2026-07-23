@@ -73,6 +73,8 @@ def _serialize_line(line, show_tenant=False):
         "remarks": line.line_description or entry.description or "",
         "debit": str(_money(line.debit)),
         "credit": str(_money(line.credit)),
+        "source_type": entry.source_type or "",
+        "source_id": str(entry.source_id) if entry.source_id else "",
     }
 
 
@@ -187,7 +189,7 @@ def build_ledger_report(tenant_ids, ledger_type, ledger_key, from_date, to_date,
     rows = []
     journal_net = _journal_net_before(prior_queryset, from_date)
     if journal_net != 0:
-        # GL view: positive net → debit brought forward, negative → credit.
+        # GL view: positive net ? debit brought forward, negative ? credit.
         bf_debit = _money(max(Decimal("0.00"), journal_net))
         bf_credit = _money(max(Decimal("0.00"), -journal_net))
         rows.append(
@@ -271,8 +273,8 @@ def build_party_ledger_report(
     if from_date:
         journal_net = _journal_net_before(base_queryset, from_date)
         if journal_net != 0:
-            # Invert to party-statement side: customer receivable → credit,
-            # supplier payable → debit (matching control-account journal invert).
+            # Invert to party-statement side: customer receivable ? credit,
+            # supplier payable ? debit (matching control-account journal invert).
             bf_journal_debit = _money(max(Decimal("0.00"), journal_net))
             bf_journal_credit = _money(max(Decimal("0.00"), -journal_net))
             _accumulate_row(
@@ -300,6 +302,8 @@ def build_party_ledger_report(
                 "remarks": line.line_description or entry.description or "",
                 "debit": str(display_debit),
                 "credit": str(display_credit),
+                "source_type": entry.source_type or "",
+                "source_id": str(entry.source_id) if entry.source_id else "",
             }
         )
 
@@ -614,10 +618,10 @@ AGING_BUCKET_KEYS = (
 
 AGING_BUCKET_LABELS = {
     "current": "Current",
-    "days_1_30": "1–30 Days",
-    "days_31_60": "31–60 Days",
-    "days_61_90": "61–90 Days",
-    "days_91_120": "91–120 Days",
+    "days_1_30": "1?30 Days",
+    "days_31_60": "31?60 Days",
+    "days_61_90": "61?90 Days",
+    "days_91_120": "91?120 Days",
     "over_120": "Over 120 Days",
 }
 
@@ -716,6 +720,7 @@ def _add_aging_balance(
     net_amount,
     settled_amount,
     balance,
+    document_kind="invoice",
 ):
     if balance <= 0:
         return Decimal("0.00")
@@ -737,6 +742,7 @@ def _add_aging_balance(
         {
             "invoice_id": str(document_id),
             "document_number": document_number,
+            "document_kind": document_kind,
             "party_id": party_row["party_id"],
             "party_name": party_row["party_name"],
             "tenant_id": tenant_id,
@@ -814,6 +820,7 @@ def _append_opening_balances_to_aging(
                 net_amount=net_amount,
                 settled_amount=settled_amount,
                 balance=balance,
+                document_kind="opening",
             )
         )
     return added
@@ -832,6 +839,7 @@ def _build_invoice_aging_report(
     opening_party_type=None,
     opening_financials_fn=None,
     opening_settled_key=None,
+    include_openings=True,
 ):
     """
     Build AR/AP aging from unpaid invoice balances plus unpaid party opening balances.
@@ -884,7 +892,12 @@ def _build_invoice_aging_report(
                 )
             )
 
-    if opening_party_type and opening_financials_fn and opening_settled_key:
+    if (
+        include_openings
+        and opening_party_type
+        and opening_financials_fn
+        and opening_settled_key
+    ):
         total_outstanding = _money(
             total_outstanding
             + _append_opening_balances_to_aging(
@@ -932,7 +945,12 @@ def _build_invoice_aging_report(
     }
 
 
-def build_receivable_aging_report(tenant_ids, as_of_date):
+def build_receivable_aging_report(
+    tenant_ids,
+    as_of_date,
+    salesman_id=None,
+    salesman_ids=None,
+):
     from inventory.models import PartyOpeningBalance
     from sales.models import SalesInvoice
     from sales.services import (
@@ -946,6 +964,13 @@ def build_receivable_aging_report(tenant_ids, as_of_date):
         .distinct()
         .order_by("date", "invoice_number")
     )
+    if salesman_id:
+        queryset = queryset.filter(salesman_id=salesman_id)
+    elif salesman_ids:
+        queryset = queryset.filter(salesman_id__in=salesman_ids)
+
+    # Opening balances are not tied to a salesman; exclude them when filtering.
+    include_openings = not bool(salesman_id or salesman_ids)
 
     return _build_invoice_aging_report(
         tenant_ids=tenant_ids,
@@ -959,6 +984,7 @@ def build_receivable_aging_report(tenant_ids, as_of_date):
         opening_party_type=PartyOpeningBalance.PartyType.CUSTOMER,
         opening_financials_fn=get_customer_opening_balance_financials,
         opening_settled_key="received_amount",
+        include_openings=include_openings,
     )
 
 
@@ -1278,7 +1304,8 @@ def build_sales_report(
                 "dimension_name": dimension_names.get(invoice.tenant_id, invoice.tenant_id),
                 "customer_id": str(invoice.customer_id),
                 "customer_name": customer.business_name or customer.name,
-                "warehouse_name": warehouse.name,
+                "warehouse_id": str(warehouse.id) if warehouse else "",
+                "warehouse_name": warehouse.name if warehouse else "",
                 "salesman_id": str(invoice.salesman_id) if invoice.salesman_id else "",
                 "salesman_name": invoice.salesman.name if invoice.salesman else "",
                 "line_count": len(scoped_lines),
@@ -1330,7 +1357,9 @@ def build_sales_report(
                     "return_id": str(item.id),
                     "return_number": item.return_number,
                     "date": item.date.isoformat(),
+                    "invoice_id": str(item.sales_invoice_id) if item.sales_invoice_id else "",
                     "invoice_number": item.sales_invoice.invoice_number,
+                    "customer_id": str(item.customer_id) if item.customer_id else "",
                     "customer_name": item.customer.business_name or item.customer.name,
                     "amount": str(_money(item.gross_amount)),
                     "remarks": item.remarks,
@@ -1342,13 +1371,16 @@ def build_sales_report(
                     "receipt_id": str(item.receipt_id),
                     "receipt_number": item.receipt.receipt_number,
                     "date": item.receipt.date.isoformat(),
+                    "invoice_id": str(item.sales_invoice_id) if item.sales_invoice_id else "",
                     "invoice_number": item.sales_invoice.invoice_number,
+                    "customer_id": str(item.customer_id) if item.customer_id else "",
                     "customer_name": item.customer.business_name or item.customer.name,
                     "tenant_id": item.tenant_id or item.receipt.tenant_id,
                     "dimension_name": dimension_names.get(
                         item.tenant_id or item.receipt.tenant_id,
                         item.tenant_id or item.receipt.tenant_id,
                     ),
+                    "salesman_id": str(item.salesman_id) if item.salesman_id else "",
                     "salesman_name": item.salesman.name if item.salesman else "",
                     "bank_account": (
                         item.bank_account.name if item.bank_account else ""
@@ -1634,6 +1666,7 @@ def build_salesman_performance_report(
                     "salesman_id": str(salesman.id),
                     "salesman_code": salesman.code,
                     "salesman_name": salesman.name,
+                    "customer_id": str(invoice.customer_id) if invoice.customer_id else "",
                     "customer_name": invoice.customer.business_name or invoice.customer.name or "",
                     "tenant_id": dimension_tenant_id,
                     "dimension_name": row["dimension_name"],
@@ -1693,6 +1726,7 @@ def build_salesman_performance_report(
                     "salesman_id": str(salesman.id),
                     "salesman_code": salesman.code,
                     "salesman_name": salesman.name,
+                    "customer_id": str(receipt_line.customer_id) if receipt_line.customer_id else "",
                     "customer_name": (
                         receipt_line.customer.business_name or receipt_line.customer.name or ""
                     ),
@@ -1743,6 +1777,7 @@ def build_salesman_performance_report(
                 "salesman_id": str(salesman.id),
                 "salesman_code": salesman.code,
                 "salesman_name": salesman.name,
+                "customer_id": str(receipt_line.customer_id) if receipt_line.customer_id else "",
                 "customer_name": (
                     receipt_line.customer.business_name or receipt_line.customer.name or ""
                 ),
@@ -2005,6 +2040,8 @@ def build_general_ledger_report(tenant_ids, from_date, to_date):
                 "remarks": line.line_description or entry.description or "",
                 "debit": str(_money(line.debit)),
                 "credit": str(_money(line.credit)),
+                "source_type": entry.source_type or "",
+                "source_id": str(entry.source_id) if entry.source_id else "",
             }
             if show_tenant:
                 row["tenant_id"] = entry.tenant_id
@@ -2094,6 +2131,7 @@ def build_day_book_report(tenant_ids, from_date, to_date):
                 "document_type": entry.document_type,
                 "description": entry.description or "",
                 "source_type": entry.source_type,
+                "source_id": str(entry.source_id) if entry.source_id else "",
                 "tenant_id": entry.tenant_id,
                 "dimension_name": dimension_names.get(entry.tenant_id, entry.tenant_id),
                 "total_debit": str(_money(entry_debit)),
@@ -2193,6 +2231,9 @@ def build_cash_flow_summary_report(tenant_ids, from_date, to_date):
                     "date": entry.date.isoformat(),
                     "reference": entry.reference,
                     "document_type": entry.document_type,
+                    "source_type": entry.source_type or "",
+                    "source_id": str(entry.source_id) if entry.source_id else "",
+                    "account_id": str(account.id),
                     "account_code": account.code,
                     "account_name": account.name,
                     "tenant_id": account.tenant_id,
@@ -2443,6 +2484,7 @@ def build_expense_analysis_report(tenant_ids, from_date, to_date):
                 "expense_id": str(expense.id),
                 "expense_number": expense.expense_number,
                 "date": expense.date.isoformat(),
+                "expense_account_id": str(account.id),
                 "account_code": account.code,
                 "account_name": account.name,
                 "bank_account_name": line.bank_account.name,

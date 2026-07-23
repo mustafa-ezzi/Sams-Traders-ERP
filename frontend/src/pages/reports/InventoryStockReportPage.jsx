@@ -16,6 +16,7 @@ import {
   resolveReportTenant,
   selectClassName,
 } from "./shared/reportHelpers";
+import { REPORT_PATHS, ReportLink } from "./shared/reportLinks";
 
 const money = (value) => formatDecimal(value);
 
@@ -114,10 +115,34 @@ const InventoryStockReportPage = ({ mode = "quantity" }) => {
 
   const columns = useMemo(() => {
     const cols = [
-      { key: "item_name", label: "Item", strong: true },
+      {
+        key: "item_name",
+        label: "Item",
+        strong: true,
+        render: (row) => (
+          <ReportLink
+            to={
+              row.item_category === "raw_materials"
+                ? REPORT_PATHS.rawMaterial(row.item_id)
+                : REPORT_PATHS.product(row.item_id)
+            }
+            title="Open item"
+          >
+            {row.item_name}
+          </ReportLink>
+        ),
+      },
       { key: "item_code", label: "SKU / Code" },
       { key: "item_category_label", label: "Category" },
-      { key: "warehouse_name", label: "Warehouse" },
+      {
+        key: "warehouse_name",
+        label: "Warehouse",
+        render: (row) => (
+          <ReportLink to={REPORT_PATHS.warehouses()} title="Open warehouses">
+            {row.warehouse_name}
+          </ReportLink>
+        ),
+      },
       { key: "unit", label: "Unit" },
       ...(showDimension
         ? [{ key: "dimension_name", label: "Dimension" }]

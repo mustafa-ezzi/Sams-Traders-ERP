@@ -16,6 +16,7 @@ import {
   todayIso,
 } from "./shared/reportHelpers";
 import SortableReportTable from "./shared/SortableReportTable";
+import { REPORT_PATHS, ReportLink } from "./shared/reportLinks";
 
 const TrialBalancePage = () => {
   const toast = useToast();
@@ -34,13 +35,30 @@ const TrialBalancePage = () => {
 
   const columns = useMemo(() => {
     const cols = [
-      { key: "code", label: "Code", strong: true },
+      {
+        key: "code",
+        label: "Code",
+        strong: true,
+        render: (row) => (
+          <ReportLink
+            to={REPORT_PATHS.account(row.account_id)}
+            title="Open account"
+          >
+            {row.code}
+          </ReportLink>
+        ),
+      },
       {
         key: "name",
         label: "Account",
         render: (row) => (
           <>
-            {row.name}
+            <ReportLink
+              to={REPORT_PATHS.account(row.account_id)}
+              title="Open account"
+            >
+              {row.name}
+            </ReportLink>
             {!row.is_active ? (
               <span className="ml-2 text-xs font-semibold uppercase text-amber-600">
                 Inactive

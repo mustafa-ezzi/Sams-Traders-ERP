@@ -20,6 +20,11 @@ import {
   selectClassName,
 } from "./shared/reportHelpers";
 import { useClientSort } from "./shared/useClientSort";
+import {
+  documentTypePath,
+  ReportLink,
+  sourceDocumentPath,
+} from "./shared/reportLinks";
 
 const LedgerReportsPage = () => {
   const toast = useToast();
@@ -479,7 +484,21 @@ const LedgerReportResult = ({ report }) => {
                           {index + 1}
                         </td>
                         <td className="px-4 py-3 font-semibold text-slate-900">
-                          {row.id}
+                          <ReportLink
+                            to={
+                              sourceDocumentPath(
+                                row.source_type,
+                                row.source_id,
+                              ) ||
+                              documentTypePath(
+                                row.document_type,
+                                row.source_id,
+                              )
+                            }
+                            title="Open document"
+                          >
+                            {row.id}
+                          </ReportLink>
                         </td>
                         <td className="px-4 py-3 text-slate-600">
                           {row.tenant || "-"}

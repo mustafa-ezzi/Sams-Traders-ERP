@@ -18,6 +18,7 @@ import {
   todayIso,
 } from "./shared/reportHelpers";
 import { useClientSort } from "./shared/useClientSort";
+import { ReportLink, sourceDocumentPath } from "./shared/reportLinks";
 
 const EntryLinesTable = ({ lines }) => {
   const { sortedRows, sortConfig, handleSort } = useClientSort(
@@ -163,7 +164,17 @@ const DayBookPage = () => {
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">
-                        {entry.reference} — {entry.document_type}
+                        <ReportLink
+                          to={sourceDocumentPath(
+                            entry.source_type,
+                            entry.source_id,
+                          )}
+                          title="Open document"
+                        >
+                          {entry.reference}
+                        </ReportLink>
+                        {" — "}
+                        {entry.document_type}
                       </h3>
                       <p className="text-sm text-slate-500">
                         {entry.date}

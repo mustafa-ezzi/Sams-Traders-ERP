@@ -18,6 +18,7 @@ import {
   startOfYear,
 } from "./shared/reportHelpers";
 import SortableReportTable from "./shared/SortableReportTable";
+import { REPORT_PATHS, ReportLink } from "./shared/reportLinks";
 
 const SummaryCards = ({ summary }) => {
   if (!summary) return null;
@@ -178,9 +179,12 @@ const SalesmanReportsPage = () => {
         strong: true,
         getValue: (row) => `${row.code || ""} ${row.name || ""}`,
         render: (row) => (
-          <p className="font-semibold text-slate-900 dark:text-slate-100">
+          <ReportLink
+            to={REPORT_PATHS.salesman(row.salesman_id)}
+            title="Open salesman"
+          >
             {row.code} — {row.name}
-          </p>
+          </ReportLink>
         ),
       },
     ];
@@ -266,19 +270,45 @@ const SalesmanReportsPage = () => {
 
   const invoiceColumns = useMemo(() => {
     const cols = [
-      { key: "invoice_number", label: "Invoice", strong: true },
+      {
+        key: "invoice_number",
+        label: "Invoice",
+        strong: true,
+        render: (row) => (
+          <ReportLink
+            to={REPORT_PATHS.salesInvoice(row.invoice_id)}
+            title="Open sales invoice"
+          >
+            {row.invoice_number}
+          </ReportLink>
+        ),
+      },
       { key: "invoice_date", label: "Date" },
       {
         key: "salesman_name",
         label: "Salesman",
         getValue: (row) => `${row.salesman_code || ""} ${row.salesman_name || ""}`,
         render: (row) => (
-          <span className="text-slate-700 dark:text-slate-200">
+          <ReportLink
+            to={REPORT_PATHS.salesman(row.salesman_id)}
+            title="Open salesman"
+          >
             {row.salesman_code} — {row.salesman_name}
-          </span>
+          </ReportLink>
         ),
       },
-      { key: "customer_name", label: "Customer" },
+      {
+        key: "customer_name",
+        label: "Customer",
+        render: (row) => (
+          <ReportLink
+            to={REPORT_PATHS.partyLedger("customer", row.customer_id)}
+            title="Open party ledger"
+          >
+            {row.customer_name}
+          </ReportLink>
+        ),
+      },
     ];
     if (showDimension) {
       cols.push({ key: "dimension_name", label: "Dimension" });
@@ -332,20 +362,60 @@ const SalesmanReportsPage = () => {
 
   const receiptColumns = useMemo(() => {
     const cols = [
-      { key: "receipt_number", label: "Receipt", strong: true },
+      {
+        key: "receipt_number",
+        label: "Receipt",
+        strong: true,
+        render: (row) => (
+          <ReportLink
+            to={REPORT_PATHS.salesReceipt(row.receipt_id)}
+            title="Open bank receipt"
+          >
+            {row.receipt_number}
+          </ReportLink>
+        ),
+      },
       { key: "receipt_date", label: "Date" },
-      { key: "invoice_number", label: "Invoice" },
+      {
+        key: "invoice_number",
+        label: "Invoice",
+        render: (row) =>
+          row.invoice_id ? (
+            <ReportLink
+              to={REPORT_PATHS.salesInvoice(row.invoice_id)}
+              title="Open sales invoice"
+            >
+              {row.invoice_number}
+            </ReportLink>
+          ) : (
+            row.invoice_number
+          ),
+      },
       {
         key: "salesman_name",
         label: "Salesman",
         getValue: (row) => `${row.salesman_code || ""} ${row.salesman_name || ""}`,
         render: (row) => (
-          <span className="text-slate-700 dark:text-slate-200">
+          <ReportLink
+            to={REPORT_PATHS.salesman(row.salesman_id)}
+            title="Open salesman"
+          >
             {row.salesman_code} — {row.salesman_name}
-          </span>
+          </ReportLink>
         ),
       },
-      { key: "customer_name", label: "Customer" },
+      {
+        key: "customer_name",
+        label: "Customer",
+        render: (row) => (
+          <ReportLink
+            to={REPORT_PATHS.partyLedger("customer", row.customer_id)}
+            title="Open party ledger"
+          >
+            {row.customer_name}
+          </ReportLink>
+        ),
+      },
     ];
     if (showDimension) {
       cols.push({ key: "dimension_name", label: "Dimension" });
