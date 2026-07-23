@@ -30,6 +30,7 @@ from accounts.reporting import (
     build_party_ledger_report,
     build_payable_aging_report,
     build_profit_and_loss_report,
+    build_inventory_stock_report,
     build_receivable_aging_report,
     build_sales_report,
     build_salesman_performance_report,
@@ -1667,6 +1668,41 @@ class AccountViewSet(ModelViewSet):
             product_id=product_id,
             salesman_id=salesman_id,
             salesman_ids=get_user_allowed_salesman_ids(request.user),
+            warehouse_id=warehouse_id,
+        )
+
+        return Response(
+            {
+                "data": {
+                    "tenant_scope": tenant_scope,
+                    **payload,
+                }
+            }
+        )
+
+    @action(detail=False, methods=["get"], url_path="inventory-stock-report")
+    def inventory_stock_report(self, request):
+        tenant_scope = request.query_params.get("tenant_scope") or request.user.tenant_id
+        item_category = request.query_params.get("item_category") or "both"
+        report_mode = request.query_params.get("report_mode") or "quantity"
+        warehouse_id = request.query_params.get("warehouse_id") or None
+
+        if item_category not in {"raw_materials", "finished_goods", "both"}:
+            raise ValidationError(
+                {
+                    "item_category": "Valid values are raw_materials, finished_goods, both."
+                }
+            )
+        if report_mode not in {"quantity", "valuation"}:
+            raise ValidationError(
+                {"report_mode": "Valid values are quantity, valuation."}
+            )
+
+        tenant_ids = self._resolve_tenant_ids(tenant_scope)
+        payload = build_inventory_stock_report(
+            tenant_ids=tenant_ids,
+            item_category=item_category,
+            report_mode=report_mode,
             warehouse_id=warehouse_id,
         )
 

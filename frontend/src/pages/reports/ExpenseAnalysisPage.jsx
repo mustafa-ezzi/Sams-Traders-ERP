@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import FormInput from "../../components/ui/FormInput";
@@ -16,6 +16,7 @@ import {
   startOfYear,
   todayIso,
 } from "./shared/reportHelpers";
+import SortableReportTable from "./shared/SortableReportTable";
 
 const ExpenseAnalysisPage = () => {
   const toast = useToast();
@@ -63,6 +64,66 @@ const ExpenseAnalysisPage = () => {
     }
   };
 
+  const categoryColumns = useMemo(() => {
+    const cols = [
+      {
+        key: "account_name",
+        label: "Account",
+        getValue: (row) => `${row.account_code || ""} ${row.account_name || ""}`,
+        render: (row) => `${row.account_code} — ${row.account_name}`,
+      },
+    ];
+    if (showDimension) {
+      cols.push({ key: "dimension_name", label: "Dimension" });
+    }
+    cols.push(
+      { key: "expense_count", label: "Vouchers", align: "right" },
+      {
+        key: "total_amount",
+        label: "Amount",
+        align: "right",
+        strong: true,
+        render: (row) => formatDecimal(row.total_amount),
+      },
+      {
+        key: "share_percent",
+        label: "Share",
+        align: "right",
+        render: (row) => `${formatDecimal(row.share_percent)}%`,
+      },
+    );
+    return cols;
+  }, [showDimension]);
+
+  const detailColumns = useMemo(() => {
+    const cols = [
+      { key: "expense_number", label: "Voucher", strong: true },
+      { key: "date", label: "Date" },
+      {
+        key: "account_name",
+        label: "Account",
+        getValue: (row) => `${row.account_code || ""} ${row.account_name || ""}`,
+        render: (row) => `${row.account_code} — ${row.account_name}`,
+      },
+      { key: "bank_account_name", label: "Bank" },
+      {
+        key: "description",
+        label: "Description",
+        render: (row) => row.description || "-",
+      },
+    ];
+    if (showDimension) {
+      cols.push({ key: "dimension_name", label: "Dimension" });
+    }
+    cols.push({
+      key: "amount",
+      label: "Amount",
+      align: "right",
+      render: (row) => formatDecimal(row.amount),
+    });
+    return cols;
+  }, [showDimension]);
+
   return (
     <div className="space-y-6">
       <Card className="space-y-5">
@@ -102,63 +163,27 @@ const ExpenseAnalysisPage = () => {
               </Card>
 
               <Card className="space-y-3">
-                <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">By Category</h3>
-                <div className="overflow-x-auto rounded-[24px] border border-slate-200 dark:border-slate-700">
-                  <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-700">
-                    <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-900/60">
-                      <tr>
-                        <th className="px-4 py-3">Account</th>
-                        {showDimension ? <th className="px-4 py-3">Dimension</th> : null}
-                        <th className="px-4 py-3 text-right">Vouchers</th>
-                        <th className="px-4 py-3 text-right">Amount</th>
-                        <th className="px-4 py-3 text-right">Share</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 bg-white dark:divide-slate-700 dark:bg-slate-800">
-                      {(report.category_rows || []).map((row) => (
-                        <tr key={`${row.tenant_id}-${row.expense_account_id}`}>
-                          <td className="px-4 py-3">{row.account_code} — {row.account_name}</td>
-                          {showDimension ? <td className="px-4 py-3">{row.dimension_name}</td> : null}
-                          <td className="px-4 py-3 text-right">{row.expense_count}</td>
-                          <td className="px-4 py-3 text-right font-semibold">{formatDecimal(row.total_amount)}</td>
-                          <td className="px-4 py-3 text-right">{formatDecimal(row.share_percent)}%</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <SortableReportTable
+                  title="By Category"
+                  rows={report.category_rows || []}
+                  columns={categoryColumns}
+                  showCount={false}
+                  emptyMessage="No expense categories found."
+                  rowKey={(row) => `${row.tenant_id}-${row.expense_account_id}`}
+                  initialSort={{ key: "total_amount", direction: "desc" }}
+                />
               </Card>
 
               <Card className="space-y-3">
-                <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">Voucher Detail</h3>
-                <div className="overflow-x-auto rounded-[24px] border border-slate-200 dark:border-slate-700">
-                  <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-700">
-                    <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-900/60">
-                      <tr>
-                        <th className="px-4 py-3">Voucher</th>
-                        <th className="px-4 py-3">Date</th>
-                        <th className="px-4 py-3">Account</th>
-                        <th className="px-4 py-3">Bank</th>
-                        <th className="px-4 py-3">Description</th>
-                        {showDimension ? <th className="px-4 py-3">Dimension</th> : null}
-                        <th className="px-4 py-3 text-right">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 bg-white dark:divide-slate-700 dark:bg-slate-800">
-                      {(report.detail_rows || []).map((row, index) => (
-                        <tr key={`${row.expense_id}-${index}`}>
-                          <td className="px-4 py-3 font-semibold">{row.expense_number}</td>
-                          <td className="px-4 py-3">{row.date}</td>
-                          <td className="px-4 py-3">{row.account_code} — {row.account_name}</td>
-                          <td className="px-4 py-3">{row.bank_account_name}</td>
-                          <td className="px-4 py-3">{row.description || "-"}</td>
-                          {showDimension ? <td className="px-4 py-3">{row.dimension_name}</td> : null}
-                          <td className="px-4 py-3 text-right">{formatDecimal(row.amount)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <SortableReportTable
+                  title="Voucher Detail"
+                  rows={report.detail_rows || []}
+                  columns={detailColumns}
+                  showCount={false}
+                  emptyMessage="No expense vouchers found."
+                  rowKey={(row, index) => `${row.expense_id}-${index}`}
+                  initialSort={{ key: "date", direction: "desc" }}
+                />
               </Card>
             </div>
           </ReportPrintWrapper>

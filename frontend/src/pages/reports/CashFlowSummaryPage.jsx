@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import FormInput from "../../components/ui/FormInput";
@@ -16,6 +16,7 @@ import {
   startOfYear,
   todayIso,
 } from "./shared/reportHelpers";
+import SortableReportTable from "./shared/SortableReportTable";
 
 const CashFlowSummaryPage = () => {
   const toast = useToast();
@@ -62,6 +63,79 @@ const CashFlowSummaryPage = () => {
       setLoadingReport(false);
     }
   };
+
+  const accountColumns = useMemo(() => {
+    const cols = [
+      {
+        key: "name",
+        label: "Account",
+        getValue: (row) => `${row.code || ""} ${row.name || ""}`,
+        render: (row) => `${row.code} — ${row.name}`,
+      },
+    ];
+    if (showDimension) {
+      cols.push({ key: "dimension_name", label: "Dimension" });
+    }
+    cols.push(
+      {
+        key: "opening_balance",
+        label: "Opening",
+        align: "right",
+        render: (row) => formatDecimal(row.opening_balance),
+      },
+      {
+        key: "inflow",
+        label: "Inflow",
+        align: "right",
+        render: (row) => (
+          <span className="text-emerald-600">{formatDecimal(row.inflow)}</span>
+        ),
+      },
+      {
+        key: "outflow",
+        label: "Outflow",
+        align: "right",
+        render: (row) => (
+          <span className="text-rose-600">{formatDecimal(row.outflow)}</span>
+        ),
+      },
+      {
+        key: "closing_balance",
+        label: "Closing",
+        align: "right",
+        strong: true,
+        render: (row) => formatDecimal(row.closing_balance),
+      },
+    );
+    return cols;
+  }, [showDimension]);
+
+  const movementColumns = useMemo(
+    () => [
+      { key: "date", label: "Date" },
+      { key: "reference", label: "Reference" },
+      {
+        key: "account_name",
+        label: "Account",
+        getValue: (row) => `${row.account_code || ""} ${row.account_name || ""}`,
+        render: (row) => `${row.account_code} — ${row.account_name}`,
+      },
+      { key: "description", label: "Description" },
+      {
+        key: "inflow",
+        label: "Inflow",
+        align: "right",
+        render: (row) => formatDecimal(row.inflow),
+      },
+      {
+        key: "outflow",
+        label: "Outflow",
+        align: "right",
+        render: (row) => formatDecimal(row.outflow),
+      },
+    ],
+    [],
+  );
 
   const summary = report?.summary || {};
 
@@ -112,63 +186,27 @@ const CashFlowSummaryPage = () => {
               </Card>
 
               <Card className="space-y-3">
-                <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">By Account</h3>
-                <div className="overflow-x-auto rounded-[24px] border border-slate-200 dark:border-slate-700">
-                  <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-700">
-                    <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-900/60">
-                      <tr>
-                        <th className="px-4 py-3">Account</th>
-                        {showDimension ? <th className="px-4 py-3">Dimension</th> : null}
-                        <th className="px-4 py-3 text-right">Opening</th>
-                        <th className="px-4 py-3 text-right">Inflow</th>
-                        <th className="px-4 py-3 text-right">Outflow</th>
-                        <th className="px-4 py-3 text-right">Closing</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 bg-white dark:divide-slate-700 dark:bg-slate-800">
-                      {(report.account_summaries || []).map((row) => (
-                        <tr key={`${row.tenant_id}-${row.account_id}`}>
-                          <td className="px-4 py-3">{row.code} — {row.name}</td>
-                          {showDimension ? <td className="px-4 py-3">{row.dimension_name}</td> : null}
-                          <td className="px-4 py-3 text-right">{formatDecimal(row.opening_balance)}</td>
-                          <td className="px-4 py-3 text-right text-emerald-600">{formatDecimal(row.inflow)}</td>
-                          <td className="px-4 py-3 text-right text-rose-600">{formatDecimal(row.outflow)}</td>
-                          <td className="px-4 py-3 text-right font-semibold">{formatDecimal(row.closing_balance)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <SortableReportTable
+                  title="By Account"
+                  rows={report.account_summaries || []}
+                  columns={accountColumns}
+                  showCount={false}
+                  emptyMessage="No cash accounts found."
+                  rowKey={(row) => `${row.tenant_id}-${row.account_id}`}
+                  initialSort={{ key: "closing_balance", direction: "desc" }}
+                />
               </Card>
 
               <Card className="space-y-3">
-                <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">Movements</h3>
-                <div className="overflow-x-auto rounded-[24px] border border-slate-200 dark:border-slate-700">
-                  <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-700">
-                    <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-900/60">
-                      <tr>
-                        <th className="px-4 py-3">Date</th>
-                        <th className="px-4 py-3">Reference</th>
-                        <th className="px-4 py-3">Account</th>
-                        <th className="px-4 py-3">Description</th>
-                        <th className="px-4 py-3 text-right">Inflow</th>
-                        <th className="px-4 py-3 text-right">Outflow</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 bg-white dark:divide-slate-700 dark:bg-slate-800">
-                      {(report.movement_rows || []).map((row, index) => (
-                        <tr key={index}>
-                          <td className="px-4 py-3">{row.date}</td>
-                          <td className="px-4 py-3">{row.reference}</td>
-                          <td className="px-4 py-3">{row.account_code} — {row.account_name}</td>
-                          <td className="px-4 py-3">{row.description}</td>
-                          <td className="px-4 py-3 text-right">{formatDecimal(row.inflow)}</td>
-                          <td className="px-4 py-3 text-right">{formatDecimal(row.outflow)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <SortableReportTable
+                  title="Movements"
+                  rows={report.movement_rows || []}
+                  columns={movementColumns}
+                  showCount={false}
+                  emptyMessage="No cash movements found."
+                  rowKey={(row, index) => index}
+                  initialSort={{ key: "date", direction: "desc" }}
+                />
               </Card>
             </div>
           </ReportPrintWrapper>

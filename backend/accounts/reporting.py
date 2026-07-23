@@ -2485,3 +2485,142 @@ def build_expense_analysis_report(tenant_ids, from_date, to_date):
             "total_amount": str(_money(total_amount)),
         },
     }
+
+
+def build_inventory_stock_report(tenant_ids, item_category="both", report_mode="quantity", warehouse_id=None):
+    """Stock by quantity or valuation for raw materials, finished goods, or both."""
+    from inventory.models import ProductCostState, ProductStock, Stock
+
+    category = (item_category or "both").strip().lower()
+    mode = (report_mode or "quantity").strip().lower()
+    if category not in {"raw_materials", "finished_goods", "both"}:
+        category = "both"
+    if mode not in {"quantity", "valuation"}:
+        mode = "quantity"
+
+    dimension_names = _dimension_name_map(tenant_ids)
+    rows = []
+    include_raw = category in {"raw_materials", "both"}
+    include_finished = category in {"finished_goods", "both"}
+
+    cost_by_product = {}
+    if include_finished:
+        for state in ProductCostState.objects.filter(
+            tenant_id__in=tenant_ids,
+            deleted_at__isnull=True,
+            product__deleted_at__isnull=True,
+        ).only("product_id", "average_cost", "total_value", "total_quantity"):
+            cost_by_product[str(state.product_id)] = state
+
+    if include_raw:
+        raw_qs = Stock.objects.filter(
+            tenant_id__in=tenant_ids,
+            deleted_at__isnull=True,
+            raw_material__deleted_at__isnull=True,
+        ).select_related("raw_material", "raw_material__purchase_unit", "warehouse")
+        if warehouse_id:
+            raw_qs = raw_qs.filter(warehouse_id=warehouse_id)
+
+        for stock in raw_qs:
+            qty = _money(stock.quantity)
+            unit_cost = _money(stock.raw_material.purchase_price)
+            value = _money(qty * unit_cost)
+            rows.append(
+                {
+                    "item_id": str(stock.raw_material_id),
+                    "item_name": stock.raw_material.name,
+                    "item_code": "",
+                    "item_category": "raw_materials",
+                    "item_category_label": "Raw Material",
+                    "unit": getattr(stock.raw_material.purchase_unit, "name", "") or "-",
+                    "warehouse_id": str(stock.warehouse_id),
+                    "warehouse_name": stock.warehouse.name,
+                    "tenant_id": stock.tenant_id,
+                    "dimension_name": dimension_names.get(stock.tenant_id, stock.tenant_id),
+                    "quantity": str(qty),
+                    "unit_cost": str(unit_cost),
+                    "stock_value": str(value),
+                }
+            )
+
+    if include_finished:
+        product_qs = ProductStock.objects.filter(
+            tenant_id__in=tenant_ids,
+            deleted_at__isnull=True,
+            product__deleted_at__isnull=True,
+        ).select_related("product", "product__unit", "warehouse")
+        if warehouse_id:
+            product_qs = product_qs.filter(warehouse_id=warehouse_id)
+
+        for stock in product_qs:
+            qty = _money(stock.quantity)
+            product_id = str(stock.product_id)
+            cost_state = cost_by_product.get(product_id)
+            if cost_state and _money(cost_state.average_cost) > 0:
+                unit_cost = _money(cost_state.average_cost)
+            else:
+                unit_cost = _money(
+                    stock.product.confirmed_unit_cost
+                    or stock.product.net_amount
+                    or 0
+                )
+            value = _money(qty * unit_cost)
+            rows.append(
+                {
+                    "item_id": product_id,
+                    "item_name": stock.product.name,
+                    "item_code": stock.product.sku or "",
+                    "item_category": "finished_goods",
+                    "item_category_label": "Finished Goods",
+                    "unit": getattr(stock.product.unit, "name", "") or "-",
+                    "warehouse_id": str(stock.warehouse_id),
+                    "warehouse_name": stock.warehouse.name,
+                    "tenant_id": stock.tenant_id,
+                    "dimension_name": dimension_names.get(stock.tenant_id, stock.tenant_id),
+                    "quantity": str(qty),
+                    "unit_cost": str(unit_cost),
+                    "stock_value": str(value),
+                }
+            )
+
+    rows.sort(
+        key=lambda row: (
+            -float(row["stock_value"] if mode == "valuation" else row["quantity"]),
+            row["item_name"].lower(),
+            row["warehouse_name"].lower(),
+        )
+    )
+
+    total_quantity = sum((_money(row["quantity"]) for row in rows), Decimal("0.00"))
+    total_value = sum((_money(row["stock_value"]) for row in rows), Decimal("0.00"))
+    raw_qty = sum(
+        (_money(row["quantity"]) for row in rows if row["item_category"] == "raw_materials"),
+        Decimal("0.00"),
+    )
+    raw_value = sum(
+        (_money(row["stock_value"]) for row in rows if row["item_category"] == "raw_materials"),
+        Decimal("0.00"),
+    )
+    finished_qty = sum(
+        (_money(row["quantity"]) for row in rows if row["item_category"] == "finished_goods"),
+        Decimal("0.00"),
+    )
+    finished_value = sum(
+        (_money(row["stock_value"]) for row in rows if row["item_category"] == "finished_goods"),
+        Decimal("0.00"),
+    )
+
+    return {
+        "report_mode": mode,
+        "item_category": category,
+        "rows": rows,
+        "summary": {
+            "row_count": len(rows),
+            "total_quantity": str(_money(total_quantity)),
+            "total_value": str(_money(total_value)),
+            "raw_materials_quantity": str(_money(raw_qty)),
+            "raw_materials_value": str(_money(raw_value)),
+            "finished_goods_quantity": str(_money(finished_qty)),
+            "finished_goods_value": str(_money(finished_value)),
+        },
+    }

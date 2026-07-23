@@ -9,6 +9,7 @@ import { formatDecimal } from "../../utils/format";
 import { useToast } from "../../context/ToastContext";
 import { useAuth } from "../../context/AuthContext";
 import ReportPrintWrapper from "../../components/print/ReportPrintWrapper";
+import SortableHeader from "../../components/ui/SortableHeader";
 import DimensionScopeField from "./shared/DimensionScopeField";
 import {
   extractErrorMessage,
@@ -16,6 +17,79 @@ import {
   startOfYear,
   todayIso,
 } from "./shared/reportHelpers";
+import { useClientSort } from "./shared/useClientSort";
+
+const AccountMovementsTable = ({ rows }) => {
+  const { sortedRows, sortConfig, handleSort } = useClientSort(rows || [], {
+    key: "date",
+    direction: "asc",
+  });
+
+  return (
+    <div className="overflow-x-auto rounded-[24px] border border-slate-200 dark:border-slate-700">
+      <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-700">
+        <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-900/60">
+          <tr>
+            <SortableHeader
+              label="Date"
+              sortKey="date"
+              sortConfig={sortConfig}
+              onSort={handleSort}
+              className="px-4 py-3"
+            />
+            <SortableHeader
+              label="Reference"
+              sortKey="reference"
+              sortConfig={sortConfig}
+              onSort={handleSort}
+              className="px-4 py-3"
+            />
+            <SortableHeader
+              label="Type"
+              sortKey="document_type"
+              sortConfig={sortConfig}
+              onSort={handleSort}
+              className="px-4 py-3"
+            />
+            <SortableHeader
+              label="Remarks"
+              sortKey="remarks"
+              sortConfig={sortConfig}
+              onSort={handleSort}
+              className="px-4 py-3"
+            />
+            <SortableHeader
+              label="Debit"
+              sortKey="debit"
+              sortConfig={sortConfig}
+              onSort={handleSort}
+              className="px-4 py-3 text-right"
+            />
+            <SortableHeader
+              label="Credit"
+              sortKey="credit"
+              sortConfig={sortConfig}
+              onSort={handleSort}
+              className="px-4 py-3 text-right"
+            />
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100 bg-white dark:divide-slate-700 dark:bg-slate-800">
+          {sortedRows.map((row, index) => (
+            <tr key={`${row.id}-${index}`}>
+              <td className="px-4 py-3">{row.date}</td>
+              <td className="px-4 py-3">{row.reference || "—"}</td>
+              <td className="px-4 py-3">{row.document_type}</td>
+              <td className="px-4 py-3">{row.remarks}</td>
+              <td className="px-4 py-3 text-right">{formatDecimal(row.debit)}</td>
+              <td className="px-4 py-3 text-right">{formatDecimal(row.credit)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
 
 const GeneralLedgerPage = () => {
   const toast = useToast();
@@ -110,32 +184,7 @@ const GeneralLedgerPage = () => {
                     </h3>
                     <p className="text-sm text-slate-500">Opening: {formatDecimal(section.opening_balance)}</p>
                   </div>
-                  <div className="overflow-x-auto rounded-[24px] border border-slate-200 dark:border-slate-700">
-                    <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-700">
-                      <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-900/60">
-                        <tr>
-                          <th className="px-4 py-3">Date</th>
-                          <th className="px-4 py-3">Reference</th>
-                          <th className="px-4 py-3">Type</th>
-                          <th className="px-4 py-3">Remarks</th>
-                          <th className="px-4 py-3 text-right">Debit</th>
-                          <th className="px-4 py-3 text-right">Credit</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 bg-white dark:divide-slate-700 dark:bg-slate-800">
-                        {(section.rows || []).map((row, index) => (
-                          <tr key={`${row.id}-${index}`}>
-                            <td className="px-4 py-3">{row.date}</td>
-                            <td className="px-4 py-3">{row.reference || "—"}</td>
-                            <td className="px-4 py-3">{row.document_type}</td>
-                            <td className="px-4 py-3">{row.remarks}</td>
-                            <td className="px-4 py-3 text-right">{formatDecimal(row.debit)}</td>
-                            <td className="px-4 py-3 text-right">{formatDecimal(row.credit)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <AccountMovementsTable rows={section.rows} />
                 </Card>
               ))}
             </div>

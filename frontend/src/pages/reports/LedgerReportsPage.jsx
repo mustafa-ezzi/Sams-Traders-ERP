@@ -13,11 +13,13 @@ import { formatDecimal } from "../../utils/format";
 import { useToast } from "../../context/ToastContext";
 import { useAuth } from "../../context/AuthContext";
 import ReportPrintWrapper from "../../components/print/ReportPrintWrapper";
+import SortableHeader from "../../components/ui/SortableHeader";
 import {
   extractErrorMessage,
   resolveReportTenant,
   selectClassName,
 } from "./shared/reportHelpers";
+import { useClientSort } from "./shared/useClientSort";
 
 const LedgerReportsPage = () => {
   const toast = useToast();
@@ -351,6 +353,20 @@ const LedgerReportsPage = () => {
         emptyMessage="No ledger rows found for the selected filters."
       >
         {report ? (
+          <LedgerReportResult report={report} />
+        ) : null}
+      </StateView>
+    </div>
+  );
+};
+
+const LedgerReportResult = ({ report }) => {
+  const { sortedRows, sortConfig, handleSort } = useClientSort(
+    report?.rows || [],
+    { key: "date", direction: "asc" },
+  );
+
+  return (
           <ReportPrintWrapper
             title="Ledger Report"
             subtitle={`${report.from_date} to ${report.to_date} · ${report.title}`}
@@ -398,18 +414,66 @@ const LedgerReportsPage = () => {
                   <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
                     <tr>
                       <th className="px-4 py-3">S.No</th>
-                      <th className="px-4 py-3">ID</th>
-                      <th className="px-4 py-3">Dimension</th>
-                      <th className="px-4 py-3">Date</th>
-                      <th className="px-4 py-3">Document Type</th>
-                      <th className="px-4 py-3">People Type</th>
-                      <th className="px-4 py-3">Remarks</th>
-                      <th className="px-4 py-3">Debit</th>
-                      <th className="px-4 py-3">Credit</th>
+                      <SortableHeader
+                        label="ID"
+                        sortKey="id"
+                        sortConfig={sortConfig}
+                        onSort={handleSort}
+                        className="px-4 py-3"
+                      />
+                      <SortableHeader
+                        label="Dimension"
+                        sortKey="tenant"
+                        sortConfig={sortConfig}
+                        onSort={handleSort}
+                        className="px-4 py-3"
+                      />
+                      <SortableHeader
+                        label="Date"
+                        sortKey="date"
+                        sortConfig={sortConfig}
+                        onSort={handleSort}
+                        className="px-4 py-3"
+                      />
+                      <SortableHeader
+                        label="Document Type"
+                        sortKey="document_type"
+                        sortConfig={sortConfig}
+                        onSort={handleSort}
+                        className="px-4 py-3"
+                      />
+                      <SortableHeader
+                        label="People Type"
+                        sortKey="people_type"
+                        sortConfig={sortConfig}
+                        onSort={handleSort}
+                        className="px-4 py-3"
+                      />
+                      <SortableHeader
+                        label="Remarks"
+                        sortKey="remarks"
+                        sortConfig={sortConfig}
+                        onSort={handleSort}
+                        className="px-4 py-3"
+                      />
+                      <SortableHeader
+                        label="Debit"
+                        sortKey="debit"
+                        sortConfig={sortConfig}
+                        onSort={handleSort}
+                        className="px-4 py-3"
+                      />
+                      <SortableHeader
+                        label="Credit"
+                        sortKey="credit"
+                        sortConfig={sortConfig}
+                        onSort={handleSort}
+                        className="px-4 py-3"
+                      />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
-                    {(report.rows || []).map((row, index) => (
+                    {sortedRows.map((row, index) => (
                       <tr key={`${row.id}-${index}`}>
                         <td className="px-4 py-3 text-slate-600">
                           {index + 1}
@@ -444,9 +508,6 @@ const LedgerReportsPage = () => {
             </div>
           </Card>
           </ReportPrintWrapper>
-        ) : null}
-      </StateView>
-    </div>
   );
 };
 

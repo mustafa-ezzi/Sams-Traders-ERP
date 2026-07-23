@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import FormInput from "../../components/ui/FormInput";
@@ -14,6 +15,8 @@ import {
   ReportPrintSummaryGrid,
   ReportPrintTable,
 } from "../../components/print/ReportPrintLayout";
+import SortableHeader from "../../components/ui/SortableHeader";
+import { useClientSort } from "./shared/useClientSort";
 
 const selectClassName =
   "w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100";
@@ -73,6 +76,9 @@ const PARTY_LEDGER_COLUMNS = [
 
 const PartyLedgerReportsPage = () => {
   const toast = useToast();
+  const [searchParams] = useSearchParams();
+  const skipPartnerTypeReset = useRef(true);
+  const autoLoadedKey = useRef("");
   const [customers, setCustomers] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [loadingSetup, setLoadingSetup] = useState(false);
@@ -80,11 +86,18 @@ const PartyLedgerReportsPage = () => {
   const [error, setError] = useState("");
   const [report, setReport] = useState(null);
   const [search, setSearch] = useState("");
-  const [form, setForm] = useState({
-    partnerType: "customer",
-    partnerId: "",
-    fromDate: "",
-    toDate: "",
+  const [form, setForm] = useState(() => {
+    const partnerTypeParam = searchParams.get("partner_type");
+    const partnerIdParam = searchParams.get("partner_id") || "";
+    return {
+      partnerType:
+        partnerTypeParam === "supplier" || partnerTypeParam === "customer"
+          ? partnerTypeParam
+          : "customer",
+      partnerId: partnerIdParam,
+      fromDate: searchParams.get("from_date") || "",
+      toDate: searchParams.get("to_date") || "",
+    };
   });
 
   const partnerLabel =
@@ -107,6 +120,11 @@ const PartyLedgerReportsPage = () => {
         .some((value) => String(value).toLowerCase().includes(term)),
     );
   }, [report, search]);
+
+  const { sortedRows, sortConfig, handleSort } = useClientSort(filteredRows, {
+    key: "date",
+    direction: "asc",
+  });
 
   const printTableRows = useMemo(
     () =>
@@ -142,6 +160,33 @@ const PartyLedgerReportsPage = () => {
     ? `${report.from_date || "Beginning"} to ${report.to_date || "Latest"}`
     : "";
 
+  const generateReport = async (nextForm = form) => {
+    setError("");
+
+    if (!nextForm.partnerId) {
+      toast.error(`Please select a ${nextForm.partnerType}`);
+      return;
+    }
+
+    setLoadingReport(true);
+    try {
+      const response = await accountService.getPartyLedgerReport({
+        partner_type: nextForm.partnerType,
+        partner_id: nextForm.partnerId,
+        from_date: nextForm.fromDate,
+        to_date: nextForm.toDate,
+      });
+      setReport(response);
+    } catch (reportError) {
+      const message =
+        extractErrorMessage(reportError) || "Failed to generate party ledger";
+      setError(message);
+      toast.error(message);
+    } finally {
+      setLoadingReport(false);
+    }
+  };
+
   useEffect(() => {
     const loadParties = async () => {
       setLoadingSetup(true);
@@ -167,6 +212,10 @@ const PartyLedgerReportsPage = () => {
   }, []);
 
   useEffect(() => {
+    if (skipPartnerTypeReset.current) {
+      skipPartnerTypeReset.current = false;
+      return;
+    }
     setForm((current) => ({
       ...current,
       partnerId: "",
@@ -174,6 +223,31 @@ const PartyLedgerReportsPage = () => {
     setReport(null);
     setSearch("");
   }, [form.partnerType]);
+
+  useEffect(() => {
+    const partnerTypeParam = searchParams.get("partner_type");
+    const partnerIdParam = searchParams.get("partner_id");
+    if (!partnerIdParam) return;
+    if (partnerTypeParam !== "customer" && partnerTypeParam !== "supplier") {
+      return;
+    }
+    if (loadingSetup) return;
+
+    const key = `${partnerTypeParam}:${partnerIdParam}:${searchParams.get("from_date") || ""}:${searchParams.get("to_date") || ""}`;
+    if (autoLoadedKey.current === key) return;
+    autoLoadedKey.current = key;
+
+    const nextForm = {
+      partnerType: partnerTypeParam,
+      partnerId: partnerIdParam,
+      fromDate: searchParams.get("from_date") || "",
+      toDate: searchParams.get("to_date") || "",
+    };
+    skipPartnerTypeReset.current = true;
+    setForm(nextForm);
+    generateReport(nextForm);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, loadingSetup]);
 
   const handleChange = (field, value) => {
     setForm((current) => ({
@@ -184,33 +258,11 @@ const PartyLedgerReportsPage = () => {
 
   const handleGenerate = async (event) => {
     event.preventDefault();
-    setError("");
-
-    if (!form.partnerId) {
-      toast.error(`Please select a ${form.partnerType}`);
-      return;
-    }
-
-    setLoadingReport(true);
-    try {
-      const response = await accountService.getPartyLedgerReport({
-        partner_type: form.partnerType,
-        partner_id: form.partnerId,
-        from_date: form.fromDate,
-        to_date: form.toDate,
-      });
-      setReport(response);
-    } catch (reportError) {
-      const message =
-        extractErrorMessage(reportError) || "Failed to generate party ledger";
-      setError(message);
-      toast.error(message);
-    } finally {
-      setLoadingReport(false);
-    }
+    await generateReport(form);
   };
 
   const handleReset = () => {
+    autoLoadedKey.current = "";
     setForm({
       partnerType: "customer",
       partnerId: "",
@@ -381,16 +433,52 @@ const PartyLedgerReportsPage = () => {
                     <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
                       <tr>
                         <th className="px-4 py-3">S.No</th>
-                        <th className="px-4 py-3">ID</th>
-                        <th className="px-4 py-3">Doc Type</th>
-                        <th className="px-4 py-3">Date</th>
-                        <th className="px-4 py-3">Remarks</th>
-                        <th className="px-4 py-3 text-right">Credit</th>
-                        <th className="px-4 py-3 text-right">Debit</th>
+                        <SortableHeader
+                          label="ID"
+                          sortKey="id"
+                          sortConfig={sortConfig}
+                          onSort={handleSort}
+                          className="px-4 py-3"
+                        />
+                        <SortableHeader
+                          label="Doc Type"
+                          sortKey="document_type"
+                          sortConfig={sortConfig}
+                          onSort={handleSort}
+                          className="px-4 py-3"
+                        />
+                        <SortableHeader
+                          label="Date"
+                          sortKey="date"
+                          sortConfig={sortConfig}
+                          onSort={handleSort}
+                          className="px-4 py-3"
+                        />
+                        <SortableHeader
+                          label="Remarks"
+                          sortKey="remarks"
+                          sortConfig={sortConfig}
+                          onSort={handleSort}
+                          className="px-4 py-3"
+                        />
+                        <SortableHeader
+                          label="Credit"
+                          sortKey="credit"
+                          sortConfig={sortConfig}
+                          onSort={handleSort}
+                          className="px-4 py-3 text-right"
+                        />
+                        <SortableHeader
+                          label="Debit"
+                          sortKey="debit"
+                          sortConfig={sortConfig}
+                          onSort={handleSort}
+                          className="px-4 py-3 text-right"
+                        />
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 bg-white">
-                      {filteredRows.map((row, index) => (
+                      {sortedRows.map((row, index) => (
                         <tr key={`${row.id}-${row.date}-${index}`}>
                           <td className="px-4 py-3 text-slate-600">
                             {index + 1}

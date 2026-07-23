@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import FormInput from "../../components/ui/FormInput";
@@ -17,6 +17,7 @@ import {
   selectClassName,
   startOfYear,
 } from "./shared/reportHelpers";
+import SortableReportTable from "./shared/SortableReportTable";
 
 const SummaryCards = ({ summary }) => {
   if (!summary) return null;
@@ -169,6 +170,217 @@ const SalesmanReportsPage = () => {
     }
   };
 
+  const salesmanColumns = useMemo(() => {
+    const cols = [
+      {
+        key: "name",
+        label: "Salesman",
+        strong: true,
+        getValue: (row) => `${row.code || ""} ${row.name || ""}`,
+        render: (row) => (
+          <p className="font-semibold text-slate-900 dark:text-slate-100">
+            {row.code} — {row.name}
+          </p>
+        ),
+      },
+    ];
+    if (showDimension) {
+      cols.push({ key: "dimension_name", label: "Dimension" });
+    }
+    cols.push(
+      {
+        key: "commission_on_sales",
+        label: "Sales %",
+        align: "right",
+        render: (row) => (
+          <span className="text-slate-600 dark:text-slate-300">
+            {formatDecimal(row.commission_on_sales)}%
+          </span>
+        ),
+      },
+      {
+        key: "commission_on_recovery",
+        label: "Recovery %",
+        align: "right",
+        render: (row) => (
+          <span className="text-slate-600 dark:text-slate-300">
+            {formatDecimal(row.commission_on_recovery)}%
+          </span>
+        ),
+      },
+      { key: "invoice_count", label: "Invoices", align: "right" },
+      { key: "receipt_count", label: "Receipts", align: "right" },
+      {
+        key: "net_sales",
+        label: "Net Sales",
+        align: "right",
+        render: (row) => (
+          <span className="font-medium text-blue-600 dark:text-blue-400">
+            {formatDecimal(row.net_sales)}
+          </span>
+        ),
+      },
+      {
+        key: "sales_commission",
+        label: "Sales Comm.",
+        align: "right",
+        render: (row) => (
+          <span className="font-medium text-violet-600 dark:text-violet-400">
+            {formatDecimal(row.sales_commission)}
+          </span>
+        ),
+      },
+      {
+        key: "collected_amount",
+        label: "Collected",
+        align: "right",
+        render: (row) => (
+          <span className="text-emerald-600 dark:text-emerald-400">
+            {formatDecimal(row.collected_amount)}
+          </span>
+        ),
+      },
+      {
+        key: "recovery_commission",
+        label: "Recovery Comm.",
+        align: "right",
+        render: (row) => (
+          <span className="text-amber-600 dark:text-amber-400">
+            {formatDecimal(row.recovery_commission)}
+          </span>
+        ),
+      },
+      {
+        key: "total_commission",
+        label: "Total Comm.",
+        align: "right",
+        render: (row) => (
+          <span className="font-bold text-indigo-600 dark:text-indigo-400">
+            {formatDecimal(row.total_commission)}
+          </span>
+        ),
+      },
+    );
+    return cols;
+  }, [showDimension]);
+
+  const invoiceColumns = useMemo(() => {
+    const cols = [
+      { key: "invoice_number", label: "Invoice", strong: true },
+      { key: "invoice_date", label: "Date" },
+      {
+        key: "salesman_name",
+        label: "Salesman",
+        getValue: (row) => `${row.salesman_code || ""} ${row.salesman_name || ""}`,
+        render: (row) => (
+          <span className="text-slate-700 dark:text-slate-200">
+            {row.salesman_code} — {row.salesman_name}
+          </span>
+        ),
+      },
+      { key: "customer_name", label: "Customer" },
+    ];
+    if (showDimension) {
+      cols.push({ key: "dimension_name", label: "Dimension" });
+    }
+    cols.push(
+      {
+        key: "net_amount",
+        label: "Net",
+        align: "right",
+        render: (row) => formatDecimal(row.net_amount),
+      },
+      {
+        key: "sales_commission_rate",
+        label: "Comm. %",
+        align: "right",
+        render: (row) => `${formatDecimal(row.sales_commission_rate)}%`,
+      },
+      {
+        key: "sales_commission_amount",
+        label: "Commission",
+        align: "right",
+        render: (row) => (
+          <span className="font-semibold text-violet-600 dark:text-violet-400">
+            {formatDecimal(row.sales_commission_amount)}
+          </span>
+        ),
+      },
+      {
+        key: "received_amount",
+        label: "Received",
+        align: "right",
+        render: (row) => (
+          <span className="text-emerald-600 dark:text-emerald-400">
+            {formatDecimal(row.received_amount)}
+          </span>
+        ),
+      },
+      {
+        key: "balance_amount",
+        label: "Balance",
+        align: "right",
+        render: (row) => (
+          <span className="text-amber-600 dark:text-amber-400">
+            {formatDecimal(row.balance_amount)}
+          </span>
+        ),
+      },
+    );
+    return cols;
+  }, [showDimension]);
+
+  const receiptColumns = useMemo(() => {
+    const cols = [
+      { key: "receipt_number", label: "Receipt", strong: true },
+      { key: "receipt_date", label: "Date" },
+      { key: "invoice_number", label: "Invoice" },
+      {
+        key: "salesman_name",
+        label: "Salesman",
+        getValue: (row) => `${row.salesman_code || ""} ${row.salesman_name || ""}`,
+        render: (row) => (
+          <span className="text-slate-700 dark:text-slate-200">
+            {row.salesman_code} — {row.salesman_name}
+          </span>
+        ),
+      },
+      { key: "customer_name", label: "Customer" },
+    ];
+    if (showDimension) {
+      cols.push({ key: "dimension_name", label: "Dimension" });
+    }
+    cols.push(
+      {
+        key: "receipt_amount",
+        label: "Receipt Amt",
+        align: "right",
+        render: (row) => (
+          <span className="text-emerald-600 dark:text-emerald-400">
+            {formatDecimal(row.receipt_amount)}
+          </span>
+        ),
+      },
+      {
+        key: "recovery_commission_rate",
+        label: "Recovery %",
+        align: "right",
+        render: (row) => `${formatDecimal(row.recovery_commission_rate)}%`,
+      },
+      {
+        key: "recovery_commission_amount",
+        label: "Commission",
+        align: "right",
+        render: (row) => (
+          <span className="font-semibold text-amber-600 dark:text-amber-400">
+            {formatDecimal(row.recovery_commission_amount)}
+          </span>
+        ),
+      },
+    );
+    return cols;
+  }, [showDimension]);
+
   return (
     <div className="space-y-6">
       <Card className="space-y-5">
@@ -283,221 +495,39 @@ const SalesmanReportsPage = () => {
             </Card>
 
             <Card className="space-y-4">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">
-                By Salesman
-              </h3>
-              {report.salesman_rows?.length ? (
-                <div className="overflow-hidden rounded-[24px] border border-slate-200 dark:border-slate-700">
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-700">
-                      <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-900/60 dark:text-slate-400">
-                        <tr>
-                          <th className="px-4 py-3">Salesman</th>
-                          {showDimension ? (
-                            <th className="px-4 py-3">Dimension</th>
-                          ) : null}
-                          <th className="px-4 py-3 text-right">Sales %</th>
-                          <th className="px-4 py-3 text-right">Recovery %</th>
-                          <th className="px-4 py-3 text-right">Invoices</th>
-                          <th className="px-4 py-3 text-right">Receipts</th>
-                          <th className="px-4 py-3 text-right">Net Sales</th>
-                          <th className="px-4 py-3 text-right">Sales Comm.</th>
-                          <th className="px-4 py-3 text-right">Collected</th>
-                          <th className="px-4 py-3 text-right">Recovery Comm.</th>
-                          <th className="px-4 py-3 text-right">Total Comm.</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 bg-white dark:divide-slate-700 dark:bg-slate-800">
-                        {report.salesman_rows.map((row) => (
-                          <tr key={`${row.tenant_id}-${row.salesman_id}`}>
-                            <td className="px-4 py-3">
-                              <p className="font-semibold text-slate-900 dark:text-slate-100">
-                                {row.code} — {row.name}
-                              </p>
-                            </td>
-                            {showDimension ? (
-                              <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
-                                {row.dimension_name}
-                              </td>
-                            ) : null}
-                            <td className="px-4 py-3 text-right text-slate-600 dark:text-slate-300">
-                              {formatDecimal(row.commission_on_sales)}%
-                            </td>
-                            <td className="px-4 py-3 text-right text-slate-600 dark:text-slate-300">
-                              {formatDecimal(row.commission_on_recovery)}%
-                            </td>
-                            <td className="px-4 py-3 text-right">
-                              {row.invoice_count}
-                            </td>
-                            <td className="px-4 py-3 text-right">
-                              {row.receipt_count}
-                            </td>
-                            <td className="px-4 py-3 text-right font-medium text-blue-600 dark:text-blue-400">
-                              {formatDecimal(row.net_sales)}
-                            </td>
-                            <td className="px-4 py-3 text-right font-medium text-violet-600 dark:text-violet-400">
-                              {formatDecimal(row.sales_commission)}
-                            </td>
-                            <td className="px-4 py-3 text-right text-emerald-600 dark:text-emerald-400">
-                              {formatDecimal(row.collected_amount)}
-                            </td>
-                            <td className="px-4 py-3 text-right text-amber-600 dark:text-amber-400">
-                              {formatDecimal(row.recovery_commission)}
-                            </td>
-                            <td className="px-4 py-3 text-right font-bold text-indigo-600 dark:text-indigo-400">
-                              {formatDecimal(row.total_commission)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ) : (
-                <p className="text-sm text-slate-500 dark:text-slate-400">
-                  No salesman activity in this period.
-                </p>
-              )}
+              <SortableReportTable
+                title="By Salesman"
+                rows={report.salesman_rows || []}
+                columns={salesmanColumns}
+                emptyMessage="No salesman activity in this period."
+                showCount={false}
+                rowKey={(row) => `${row.tenant_id}-${row.salesman_id}`}
+                initialSort={{ key: "total_commission", direction: "desc" }}
+              />
             </Card>
 
             <Card className="space-y-4">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">
-                Invoice Detail (Sales Commission)
-              </h3>
-              {report.invoice_rows?.length ? (
-                <div className="overflow-hidden rounded-[24px] border border-slate-200 dark:border-slate-700">
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-700">
-                      <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-900/60 dark:text-slate-400">
-                        <tr>
-                          <th className="px-4 py-3">Invoice</th>
-                          <th className="px-4 py-3">Date</th>
-                          <th className="px-4 py-3">Salesman</th>
-                          <th className="px-4 py-3">Customer</th>
-                          {showDimension ? (
-                            <th className="px-4 py-3">Dimension</th>
-                          ) : null}
-                          <th className="px-4 py-3 text-right">Net</th>
-                          <th className="px-4 py-3 text-right">Comm. %</th>
-                          <th className="px-4 py-3 text-right">Commission</th>
-                          <th className="px-4 py-3 text-right">Received</th>
-                          <th className="px-4 py-3 text-right">Balance</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 bg-white dark:divide-slate-700 dark:bg-slate-800">
-                        {report.invoice_rows.map((row) => (
-                          <tr key={row.invoice_id}>
-                            <td className="px-4 py-3 font-semibold text-slate-900 dark:text-slate-100">
-                              {row.invoice_number}
-                            </td>
-                            <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
-                              {row.invoice_date}
-                            </td>
-                            <td className="px-4 py-3 text-slate-700 dark:text-slate-200">
-                              {row.salesman_code} — {row.salesman_name}
-                            </td>
-                            <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
-                              {row.customer_name}
-                            </td>
-                            {showDimension ? (
-                              <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
-                                {row.dimension_name}
-                              </td>
-                            ) : null}
-                            <td className="px-4 py-3 text-right">
-                              {formatDecimal(row.net_amount)}
-                            </td>
-                            <td className="px-4 py-3 text-right">
-                              {formatDecimal(row.sales_commission_rate)}%
-                            </td>
-                            <td className="px-4 py-3 text-right font-semibold text-violet-600 dark:text-violet-400">
-                              {formatDecimal(row.sales_commission_amount)}
-                            </td>
-                            <td className="px-4 py-3 text-right text-emerald-600 dark:text-emerald-400">
-                              {formatDecimal(row.received_amount)}
-                            </td>
-                            <td className="px-4 py-3 text-right text-amber-600 dark:text-amber-400">
-                              {formatDecimal(row.balance_amount)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ) : (
-                <p className="text-sm text-slate-500 dark:text-slate-400">
-                  No invoiced sales with an assigned salesman in this period.
-                </p>
-              )}
+              <SortableReportTable
+                title="Invoice Detail (Sales Commission)"
+                rows={report.invoice_rows || []}
+                columns={invoiceColumns}
+                emptyMessage="No invoiced sales with an assigned salesman in this period."
+                showCount={false}
+                rowKey="invoice_id"
+                initialSort={{ key: "invoice_date", direction: "desc" }}
+              />
             </Card>
 
             <Card className="space-y-4">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">
-                Receipt Detail (Recovery Commission)
-              </h3>
-              {report.receipt_rows?.length ? (
-                <div className="overflow-hidden rounded-[24px] border border-slate-200 dark:border-slate-700">
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-700">
-                      <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-900/60 dark:text-slate-400">
-                        <tr>
-                          <th className="px-4 py-3">Receipt</th>
-                          <th className="px-4 py-3">Date</th>
-                          <th className="px-4 py-3">Invoice</th>
-                          <th className="px-4 py-3">Salesman</th>
-                          <th className="px-4 py-3">Customer</th>
-                          {showDimension ? (
-                            <th className="px-4 py-3">Dimension</th>
-                          ) : null}
-                          <th className="px-4 py-3 text-right">Receipt Amt</th>
-                          <th className="px-4 py-3 text-right">Recovery %</th>
-                          <th className="px-4 py-3 text-right">Commission</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 bg-white dark:divide-slate-700 dark:bg-slate-800">
-                        {report.receipt_rows.map((row) => (
-                          <tr key={row.receipt_id}>
-                            <td className="px-4 py-3 font-semibold text-slate-900 dark:text-slate-100">
-                              {row.receipt_number}
-                            </td>
-                            <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
-                              {row.receipt_date}
-                            </td>
-                            <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
-                              {row.invoice_number}
-                            </td>
-                            <td className="px-4 py-3 text-slate-700 dark:text-slate-200">
-                              {row.salesman_code} — {row.salesman_name}
-                            </td>
-                            <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
-                              {row.customer_name}
-                            </td>
-                            {showDimension ? (
-                              <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
-                                {row.dimension_name}
-                              </td>
-                            ) : null}
-                            <td className="px-4 py-3 text-right text-emerald-600 dark:text-emerald-400">
-                              {formatDecimal(row.receipt_amount)}
-                            </td>
-                            <td className="px-4 py-3 text-right">
-                              {formatDecimal(row.recovery_commission_rate)}%
-                            </td>
-                            <td className="px-4 py-3 text-right font-semibold text-amber-600 dark:text-amber-400">
-                              {formatDecimal(row.recovery_commission_amount)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ) : (
-                <p className="text-sm text-slate-500 dark:text-slate-400">
-                  No bank receipts linked to salesman invoices in this period.
-                </p>
-              )}
+              <SortableReportTable
+                title="Receipt Detail (Recovery Commission)"
+                rows={report.receipt_rows || []}
+                columns={receiptColumns}
+                emptyMessage="No bank receipts linked to salesman invoices in this period."
+                showCount={false}
+                rowKey="receipt_id"
+                initialSort={{ key: "receipt_date", direction: "desc" }}
+              />
             </Card>
           </div>
           </ReportPrintWrapper>

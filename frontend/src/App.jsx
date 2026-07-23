@@ -57,6 +57,7 @@ import ComparativeProfitLossPage from "./pages/reports/ComparativeProfitLossPage
 import ExpenseAnalysisPage from "./pages/reports/ExpenseAnalysisPage";
 import AgingReportsPage from "./pages/reports/AgingReportsPage";
 import SalesReportPage from "./pages/reports/SalesReportPage";
+import InventoryStockReportPage from "./pages/reports/InventoryStockReportPage";
 import SalesmanReportsPage from "./pages/reports/SalesmanReportsPage";
 import LedgerReportsPage from "./pages/reports/LedgerReportsPage";
 import PartyLedgerReportsPage from "./pages/reports/PartyLedgerReportsPage";
@@ -173,8 +174,52 @@ const App = () => (
         <Route path="reports/comparative-profit-loss" element={<ComparativeProfitLossPage />} />
         <Route path="reports/expense-analysis" element={<ExpenseAnalysisPage />} />
         <Route path="reports/aging" element={<AgingReportsPage />} />
-        <Route path="reports/sales" element={<SalesReportPage />} />
+        <Route path="reports/sales" element={<SalesReportPage section="summary" />} />
+        <Route
+          path="reports/sales/invoices"
+          element={<SalesReportPage section="invoices" />}
+        />
+        <Route
+          path="reports/sales/by-product"
+          element={<SalesReportPage section="by-product" />}
+        />
+        <Route
+          path="reports/sales/monthly"
+          element={<SalesReportPage section="monthly" />}
+        />
+        <Route
+          path="reports/sales/by-customer"
+          element={<SalesReportPage section="by-customer" />}
+        />
+        <Route
+          path="reports/sales/by-salesman"
+          element={<SalesReportPage section="by-salesman" />}
+        />
+        <Route
+          path="reports/sales/by-warehouse"
+          element={<SalesReportPage section="by-warehouse" />}
+        />
+        <Route
+          path="reports/sales/by-dimension"
+          element={<SalesReportPage section="by-dimension" />}
+        />
+        <Route
+          path="reports/sales/returns"
+          element={<SalesReportPage section="returns" />}
+        />
+        <Route
+          path="reports/sales/receipts"
+          element={<SalesReportPage section="receipts" />}
+        />
         <Route path="reports/salesman" element={<SalesmanReportsPage />} />
+        <Route
+          path="reports/inventory/stock-quantity"
+          element={<InventoryStockReportPage mode="quantity" />}
+        />
+        <Route
+          path="reports/inventory/stock-valuation"
+          element={<InventoryStockReportPage mode="valuation" />}
+        />
         <Route path="reports/coa-completeness" element={<CoaCompletenessReportPage />} />
         <Route path="warehouses" element={<WarehousePage />} />
         <Route path="opening-stock" element={<OpeningStockPage />} />

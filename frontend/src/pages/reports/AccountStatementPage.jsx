@@ -19,6 +19,26 @@ import {
   startOfYear,
   todayIso,
 } from "./shared/reportHelpers";
+import SortableReportTable from "./shared/SortableReportTable";
+
+const STATEMENT_COLUMNS = [
+  { key: "date", label: "Date" },
+  { key: "id", label: "Reference" },
+  { key: "document_type", label: "Type" },
+  { key: "remarks", label: "Remarks" },
+  {
+    key: "debit",
+    label: "Debit",
+    align: "right",
+    render: (row) => formatDecimal(row.debit),
+  },
+  {
+    key: "credit",
+    label: "Credit",
+    align: "right",
+    render: (row) => formatDecimal(row.credit),
+  },
+];
 
 const AccountStatementPage = () => {
   const toast = useToast();
@@ -156,32 +176,14 @@ const AccountStatementPage = () => {
                   <p className="mt-1 text-sm font-semibold">Dr {formatDecimal(report.total_debit)} · Cr {formatDecimal(report.total_credit)}</p>
                 </div>
               </div>
-              <div className="overflow-x-auto rounded-[24px] border border-slate-200 dark:border-slate-700">
-                <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-700">
-                  <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-900/60">
-                    <tr>
-                      <th className="px-4 py-3">Date</th>
-                      <th className="px-4 py-3">Reference</th>
-                      <th className="px-4 py-3">Type</th>
-                      <th className="px-4 py-3">Remarks</th>
-                      <th className="px-4 py-3 text-right">Debit</th>
-                      <th className="px-4 py-3 text-right">Credit</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 bg-white dark:divide-slate-700 dark:bg-slate-800">
-                    {(report.rows || []).map((row, index) => (
-                      <tr key={`${row.id}-${index}`}>
-                        <td className="px-4 py-3">{row.date}</td>
-                        <td className="px-4 py-3">{row.id}</td>
-                        <td className="px-4 py-3">{row.document_type}</td>
-                        <td className="px-4 py-3">{row.remarks}</td>
-                        <td className="px-4 py-3 text-right">{formatDecimal(row.debit)}</td>
-                        <td className="px-4 py-3 text-right">{formatDecimal(row.credit)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <SortableReportTable
+                rows={report.rows || []}
+                columns={STATEMENT_COLUMNS}
+                showCount={false}
+                emptyMessage="No movements for this account in the selected period."
+                rowKey={(row, index) => `${row.id}-${index}`}
+                initialSort={{ key: "date", direction: "asc" }}
+              />
             </Card>
           </ReportPrintWrapper>
         ) : null}

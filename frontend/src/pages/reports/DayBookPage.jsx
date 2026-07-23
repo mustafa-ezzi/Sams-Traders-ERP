@@ -9,6 +9,7 @@ import { formatDecimal } from "../../utils/format";
 import { useToast } from "../../context/ToastContext";
 import { useAuth } from "../../context/AuthContext";
 import ReportPrintWrapper from "../../components/print/ReportPrintWrapper";
+import SortableHeader from "../../components/ui/SortableHeader";
 import DimensionScopeField from "./shared/DimensionScopeField";
 import {
   extractErrorMessage,
@@ -16,6 +17,68 @@ import {
   startOfYear,
   todayIso,
 } from "./shared/reportHelpers";
+import { useClientSort } from "./shared/useClientSort";
+
+const EntryLinesTable = ({ lines }) => {
+  const { sortedRows, sortConfig, handleSort } = useClientSort(
+    lines || [],
+    { key: "account_code", direction: "asc" },
+    {
+      account_code: (row) => `${row.account_code || ""} ${row.account_name || ""}`,
+    },
+  );
+
+  return (
+    <div className="overflow-x-auto rounded-[24px] border border-slate-200 dark:border-slate-700">
+      <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-700">
+        <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-900/60">
+          <tr>
+            <SortableHeader
+              label="Account"
+              sortKey="account_code"
+              sortConfig={sortConfig}
+              onSort={handleSort}
+              className="px-4 py-3"
+            />
+            <SortableHeader
+              label="Description"
+              sortKey="line_description"
+              sortConfig={sortConfig}
+              onSort={handleSort}
+              className="px-4 py-3"
+            />
+            <SortableHeader
+              label="Debit"
+              sortKey="debit"
+              sortConfig={sortConfig}
+              onSort={handleSort}
+              className="px-4 py-3 text-right"
+            />
+            <SortableHeader
+              label="Credit"
+              sortKey="credit"
+              sortConfig={sortConfig}
+              onSort={handleSort}
+              className="px-4 py-3 text-right"
+            />
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100 bg-white dark:divide-slate-700 dark:bg-slate-800">
+          {sortedRows.map((line, index) => (
+            <tr key={index}>
+              <td className="px-4 py-3">
+                {line.account_code} — {line.account_name}
+              </td>
+              <td className="px-4 py-3">{line.line_description || "—"}</td>
+              <td className="px-4 py-3 text-right">{formatDecimal(line.debit)}</td>
+              <td className="px-4 py-3 text-right">{formatDecimal(line.credit)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
 
 const DayBookPage = () => {
   const toast = useToast();
@@ -112,28 +175,7 @@ const DayBookPage = () => {
                       Dr {formatDecimal(entry.total_debit)} / Cr {formatDecimal(entry.total_credit)}
                     </p>
                   </div>
-                  <div className="overflow-x-auto rounded-[24px] border border-slate-200 dark:border-slate-700">
-                    <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-700">
-                      <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-900/60">
-                        <tr>
-                          <th className="px-4 py-3">Account</th>
-                          <th className="px-4 py-3">Description</th>
-                          <th className="px-4 py-3 text-right">Debit</th>
-                          <th className="px-4 py-3 text-right">Credit</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 bg-white dark:divide-slate-700 dark:bg-slate-800">
-                        {(entry.lines || []).map((line, index) => (
-                          <tr key={index}>
-                            <td className="px-4 py-3">{line.account_code} — {line.account_name}</td>
-                            <td className="px-4 py-3">{line.line_description || "—"}</td>
-                            <td className="px-4 py-3 text-right">{formatDecimal(line.debit)}</td>
-                            <td className="px-4 py-3 text-right">{formatDecimal(line.credit)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <EntryLinesTable lines={entry.lines} />
                 </Card>
               ))}
             </div>

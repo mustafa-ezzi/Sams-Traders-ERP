@@ -32,6 +32,7 @@ const PERM_HOME = {
   reports_aging: "/reports/aging",
   reports_sales: "/reports/sales",
   reports_salesman: "/reports/salesman",
+  reports_inventory: "/reports/inventory/stock-quantity",
   masters_units: "/masters/units",
   masters_brands: "/masters/brands",
   masters_categories: "/masters/categories",
@@ -104,6 +105,7 @@ export function pathToPermissionKey(pathname) {
   if (p.startsWith("/reports/aging")) return "reports_aging";
   if (p.startsWith("/reports/salesman")) return "reports_salesman";
   if (p.startsWith("/reports/sales")) return "reports_sales";
+  if (p.startsWith("/reports/inventory")) return "reports_inventory";
 
   if (p.startsWith("/settings/staff")) return "tenant_staff_manage";
   if (p.startsWith("/settings/activity-log")) return "tenant_activity_log";

@@ -158,6 +158,16 @@ const accountService = {
     );
     return response.data.data || {};
   },
+  async getInventoryStockReport(params, selectedTenant = "") {
+    const response = await axiosInstance.get(
+      "/accounts/accounts/inventory-stock-report/",
+      {
+        params,
+        headers: tenantHeader(selectedTenant),
+      },
+    );
+    return response.data.data || {};
+  },
   async getTrialBalanceReport(params, selectedTenant = "") {
     const response = await axiosInstance.get("/accounts/accounts/trial-balance-report/", {
       params,

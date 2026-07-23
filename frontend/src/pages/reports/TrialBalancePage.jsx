@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import FormInput from "../../components/ui/FormInput";
@@ -15,6 +15,7 @@ import {
   scopeLabel,
   todayIso,
 } from "./shared/reportHelpers";
+import SortableReportTable from "./shared/SortableReportTable";
 
 const TrialBalancePage = () => {
   const toast = useToast();
@@ -30,6 +31,49 @@ const TrialBalancePage = () => {
   });
 
   const showDimension = form.tenantScope === "BOTH";
+
+  const columns = useMemo(() => {
+    const cols = [
+      { key: "code", label: "Code", strong: true },
+      {
+        key: "name",
+        label: "Account",
+        render: (row) => (
+          <>
+            {row.name}
+            {!row.is_active ? (
+              <span className="ml-2 text-xs font-semibold uppercase text-amber-600">
+                Inactive
+              </span>
+            ) : null}
+            {!row.is_postable ? (
+              <span className="ml-2 text-xs font-semibold uppercase text-slate-400">
+                Header
+              </span>
+            ) : null}
+          </>
+        ),
+      },
+    ];
+    if (showDimension) {
+      cols.push({ key: "dimension_name", label: "Dimension" });
+    }
+    cols.push(
+      {
+        key: "debit_balance",
+        label: "Debit",
+        align: "right",
+        render: (row) => formatDecimal(row.debit_balance),
+      },
+      {
+        key: "credit_balance",
+        label: "Credit",
+        align: "right",
+        render: (row) => formatDecimal(row.credit_balance),
+      },
+    );
+    return cols;
+  }, [showDimension]);
 
   useEffect(() => {
     const load = async () => {
@@ -135,42 +179,14 @@ const TrialBalancePage = () => {
                   documents may need to be re-saved to rebuild their journals.
                 </div>
               ) : null}
-              <div className="overflow-x-auto rounded-[24px] border border-slate-200 dark:border-slate-700">
-                <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-700">
-                  <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-900/60">
-                    <tr>
-                      <th className="px-4 py-3">Code</th>
-                      <th className="px-4 py-3">Account</th>
-                      {showDimension ? <th className="px-4 py-3">Dimension</th> : null}
-                      <th className="px-4 py-3 text-right">Debit</th>
-                      <th className="px-4 py-3 text-right">Credit</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 bg-white dark:divide-slate-700 dark:bg-slate-800">
-                    {(report.rows || []).map((row) => (
-                      <tr key={`${row.tenant_id}-${row.account_id}`}>
-                        <td className="px-4 py-3 font-semibold">{row.code}</td>
-                        <td className="px-4 py-3">
-                          {row.name}
-                          {!row.is_active ? (
-                            <span className="ml-2 text-xs font-semibold uppercase text-amber-600">
-                              Inactive
-                            </span>
-                          ) : null}
-                          {!row.is_postable ? (
-                            <span className="ml-2 text-xs font-semibold uppercase text-slate-400">
-                              Header
-                            </span>
-                          ) : null}
-                        </td>
-                        {showDimension ? <td className="px-4 py-3">{row.dimension_name}</td> : null}
-                        <td className="px-4 py-3 text-right">{formatDecimal(row.debit_balance)}</td>
-                        <td className="px-4 py-3 text-right">{formatDecimal(row.credit_balance)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <SortableReportTable
+                rows={report.rows || []}
+                columns={columns}
+                showCount={false}
+                emptyMessage="No trial balance rows found."
+                rowKey={(row) => `${row.tenant_id}-${row.account_id}`}
+                initialSort={{ key: "code", direction: "asc" }}
+              />
             </Card>
           </ReportPrintWrapper>
         ) : null}

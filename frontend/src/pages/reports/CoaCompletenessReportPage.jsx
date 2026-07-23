@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import StateView from "../../components/StateView";
@@ -7,6 +7,7 @@ import dimensionService from "../../api/services/dimensionService";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import ReportPrintWrapper from "../../components/print/ReportPrintWrapper";
+import SortableReportTable from "./shared/SortableReportTable";
 
 const selectClassName =
   "w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100";
@@ -35,6 +36,57 @@ const extractErrorMessage = (error) => {
 
 const renderMissingFields = (fields = []) =>
   fields.length ? fields.join(", ") : "-";
+
+const CATEGORY_COLUMNS = [
+  { key: "tenant", label: "Dimension" },
+  { key: "name", label: "Category", strong: true },
+  {
+    key: "missing_fields",
+    label: "Missing Fields",
+    getValue: (row) => renderMissingFields(row.missing_fields),
+    render: (row) => renderMissingFields(row.missing_fields),
+  },
+];
+
+const RAW_MATERIAL_COLUMNS = [
+  { key: "tenant", label: "Dimension" },
+  { key: "name", label: "Raw Material", strong: true },
+  {
+    key: "category_name",
+    label: "Category",
+    render: (row) => row.category_name || "-",
+  },
+  {
+    key: "category_inventory_account",
+    label: "Category Inventory COA",
+    render: (row) => row.category_inventory_account || "-",
+  },
+];
+
+const PRODUCT_MISSING_COLUMNS = [
+  { key: "tenant", label: "Dimension" },
+  { key: "name", label: "Product", strong: true },
+  {
+    key: "category_name",
+    label: "Category",
+    render: (row) => row.category_name || "-",
+  },
+  {
+    key: "missing_fields",
+    label: "Missing Fields",
+    getValue: (row) => renderMissingFields(row.missing_fields),
+    render: (row) => renderMissingFields(row.missing_fields),
+  },
+];
+
+const MISMATCH_COLUMNS = [
+  { key: "tenant", label: "Dimension" },
+  { key: "name", label: "Product", strong: true },
+  { key: "category_name", label: "Category" },
+  { key: "field_label", label: "Field" },
+  { key: "category_account", label: "Category Account" },
+  { key: "product_account", label: "Product Account" },
+];
 
 const CoaCompletenessReportPage = () => {
   const toast = useToast();
@@ -71,6 +123,23 @@ const CoaCompletenessReportPage = () => {
       setLoading(false);
     }
   };
+
+  const categoryRows = useMemo(
+    () => report?.categories_missing || [],
+    [report],
+  );
+  const rawMaterialRows = useMemo(
+    () => report?.raw_materials_missing || [],
+    [report],
+  );
+  const productMissingRows = useMemo(
+    () => report?.products_missing || [],
+    [report],
+  );
+  const mismatchRows = useMemo(
+    () => report?.product_mismatches || [],
+    [report],
+  );
 
   return (
     <div className="space-y-6">
@@ -178,151 +247,51 @@ const CoaCompletenessReportPage = () => {
             </div>
 
             <Card className="space-y-4">
-              <h3 className="text-lg font-bold text-slate-900">
-                Categories Missing COAs
-              </h3>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-slate-200 text-sm">
-                  <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
-                    <tr>
-                      <th className="px-4 py-3">Dimension</th>
-                      <th className="px-4 py-3">Category</th>
-                      <th className="px-4 py-3">Missing Fields</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 bg-white">
-                    {(report.categories_missing || []).map((row) => (
-                      <tr key={row.id}>
-                        <td className="px-4 py-3 text-slate-600">
-                          {row.tenant}
-                        </td>
-                        <td className="px-4 py-3 font-semibold text-slate-900">
-                          {row.name}
-                        </td>
-                        <td className="px-4 py-3 text-slate-600">
-                          {renderMissingFields(row.missing_fields)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <SortableReportTable
+                title="Categories Missing COAs"
+                rows={categoryRows}
+                columns={CATEGORY_COLUMNS}
+                showCount={false}
+                emptyMessage="No categories missing COAs."
+                rowKey="id"
+                initialSort={{ key: "name", direction: "asc" }}
+              />
             </Card>
 
             <Card className="space-y-4">
-              <h3 className="text-lg font-bold text-slate-900">
-                Raw Materials Missing COAs
-              </h3>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-slate-200 text-sm">
-                  <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
-                    <tr>
-                      <th className="px-4 py-3">Dimension</th>
-                      <th className="px-4 py-3">Raw Material</th>
-                      <th className="px-4 py-3">Category</th>
-                      <th className="px-4 py-3">Category Inventory COA</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 bg-white">
-                    {(report.raw_materials_missing || []).map((row) => (
-                      <tr key={row.id}>
-                        <td className="px-4 py-3 text-slate-600">
-                          {row.tenant}
-                        </td>
-                        <td className="px-4 py-3 font-semibold text-slate-900">
-                          {row.name}
-                        </td>
-                        <td className="px-4 py-3 text-slate-600">
-                          {row.category_name || "-"}
-                        </td>
-                        <td className="px-4 py-3 text-slate-600">
-                          {row.category_inventory_account || "-"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <SortableReportTable
+                title="Raw Materials Missing COAs"
+                rows={rawMaterialRows}
+                columns={RAW_MATERIAL_COLUMNS}
+                showCount={false}
+                emptyMessage="No raw materials missing COAs."
+                rowKey="id"
+                initialSort={{ key: "name", direction: "asc" }}
+              />
             </Card>
 
             <Card className="space-y-4">
-              <h3 className="text-lg font-bold text-slate-900">
-                Products Missing COAs
-              </h3>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-slate-200 text-sm">
-                  <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
-                    <tr>
-                      <th className="px-4 py-3">Dimension</th>
-                      <th className="px-4 py-3">Product</th>
-                      <th className="px-4 py-3">Category</th>
-                      <th className="px-4 py-3">Missing Fields</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 bg-white">
-                    {(report.products_missing || []).map((row) => (
-                      <tr key={row.id}>
-                        <td className="px-4 py-3 text-slate-600">
-                          {row.tenant}
-                        </td>
-                        <td className="px-4 py-3 font-semibold text-slate-900">
-                          {row.name}
-                        </td>
-                        <td className="px-4 py-3 text-slate-600">
-                          {row.category_name || "-"}
-                        </td>
-                        <td className="px-4 py-3 text-slate-600">
-                          {renderMissingFields(row.missing_fields)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <SortableReportTable
+                title="Products Missing COAs"
+                rows={productMissingRows}
+                columns={PRODUCT_MISSING_COLUMNS}
+                showCount={false}
+                emptyMessage="No products missing COAs."
+                rowKey="id"
+                initialSort={{ key: "name", direction: "asc" }}
+              />
             </Card>
 
             <Card className="space-y-4">
-              <h3 className="text-lg font-bold text-slate-900">
-                Product and Category Mismatches
-              </h3>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-slate-200 text-sm">
-                  <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
-                    <tr>
-                      <th className="px-4 py-3">Dimension</th>
-                      <th className="px-4 py-3">Product</th>
-                      <th className="px-4 py-3">Category</th>
-                      <th className="px-4 py-3">Field</th>
-                      <th className="px-4 py-3">Category Account</th>
-                      <th className="px-4 py-3">Product Account</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 bg-white">
-                    {(report.product_mismatches || []).map((row, index) => (
-                      <tr key={`${row.id}-${row.field}-${index}`}>
-                        <td className="px-4 py-3 text-slate-600">
-                          {row.tenant}
-                        </td>
-                        <td className="px-4 py-3 font-semibold text-slate-900">
-                          {row.name}
-                        </td>
-                        <td className="px-4 py-3 text-slate-600">
-                          {row.category_name}
-                        </td>
-                        <td className="px-4 py-3 text-slate-600">
-                          {row.field_label}
-                        </td>
-                        <td className="px-4 py-3 text-slate-600">
-                          {row.category_account}
-                        </td>
-                        <td className="px-4 py-3 text-slate-600">
-                          {row.product_account}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <SortableReportTable
+                title="Product and Category Mismatches"
+                rows={mismatchRows}
+                columns={MISMATCH_COLUMNS}
+                showCount={false}
+                emptyMessage="No product/category mismatches."
+                rowKey={(row, index) => `${row.id}-${row.field}-${index}`}
+                initialSort={{ key: "name", direction: "asc" }}
+              />
             </Card>
           </div>
           </ReportPrintWrapper>
