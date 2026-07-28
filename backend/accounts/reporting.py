@@ -827,6 +827,46 @@ def _append_opening_balances_to_aging(
     return added
 
 
+def _apply_party_oversettlement_credits(pending_rows):
+    """
+    When returns/receipts on an invoice exceed its net, the leftover credit still
+    reduces the party control account (ledger) but would be lost if we clamp each
+    invoice at zero. Reassign that excess to the party's other open invoices
+    (oldest first) so aging matches the party ledger.
+    """
+    if not pending_rows:
+        return []
+
+    by_party = defaultdict(list)
+    for row in pending_rows:
+        by_party[str(row["party"].id)].append(row)
+
+    adjusted = []
+    for rows in by_party.values():
+        rows = sorted(
+            rows,
+            key=lambda item: (
+                item["document_date"] or item["basis_date"],
+                item["document_number"],
+                item["tenant_id"],
+            ),
+        )
+        excess = sum((_money(max(-item["raw_balance"], Decimal("0.00"))) for item in rows), Decimal("0.00"))
+        for item in rows:
+            balance = _money(max(item["raw_balance"], Decimal("0.00")))
+            if excess > 0 and balance > 0:
+                applied = min(balance, excess)
+                balance = _money(balance - applied)
+                excess = _money(excess - applied)
+                item = {
+                    **item,
+                    "settled_amount": _money(item["settled_amount"] + applied),
+                }
+            if balance > 0:
+                adjusted.append({**item, "balance": balance})
+    return adjusted
+
+
 def _build_invoice_aging_report(
     *,
     tenant_ids,
@@ -847,12 +887,14 @@ def _build_invoice_aging_report(
     Invoice aging uses due_date when set, otherwise invoice date.
     Opening balances age from their opening date.
     Balances are computed as of as_of_date (later receipts/returns/payments ignored).
+    Over-settlement on one invoice is reassigned to other open invoices of the same party.
     """
     dimension_names = _dimension_name_map(tenant_ids)
     bucket_totals = _empty_aging_buckets()
     total_outstanding = Decimal("0.00")
     detail_rows = []
     party_map = {}
+    pending_rows = []
 
     # Only documents that existed on/before the as-of date.
     invoice_queryset = invoice_queryset.filter(date__lte=as_of_date)
@@ -875,27 +917,43 @@ def _build_invoice_aging_report(
                 _allocated_invoice_amount(invoice, financials.get(key, 0), scoped_line_total)
                 for key in settled_keys
             )
-            balance = max(_money(net_amount - settled_amount), Decimal("0.00"))
-            total_outstanding = _money(
-                total_outstanding
-                + _add_aging_balance(
-                    party_map=party_map,
-                    bucket_totals=bucket_totals,
-                    detail_rows=detail_rows,
-                    party=party,
-                    tenant_id=line_tenant_id,
-                    dimension_names=dimension_names,
-                    document_id=invoice.id,
-                    document_number=invoice.invoice_number,
-                    document_date=invoice.date,
-                    due_date=invoice.due_date,
-                    basis_date=basis_date,
-                    as_of_date=as_of_date,
-                    net_amount=net_amount,
-                    settled_amount=settled_amount,
-                    balance=balance,
-                )
+            raw_balance = _money(net_amount - settled_amount)
+            pending_rows.append(
+                {
+                    "party": party,
+                    "tenant_id": line_tenant_id,
+                    "document_id": invoice.id,
+                    "document_number": invoice.invoice_number,
+                    "document_date": invoice.date,
+                    "due_date": invoice.due_date,
+                    "basis_date": basis_date,
+                    "net_amount": net_amount,
+                    "settled_amount": settled_amount,
+                    "raw_balance": raw_balance,
+                }
             )
+
+    for item in _apply_party_oversettlement_credits(pending_rows):
+        total_outstanding = _money(
+            total_outstanding
+            + _add_aging_balance(
+                party_map=party_map,
+                bucket_totals=bucket_totals,
+                detail_rows=detail_rows,
+                party=item["party"],
+                tenant_id=item["tenant_id"],
+                dimension_names=dimension_names,
+                document_id=item["document_id"],
+                document_number=item["document_number"],
+                document_date=item["document_date"],
+                due_date=item["due_date"],
+                basis_date=item["basis_date"],
+                as_of_date=as_of_date,
+                net_amount=item["net_amount"],
+                settled_amount=item["settled_amount"],
+                balance=item["balance"],
+            )
+        )
 
     if (
         include_openings

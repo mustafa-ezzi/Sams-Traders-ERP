@@ -74,20 +74,31 @@ def get_purchase_invoice_financials(
     excluded_payment_ids=None,
     as_of_date=None,
 ):
+    from purchase.models import PurchaseReturn
+
     excluded_payment_ids = excluded_payment_ids or []
 
-    returns_qs = PurchaseReturnLine.objects.filter(
-        purchase_return__purchase_invoice=purchase_invoice,
-        purchase_return__deleted_at__isnull=True,
+    returns_qs = PurchaseReturn.objects.filter(
+        purchase_invoice=purchase_invoice,
         deleted_at__isnull=True,
     )
     if as_of_date is not None:
-        returns_qs = returns_qs.filter(purchase_return__date__lte=as_of_date)
+        returns_qs = returns_qs.filter(date__lte=as_of_date)
 
-    returned_amount = (
-        returns_qs.aggregate(total=Sum("amount"))["total"]
+    line_returned = (
+        PurchaseReturnLine.objects.filter(
+            purchase_return__in=returns_qs,
+            deleted_at__isnull=True,
+        ).aggregate(total=Sum("amount"))["total"]
         or Decimal("0.00")
     )
+    if line_returned:
+        returned_amount = line_returned
+    else:
+        returned_amount = (
+            returns_qs.aggregate(total=Sum("gross_amount"))["total"]
+            or Decimal("0.00")
+        )
 
     payments_qs = PurchaseBankPaymentLine.objects.filter(
         purchase_invoice=purchase_invoice,
@@ -106,16 +117,15 @@ def get_purchase_invoice_financials(
     net_amount = quantize_money(purchase_invoice.net_amount or Decimal("0.00"))
     returned_amount = quantize_money(returned_amount)
     paid_amount = quantize_money(paid_amount)
-    balance_amount = max(
-        quantize_money(net_amount - returned_amount - paid_amount),
-        Decimal("0.00"),
-    )
+    raw_balance = quantize_money(net_amount - returned_amount - paid_amount)
+    balance_amount = max(raw_balance, Decimal("0.00"))
 
     return {
         "net_amount": net_amount,
         "returned_amount": returned_amount,
         "paid_amount": paid_amount,
         "balance_amount": balance_amount,
+        "raw_balance": raw_balance,
     }
 
 
