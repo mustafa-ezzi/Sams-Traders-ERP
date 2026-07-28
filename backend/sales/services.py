@@ -89,26 +89,32 @@ def get_sales_return_line_metrics(
     }
 
 
-def get_sales_invoice_financials(sales_invoice, excluded_receipt_ids=None):
+def get_sales_invoice_financials(sales_invoice, excluded_receipt_ids=None, as_of_date=None):
     excluded_receipt_ids = excluded_receipt_ids or []
 
+    returns_qs = SalesReturn.objects.filter(
+        tenant_id=sales_invoice.tenant_id,
+        sales_invoice=sales_invoice,
+        deleted_at__isnull=True,
+    )
+    if as_of_date is not None:
+        returns_qs = returns_qs.filter(date__lte=as_of_date)
+
     returned_amount = (
-        SalesReturn.objects.filter(
-            tenant_id=sales_invoice.tenant_id,
-            sales_invoice=sales_invoice,
-            deleted_at__isnull=True,
-        ).aggregate(total=Sum("gross_amount"))["total"]
+        returns_qs.aggregate(total=Sum("gross_amount"))["total"]
         or Decimal("0.00")
     )
 
+    receipts_qs = SalesBankReceiptLine.objects.filter(
+        sales_invoice=sales_invoice,
+        deleted_at__isnull=True,
+        receipt__deleted_at__isnull=True,
+    ).exclude(receipt_id__in=excluded_receipt_ids)
+    if as_of_date is not None:
+        receipts_qs = receipts_qs.filter(receipt__date__lte=as_of_date)
+
     received_amount = (
-        SalesBankReceiptLine.objects.filter(
-            sales_invoice=sales_invoice,
-            deleted_at__isnull=True,
-            receipt__deleted_at__isnull=True,
-        )
-        .exclude(receipt_id__in=excluded_receipt_ids)
-        .aggregate(total=Sum("amount"))["total"]
+        receipts_qs.aggregate(total=Sum("amount"))["total"]
         or Decimal("0.00")
     )
 
@@ -128,18 +134,24 @@ def get_sales_invoice_financials(sales_invoice, excluded_receipt_ids=None):
     }
 
 
-def get_customer_opening_balance_financials(opening_balance, excluded_receipt_ids=None):
+def get_customer_opening_balance_financials(
+    opening_balance,
+    excluded_receipt_ids=None,
+    as_of_date=None,
+):
     excluded_receipt_ids = excluded_receipt_ids or []
 
     opening_amount = quantize_money(opening_balance.amount or Decimal("0.00"))
+    receipts_qs = SalesBankReceiptLine.objects.filter(
+        party_opening_balance=opening_balance,
+        deleted_at__isnull=True,
+        receipt__deleted_at__isnull=True,
+    ).exclude(receipt_id__in=excluded_receipt_ids)
+    if as_of_date is not None:
+        receipts_qs = receipts_qs.filter(receipt__date__lte=as_of_date)
+
     received_amount = (
-        SalesBankReceiptLine.objects.filter(
-            party_opening_balance=opening_balance,
-            deleted_at__isnull=True,
-            receipt__deleted_at__isnull=True,
-        )
-        .exclude(receipt_id__in=excluded_receipt_ids)
-        .aggregate(total=Sum("amount"))["total"]
+        receipts_qs.aggregate(total=Sum("amount"))["total"]
         or Decimal("0.00")
     )
     received_amount = quantize_money(received_amount)

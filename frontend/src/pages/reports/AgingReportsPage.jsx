@@ -390,9 +390,10 @@ const AgingReportsPage = () => {
             Aging Reports
           </h2>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Analyze outstanding receivables and payables by aging bucket. Click
-            a party name to open that party&apos;s ledger. Salesman filter
-            applies to receivables (sales invoices).
+            Outstanding invoices and openings as of the selected date. Later
+            receipts, returns, and payments are ignored. Click a party name to
+            open that party&apos;s ledger. Salesman filter applies to
+            receivables.
           </p>
         </div>
 

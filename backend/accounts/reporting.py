@@ -782,6 +782,7 @@ def _append_opening_balances_to_aging(
             tenant_id__in=tenant_ids,
             party_type=party_type,
             deleted_at__isnull=True,
+            date__lte=as_of_date,
         )
         .select_related(party_attr)
         .order_by("date", "created_at")
@@ -793,7 +794,7 @@ def _append_opening_balances_to_aging(
         if party is None:
             continue
 
-        financials = financials_fn(opening)
+        financials = financials_fn(opening, as_of_date=as_of_date)
         balance = _money(financials.get("balance_amount", 0))
         if balance <= 0:
             continue
@@ -845,6 +846,7 @@ def _build_invoice_aging_report(
     Build AR/AP aging from unpaid invoice balances plus unpaid party opening balances.
     Invoice aging uses due_date when set, otherwise invoice date.
     Opening balances age from their opening date.
+    Balances are computed as of as_of_date (later receipts/returns/payments ignored).
     """
     dimension_names = _dimension_name_map(tenant_ids)
     bucket_totals = _empty_aging_buckets()
@@ -852,8 +854,11 @@ def _build_invoice_aging_report(
     detail_rows = []
     party_map = {}
 
+    # Only documents that existed on/before the as-of date.
+    invoice_queryset = invoice_queryset.filter(date__lte=as_of_date)
+
     for invoice in invoice_queryset.select_related(party_attr).prefetch_related("lines"):
-        financials = financials_fn(invoice)
+        financials = financials_fn(invoice, as_of_date=as_of_date)
         line_totals = line_totals_fn(invoice, tenant_ids)
         if not line_totals:
             continue

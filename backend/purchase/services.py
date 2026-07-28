@@ -69,27 +69,37 @@ def get_purchase_return_line_metrics(
     }
 
 
-def get_purchase_invoice_financials(purchase_invoice, excluded_payment_ids=None):
+def get_purchase_invoice_financials(
+    purchase_invoice,
+    excluded_payment_ids=None,
+    as_of_date=None,
+):
     excluded_payment_ids = excluded_payment_ids or []
 
+    returns_qs = PurchaseReturn.objects.filter(
+        tenant_id=purchase_invoice.tenant_id,
+        purchase_invoice=purchase_invoice,
+        deleted_at__isnull=True,
+    )
+    if as_of_date is not None:
+        returns_qs = returns_qs.filter(date__lte=as_of_date)
+
     returned_amount = (
-        PurchaseReturn.objects.filter(
-            tenant_id=purchase_invoice.tenant_id,
-            purchase_invoice=purchase_invoice,
-            deleted_at__isnull=True,
-        ).aggregate(total=Sum("gross_amount"))["total"]
+        returns_qs.aggregate(total=Sum("gross_amount"))["total"]
         or Decimal("0.00")
     )
 
+    payments_qs = PurchaseBankPaymentLine.objects.filter(
+        purchase_invoice=purchase_invoice,
+        payment_against=PurchaseBankPaymentLine.PaymentAgainst.INVOICE,
+        deleted_at__isnull=True,
+        payment__deleted_at__isnull=True,
+    ).exclude(payment_id__in=excluded_payment_ids)
+    if as_of_date is not None:
+        payments_qs = payments_qs.filter(payment__date__lte=as_of_date)
+
     paid_amount = (
-        PurchaseBankPaymentLine.objects.filter(
-            purchase_invoice=purchase_invoice,
-            payment_against=PurchaseBankPaymentLine.PaymentAgainst.INVOICE,
-            deleted_at__isnull=True,
-            payment__deleted_at__isnull=True,
-        )
-        .exclude(payment_id__in=excluded_payment_ids)
-        .aggregate(total=Sum("amount"))["total"]
+        payments_qs.aggregate(total=Sum("amount"))["total"]
         or Decimal("0.00")
     )
 
@@ -109,19 +119,25 @@ def get_purchase_invoice_financials(purchase_invoice, excluded_payment_ids=None)
     }
 
 
-def get_supplier_opening_balance_financials(opening_balance, excluded_payment_ids=None):
+def get_supplier_opening_balance_financials(
+    opening_balance,
+    excluded_payment_ids=None,
+    as_of_date=None,
+):
     excluded_payment_ids = excluded_payment_ids or []
 
     opening_amount = quantize_money(opening_balance.amount or Decimal("0.00"))
+    payments_qs = PurchaseBankPaymentLine.objects.filter(
+        party_opening_balance=opening_balance,
+        payment_against=PurchaseBankPaymentLine.PaymentAgainst.OPENING_BALANCE,
+        deleted_at__isnull=True,
+        payment__deleted_at__isnull=True,
+    ).exclude(payment_id__in=excluded_payment_ids)
+    if as_of_date is not None:
+        payments_qs = payments_qs.filter(payment__date__lte=as_of_date)
+
     paid_amount = (
-        PurchaseBankPaymentLine.objects.filter(
-            party_opening_balance=opening_balance,
-            payment_against=PurchaseBankPaymentLine.PaymentAgainst.OPENING_BALANCE,
-            deleted_at__isnull=True,
-            payment__deleted_at__isnull=True,
-        )
-        .exclude(payment_id__in=excluded_payment_ids)
-        .aggregate(total=Sum("amount"))["total"]
+        payments_qs.aggregate(total=Sum("amount"))["total"]
         or Decimal("0.00")
     )
     paid_amount = quantize_money(paid_amount)
