@@ -6,7 +6,6 @@ from sales.models import (
     SalesBankReceiptLine,
     SalesInvoiceLine,
     SalesmanCommissionPayment,
-    SalesReturn,
     SalesReturnLine,
 )
 
@@ -92,16 +91,19 @@ def get_sales_return_line_metrics(
 def get_sales_invoice_financials(sales_invoice, excluded_receipt_ids=None, as_of_date=None):
     excluded_receipt_ids = excluded_receipt_ids or []
 
-    returns_qs = SalesReturn.objects.filter(
-        tenant_id=sales_invoice.tenant_id,
-        sales_invoice=sales_invoice,
+    # Sum return lines linked to this invoice (any return-header dimension).
+    # Filtering by sales_return.tenant_id == invoice.tenant_id skipped valid
+    # returns and made aging higher than the party ledger by the return amount.
+    returns_qs = SalesReturnLine.objects.filter(
+        sales_return__sales_invoice=sales_invoice,
+        sales_return__deleted_at__isnull=True,
         deleted_at__isnull=True,
     )
     if as_of_date is not None:
-        returns_qs = returns_qs.filter(date__lte=as_of_date)
+        returns_qs = returns_qs.filter(sales_return__date__lte=as_of_date)
 
     returned_amount = (
-        returns_qs.aggregate(total=Sum("gross_amount"))["total"]
+        returns_qs.aggregate(total=Sum("amount"))["total"]
         or Decimal("0.00")
     )
 
