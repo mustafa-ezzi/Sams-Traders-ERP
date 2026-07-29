@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Card from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
 import FormInput from "../../../components/ui/FormInput";
 import SearchableSelect from "../../../components/ui/SearchableSelect";
+import DimensionPrintButtons from "../../../components/ui/DimensionPrintButtons";
+import CommissionVoucherPrintModal from "../../../components/sales/CommissionVoucherPrintModal";
 import accountService from "../../../api/services/accountService";
+import dimensionService from "../../../api/services/dimensionService";
 import salesmanService from "../../../api/services/salesmanService";
 import salesmanCommissionPaymentService from "../../../api/services/salesmanCommissionPaymentService";
 import { formatDecimal } from "../../../utils/format";
@@ -12,7 +15,9 @@ import {
   flattenAccountTree,
   formatAccountLabel,
 } from "../../../utils/accounts";
+import { dimensionToCompanyConfig } from "../../../utils/dimensionCompany";
 import { useToast } from "../../../context/ToastContext";
+import { useAuth } from "../../../context/AuthContext";
 
 const createDefaultForm = () => ({
   date: new Date().toISOString().slice(0, 10),
@@ -48,13 +53,18 @@ const CreateUpdateSalesmanCommissionPayment = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
+  const { allowedDimensions } = useAuth();
   const editingId = id || "";
   const [salesmen, setSalesmen] = useState([]);
   const [paymentAccounts, setPaymentAccounts] = useState([]);
   const [invoiceOptions, setInvoiceOptions] = useState([]);
+  const [printDimensions, setPrintDimensions] = useState([]);
+  const [printModal, setPrintModal] = useState(null);
   const [form, setForm] = useState(createDefaultForm());
   const [submitting, setSubmitting] = useState(false);
   const [loadingRecord, setLoadingRecord] = useState(Boolean(id));
+  const [loadedVoucher, setLoadedVoucher] = useState(null);
+  const printCancelledRef = useRef(false);
 
   const selectedInvoice = useMemo(
     () =>
@@ -114,6 +124,32 @@ const CreateUpdateSalesmanCommissionPayment = () => {
   }, [toast]);
 
   useEffect(() => {
+    let cancelled = false;
+    dimensionService
+      .list()
+      .then((items) => {
+        if (cancelled) return;
+        const allowedCodes = new Set(
+          (allowedDimensions || []).map((item) => item.code).filter(Boolean),
+        );
+        const source = items?.length ? items : allowedDimensions || [];
+        setPrintDimensions(
+          source.filter((dimension) => {
+            if (!dimension?.code || dimension.is_active === false) return false;
+            if (!allowedCodes.size) return true;
+            return allowedCodes.has(dimension.code);
+          }),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setPrintDimensions(allowedDimensions || []);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [allowedDimensions]);
+
+  useEffect(() => {
     loadInvoiceOptions(form.salesmanId, editingId);
   }, [form.salesmanId, editingId]);
 
@@ -130,6 +166,7 @@ const CreateUpdateSalesmanCommissionPayment = () => {
         if (cancelled) return;
         await loadInvoiceOptions(payment.salesmanId, payment.id);
         if (cancelled) return;
+        setLoadedVoucher(payment);
         setForm({
           date: payment.date,
           salesmanId: payment.salesmanId,
@@ -178,14 +215,21 @@ const CreateUpdateSalesmanCommissionPayment = () => {
     }));
   };
 
-  const buildPayload = () => ({
-    date: form.date,
-    salesman_id: form.salesmanId,
-    sales_invoice_id: form.salesInvoiceId,
-    payment_account_id: form.paymentAccountId,
-    payment: toNumber(form.payment),
-    remarks: form.remarks,
-  });
+  const buildPayload = () => {
+    const payload = {
+      date: form.date,
+      salesman_id: form.salesmanId,
+      sales_invoice_id: form.salesInvoiceId,
+      payment: toNumber(form.payment),
+      remarks: form.remarks,
+    };
+    if (form.paymentAccountId) {
+      payload.payment_account_id = form.paymentAccountId;
+    } else {
+      payload.payment_account_id = null;
+    }
+    return payload;
+  };
 
   const validateBeforeSubmit = () => {
     if (!form.date) {
@@ -198,10 +242,6 @@ const CreateUpdateSalesmanCommissionPayment = () => {
     }
     if (!form.salesInvoiceId) {
       toast.error("Please select an invoice");
-      return false;
-    }
-    if (!form.paymentAccountId) {
-      toast.error("Please select a cash or bank payment account");
       return false;
     }
     if (toNumber(form.payment) <= 0) {
@@ -246,6 +286,41 @@ const CreateUpdateSalesmanCommissionPayment = () => {
     }
   };
 
+  const handleClosePrint = () => {
+    printCancelledRef.current = true;
+    setPrintModal(null);
+  };
+
+  const handleOpenPrint = async (_recordId, dimensionCode) => {
+    if (!editingId) return;
+    printCancelledRef.current = false;
+    const dimension = printDimensions.find((item) => item.code === dimensionCode);
+    setPrintModal({
+      loading: true,
+      voucher: null,
+      company: dimensionToCompanyConfig(dimension),
+    });
+    try {
+      const voucher =
+        loadedVoucher ||
+        (await salesmanCommissionPaymentService.getById(editingId));
+      if (printCancelledRef.current) return;
+      setPrintModal({
+        loading: false,
+        voucher,
+        company: dimensionToCompanyConfig(dimension),
+      });
+    } catch (printError) {
+      if (!printCancelledRef.current) {
+        toast.error(
+          extractErrorMessage(printError) ||
+            "Could not load voucher for printing",
+        );
+        setPrintModal(null);
+      }
+    }
+  };
+
   const title = editingId
     ? "Edit Salesman Commission Voucher"
     : "Salesman Commission Voucher";
@@ -267,13 +342,22 @@ const CreateUpdateSalesmanCommissionPayment = () => {
               {title}
             </h2>
           </div>
-          <Button
-            variant="secondary"
-            type="button"
-            onClick={() => navigate("/salesman-commission-payments")}
-          >
-            Back to list
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            {editingId ? (
+              <DimensionPrintButtons
+                dimensions={printDimensions}
+                recordId={editingId}
+                onPrint={handleOpenPrint}
+              />
+            ) : null}
+            <Button
+              variant="secondary"
+              type="button"
+              onClick={() => navigate("/salesman-commission-payments")}
+            >
+              Back to list
+            </Button>
+          </div>
         </div>
 
         <form className="space-y-5" onSubmit={handleSubmit}>
@@ -324,15 +408,14 @@ const CreateUpdateSalesmanCommissionPayment = () => {
             />
 
             <SearchableSelect
-              label="Payment Account"
-              required
+              label="Payment Account (optional)"
               value={form.paymentAccountId}
               options={paymentAccounts}
               onChange={(paymentAccountId) =>
                 handleChange("paymentAccountId", paymentAccountId)
               }
               getOptionLabel={(account) => formatAccountLabel(account)}
-              placeholder="Search cash / bank account…"
+              placeholder="Blank = accrue to payable…"
               showAllOptions
             />
 
@@ -382,6 +465,13 @@ const CreateUpdateSalesmanCommissionPayment = () => {
           </div>
         </form>
       </Card>
+
+      <CommissionVoucherPrintModal
+        voucher={printModal?.voucher}
+        company={printModal?.company}
+        loading={Boolean(printModal?.loading)}
+        onClose={handleClosePrint}
+      />
     </div>
   );
 };

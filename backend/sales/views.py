@@ -1105,3 +1105,111 @@ class SalesmanCommissionPaymentViewSet(AuditedModelMixin, viewsets.ModelViewSet)
             )
 
         return Response({"data": payload})
+
+    @action(detail=False, methods=["post"], url_path="generate-from-report")
+    def generate_from_report(self, request):
+        """
+        Create salesman commission vouchers for pending commission on a salesman.
+        Without payment_account_id, journals accrue expense → payable (BS liability).
+        With payment_account_id, journals clear payable from bank/cash.
+        """
+        salesman_id = request.data.get("salesman_id")
+        voucher_date = request.data.get("date")
+        payment_account_id = request.data.get("payment_account_id") or None
+        remarks = (request.data.get("remarks") or "").strip()
+        invoice_ids = request.data.get("invoice_ids") or []
+
+        if not salesman_id:
+            raise ValidationError({"salesman_id": "Salesman is required."})
+        if not voucher_date:
+            raise ValidationError({"date": "Voucher date is required."})
+        if not user_can_access_salesman(request.user, salesman_id):
+            raise ValidationError({"salesman_id": "You do not have access to this salesman."})
+
+        shared_filter = get_shared_tenant_filter(request)
+        invoices = (
+            SalesInvoice.objects.filter(
+                **shared_filter,
+                deleted_at__isnull=True,
+            )
+            .filter(
+                Q(salesman_id=salesman_id, salesman_commission_amount__gt=Decimal("0.00"))
+                | Q(
+                    bank_receipts__salesman_id=salesman_id,
+                    bank_receipts__recovery_commission_amount__gt=Decimal("0.00"),
+                    bank_receipts__deleted_at__isnull=True,
+                )
+            )
+            .distinct()
+            .select_related("customer", "salesman")
+            .order_by("date", "created_at")
+        )
+        if invoice_ids:
+            invoices = invoices.filter(id__in=invoice_ids)
+
+        created = []
+        skipped = []
+        with transaction.atomic():
+            for invoice in invoices:
+                financials = get_salesman_commission_financials(
+                    invoice,
+                    salesman_id=salesman_id,
+                )
+                pending = financials["pending_amount"]
+                if pending <= Decimal("0.00"):
+                    skipped.append(
+                        {
+                            "invoice_id": str(invoice.id),
+                            "invoice_number": invoice.invoice_number,
+                            "reason": "No pending commission",
+                        }
+                    )
+                    continue
+
+                payload = {
+                    "date": voucher_date,
+                    "salesman_id": salesman_id,
+                    "sales_invoice_id": str(invoice.id),
+                    "payment": str(pending),
+                    "remarks": remarks
+                    or (
+                        f"Generated from salesman performance report "
+                        f"({invoice.invoice_number})"
+                    ),
+                }
+                if payment_account_id:
+                    payload["payment_account_id"] = payment_account_id
+
+                serializer = self.get_serializer(data=payload)
+                serializer.is_valid(raise_exception=True)
+                payment = serializer.save()
+                sync_salesman_commission_payment_journal(
+                    self._get_serializable_payment(payment.id)
+                )
+                created.append(
+                    self.get_serializer(self._get_serializable_payment(payment.id)).data
+                )
+
+        if not created and not skipped:
+            raise ValidationError(
+                {"detail": "No invoices with commission found for this salesman."}
+            )
+        if not created:
+            raise ValidationError(
+                {
+                    "detail": "No pending commission left to voucher for this salesman.",
+                    "skipped": skipped,
+                }
+            )
+
+        return Response(
+            {
+                "data": created,
+                "skipped": skipped,
+                "message": (
+                    f"Created {len(created)} salesman commission voucher"
+                    f"{'s' if len(created) != 1 else ''}."
+                ),
+            },
+            status=status.HTTP_201_CREATED,
+        )

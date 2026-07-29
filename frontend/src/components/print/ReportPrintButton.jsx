@@ -125,6 +125,7 @@ const ReportPrintButton = ({
             title={String(title || "Report").toUpperCase()}
             brandName={brandName}
             company={companyConfig}
+            logoSrc={companyConfig?.logo || companyConfig?.logoUrl}
             metaLeft={left}
             metaRight={right}
           >

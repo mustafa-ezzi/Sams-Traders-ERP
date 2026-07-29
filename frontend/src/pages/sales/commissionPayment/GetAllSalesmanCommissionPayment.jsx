@@ -1,13 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Card from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
 import FormInput from "../../../components/ui/FormInput";
 import ConfirmModal from "../../../components/ui/ConfirmModal";
 import StateView from "../../../components/StateView";
+import DimensionPrintButtons from "../../../components/ui/DimensionPrintButtons";
+import CommissionVoucherPrintModal from "../../../components/sales/CommissionVoucherPrintModal";
 import salesmanCommissionPaymentService from "../../../api/services/salesmanCommissionPaymentService";
+import dimensionService from "../../../api/services/dimensionService";
 import { formatDecimal } from "../../../utils/format";
+import { dimensionToCompanyConfig } from "../../../utils/dimensionCompany";
 import { useToast } from "../../../context/ToastContext";
+import { useAuth } from "../../../context/AuthContext";
 
 const extractErrorMessage = (error) => {
   const data = error?.response?.data;
@@ -28,6 +33,7 @@ const extractErrorMessage = (error) => {
 const GetAllSalesmanCommissionPayment = () => {
   const navigate = useNavigate();
   const toast = useToast();
+  const { allowedDimensions } = useAuth();
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -35,6 +41,10 @@ const GetAllSalesmanCommissionPayment = () => {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [deleteId, setDeleteId] = useState("");
+  const [printDimensions, setPrintDimensions] = useState([]);
+  const [printModal, setPrintModal] = useState(null);
+  const [printLoadingId, setPrintLoadingId] = useState("");
+  const printCancelledRef = useRef(false);
   const limit = 10;
 
   const loadPayments = async (nextPage = page, nextSearch = search) => {
@@ -63,6 +73,32 @@ const GetAllSalesmanCommissionPayment = () => {
     loadPayments(1, "");
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    dimensionService
+      .list()
+      .then((items) => {
+        if (cancelled) return;
+        const allowedCodes = new Set(
+          (allowedDimensions || []).map((item) => item.code).filter(Boolean),
+        );
+        const source = items?.length ? items : allowedDimensions || [];
+        setPrintDimensions(
+          source.filter((dimension) => {
+            if (!dimension?.code || dimension.is_active === false) return false;
+            if (!allowedCodes.size) return true;
+            return allowedCodes.has(dimension.code);
+          }),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setPrintDimensions(allowedDimensions || []);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [allowedDimensions]);
+
   const confirmDelete = async () => {
     try {
       const response = await salesmanCommissionPaymentService.remove(deleteId);
@@ -79,6 +115,41 @@ const GetAllSalesmanCommissionPayment = () => {
     }
   };
 
+  const handleClosePrint = () => {
+    printCancelledRef.current = true;
+    setPrintModal(null);
+  };
+
+  const handleOpenPrint = async (recordId, dimensionCode) => {
+    printCancelledRef.current = false;
+    setPrintLoadingId(recordId);
+    const dimension = printDimensions.find((item) => item.code === dimensionCode);
+    setPrintModal({
+      loading: true,
+      voucher: null,
+      company: dimensionToCompanyConfig(dimension),
+    });
+    try {
+      const voucher = await salesmanCommissionPaymentService.getById(recordId);
+      if (printCancelledRef.current) return;
+      setPrintModal({
+        loading: false,
+        voucher,
+        company: dimensionToCompanyConfig(dimension),
+      });
+    } catch (printError) {
+      if (!printCancelledRef.current) {
+        toast.error(
+          extractErrorMessage(printError) ||
+            "Could not load voucher for printing",
+        );
+        setPrintModal(null);
+      }
+    } finally {
+      setPrintLoadingId("");
+    }
+  };
+
   return (
     <div className="space-y-6">
       <Card className="space-y-4">
@@ -88,7 +159,7 @@ const GetAllSalesmanCommissionPayment = () => {
               Salesman Commission Vouchers
             </h2>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Review, edit, and remove salesman commission clearing vouchers.
+              Review, print, edit, and remove salesman commission vouchers.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -158,7 +229,7 @@ const GetAllSalesmanCommissionPayment = () => {
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
                         {record.payment_account
                           ? `${record.payment_account.code} - ${record.payment_account.name}`
-                          : "-"}
+                          : "Payable accrual"}
                       </td>
                       <td className="px-4 py-3 font-semibold text-slate-800 dark:text-slate-100">
                         {formatDecimal(record.payment)}
@@ -167,7 +238,13 @@ const GetAllSalesmanCommissionPayment = () => {
                         {formatDecimal(record.commissionPendingAmount)}
                       </td>
                       <td className="px-4 py-3">
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <DimensionPrintButtons
+                            dimensions={printDimensions}
+                            recordId={record.id}
+                            disabled={printLoadingId === record.id}
+                            onPrint={handleOpenPrint}
+                          />
                           <Button
                             variant="secondary"
                             onClick={() =>
@@ -223,6 +300,13 @@ const GetAllSalesmanCommissionPayment = () => {
         description="This will remove the voucher and restore the pending commission on the linked invoice."
         onCancel={() => setDeleteId("")}
         onConfirm={confirmDelete}
+      />
+
+      <CommissionVoucherPrintModal
+        voucher={printModal?.voucher}
+        company={printModal?.company}
+        loading={Boolean(printModal?.loading)}
+        onClose={handleClosePrint}
       />
     </div>
   );

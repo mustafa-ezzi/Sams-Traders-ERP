@@ -1642,7 +1642,11 @@ class SalesmanCommissionPaymentSerializer(serializers.ModelSerializer):
     sales_invoice_id = serializers.UUIDField(write_only=True)
     payable_account = AccountMiniSerializer(read_only=True)
     payment_account = AccountMiniSerializer(read_only=True)
-    payment_account_id = serializers.UUIDField(write_only=True)
+    payment_account_id = serializers.UUIDField(
+        write_only=True,
+        required=False,
+        allow_null=True,
+    )
     commission_amount = serializers.SerializerMethodField()
     commission_paid_amount = serializers.SerializerMethodField()
     commission_pending_amount = serializers.SerializerMethodField()
@@ -1722,6 +1726,8 @@ class SalesmanCommissionPaymentSerializer(serializers.ModelSerializer):
         return quantize_money(value)
 
     def validate_payment_account_id(self, value):
+        if value in (None, ""):
+            return None
         request = self.context["request"]
         tenant_ids = get_user_active_dimension_codes(request.user)
         current = getattr(request, "tenant_id", "") or request.user.tenant_id
@@ -1815,14 +1821,14 @@ class SalesmanCommissionPaymentSerializer(serializers.ModelSerializer):
         tenant_id = self.context["request"].user.tenant_id
         salesman_id = validated_data.pop("salesman_id")
         sales_invoice_id = validated_data.pop("sales_invoice_id")
-        payment_account_id = validated_data.pop("payment_account_id")
+        payment_account_id = validated_data.pop("payment_account_id", None)
 
         return SalesmanCommissionPayment.objects.create(
             tenant_id=tenant_id,
             salesman_id=salesman_id,
             sales_invoice_id=sales_invoice_id,
             payable_account=self._resolve_payable_account(),
-            payment_account_id=payment_account_id,
+            payment_account_id=payment_account_id or None,
             voucher_number=self._generate_voucher_number(tenant_id),
             **validated_data,
         )
@@ -1834,10 +1840,10 @@ class SalesmanCommissionPaymentSerializer(serializers.ModelSerializer):
             "sales_invoice_id",
             instance.sales_invoice_id,
         )
-        instance.payment_account_id = validated_data.pop(
-            "payment_account_id",
-            instance.payment_account_id,
-        )
+        if "payment_account_id" in validated_data:
+            instance.payment_account_id = (
+                validated_data.pop("payment_account_id") or None
+            )
         instance.payable_account = self._resolve_payable_account()
         instance.date = validated_data.get("date", instance.date)
         instance.payment = validated_data.get("payment", instance.payment)

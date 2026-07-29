@@ -79,6 +79,21 @@ class SalesmanCommissionPaymentService {
 
     return response.data.data || [];
   }
+
+  async generateFromReport(payload) {
+    const response = await axiosInstance.post(
+      `${BASE_URL}generate-from-report/`,
+      payload,
+    );
+    const items = response.data.data || [];
+    return {
+      data: items.map(mapPayment),
+      skipped: response.data.skipped || [],
+      message:
+        response.data.message ||
+        "Salesman commission vouchers generated successfully",
+    };
+  }
 }
 
 export default new SalesmanCommissionPaymentService();

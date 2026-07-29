@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import FormInput from "../../components/ui/FormInput";
@@ -11,6 +12,7 @@ import { formatDecimal } from "../../utils/format";
 import { useToast } from "../../context/ToastContext";
 import { useAuth } from "../../context/AuthContext";
 import ReportPrintWrapper from "../../components/print/ReportPrintWrapper";
+import GenerateCommissionVoucherModal from "../../components/sales/GenerateCommissionVoucherModal";
 import {
   extractErrorMessage,
   resolveReportTenant,
@@ -75,6 +77,7 @@ const SummaryCards = ({ summary }) => {
 
 const SalesmanReportsPage = () => {
   const toast = useToast();
+  const navigate = useNavigate();
   const { tenantId } = useAuth();
   const [dimensions, setDimensions] = useState([]);
   const [salesmen, setSalesmen] = useState([]);
@@ -82,6 +85,7 @@ const SalesmanReportsPage = () => {
   const [loadingReport, setLoadingReport] = useState(false);
   const [error, setError] = useState("");
   const [report, setReport] = useState(null);
+  const [voucherSalesman, setVoucherSalesman] = useState(null);
   const [form, setForm] = useState({
     tenantScope: tenantId,
     salesmanId: "",
@@ -262,6 +266,22 @@ const SalesmanReportsPage = () => {
           <span className="font-bold text-indigo-600 dark:text-indigo-400">
             {formatDecimal(row.total_commission)}
           </span>
+        ),
+      },
+      {
+        key: "actions",
+        label: "Voucher",
+        sortable: false,
+        align: "right",
+        render: (row) => (
+          <Button
+            type="button"
+            variant="secondary"
+            className="cl-no-print whitespace-nowrap !px-3 !py-1.5 text-xs"
+            onClick={() => setVoucherSalesman(row)}
+          >
+            Generate Voucher
+          </Button>
         ),
       },
     );
@@ -603,6 +623,16 @@ const SalesmanReportsPage = () => {
           </ReportPrintWrapper>
         ) : null}
       </StateView>
+
+      <GenerateCommissionVoucherModal
+        open={Boolean(voucherSalesman)}
+        salesman={voucherSalesman}
+        report={report}
+        onClose={() => setVoucherSalesman(null)}
+        onGenerated={() => {
+          navigate("/salesman-commission-payments");
+        }}
+      />
     </div>
   );
 };

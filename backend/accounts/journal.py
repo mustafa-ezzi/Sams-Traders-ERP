@@ -710,20 +710,45 @@ def _build_sales_bank_receipt_lines(receipt):
 
 
 def _build_salesman_commission_payment_lines(payment):
+    # Accrual (no bank/cash): Dr Expense, Cr Payable → liability on balance sheet.
+    # Settlement (bank/cash selected): Dr Payable, Cr Bank/Cash.
+    if payment.payment_account_id:
+        return [
+            {
+                "account": payment.payable_account,
+                "debit": payment.payment,
+                "credit": Decimal("0.00"),
+                "line_description": "Salesman Commission Payable",
+                "people_type": "Salesman",
+                "people_name": payment.salesman.name,
+            },
+            {
+                "account": payment.payment_account,
+                "debit": Decimal("0.00"),
+                "credit": payment.payment,
+                "line_description": "Salesman Commission Payment",
+                "people_type": "Salesman",
+                "people_name": payment.salesman.name,
+            },
+        ]
+
+    from inventory.party_accounts import resolve_default_commission_expense_account
+
+    expense_account = resolve_default_commission_expense_account([payment.tenant_id])
     return [
         {
-            "account": payment.payable_account,
+            "account": expense_account,
             "debit": payment.payment,
             "credit": Decimal("0.00"),
-            "line_description": "Salesman Commission Payable",
+            "line_description": "Salesman Commission Expense",
             "people_type": "Salesman",
             "people_name": payment.salesman.name,
         },
         {
-            "account": payment.payment_account or payment.payable_account,
+            "account": payment.payable_account,
             "debit": Decimal("0.00"),
             "credit": payment.payment,
-            "line_description": "Salesman Commission Payment",
+            "line_description": "Salesman Commission Payable",
             "people_type": "Salesman",
             "people_name": payment.salesman.name,
         },

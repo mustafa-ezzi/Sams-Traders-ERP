@@ -9,6 +9,7 @@ from inventory.models import Customer, Supplier
 CUSTOMER_RECEIVABLE_CODE = "1140"
 SUPPLIER_PAYABLE_CODE = "2130"
 OPENING_EQUITY_CODE = "3100"
+COMMISSION_EXPENSE_CODE = "6200"
 
 
 def _tenant_id_from_request(request):
@@ -48,6 +49,40 @@ def resolve_default_payable_account(tenant_ids):
         preferred_code=SUPPLIER_PAYABLE_CODE,
         name_hint="payable",
         label="A/c Payables",
+    )
+
+
+def resolve_default_commission_expense_account(tenant_ids):
+    """Expense account used when accruing salesman commission payable."""
+    if isinstance(tenant_ids, str):
+        tenant_ids = [tenant_ids]
+    tenant_ids = list(tenant_ids or [])
+
+    for tenant_id in tenant_ids:
+        base_qs = Account.objects.filter(
+            tenant_id=tenant_id,
+            deleted_at__isnull=True,
+            is_active=True,
+            is_postable=True,
+            account_group=Account.AccountGroup.EXPENSE,
+        )
+        account = base_qs.filter(code=COMMISSION_EXPENSE_CODE).first()
+        if account:
+            return account
+        account = (
+            base_qs.filter(name__icontains="commission").order_by("code").first()
+            or base_qs.order_by("code").first()
+        )
+        if account:
+            return account
+
+    raise ValidationError(
+        {
+            "detail": (
+                "No postable expense account found to accrue salesman commission. "
+                f"Add account {COMMISSION_EXPENSE_CODE} (Var. Expenses) or another expense."
+            )
+        }
     )
 
 

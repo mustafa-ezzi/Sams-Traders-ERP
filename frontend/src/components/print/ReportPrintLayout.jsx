@@ -1,4 +1,5 @@
 import { formatMoney } from "../../utils/format";
+import { dimensionLogoSrc } from "../../utils/dimensionCompany";
 
 export const REPORT_PRINT_FONT =
   '"Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif';
@@ -155,7 +156,7 @@ export const getReportPrintBrand = () => {
       : null;
     return {
       name: match?.name?.trim() || "CoreLedger",
-      logoSrc: "/logo.png",
+      logoSrc: dimensionLogoSrc(match),
     };
   } catch {
     return { name: "CoreLedger", logoSrc: "/logo.png" };
@@ -176,7 +177,11 @@ const ReportPrintLayout = ({
 }) => {
   const defaults = getReportPrintBrand();
   const brand = brandName || company?.name || defaults.name;
-  const logo = logoSrc || defaults.logoSrc;
+  const logo =
+    logoSrc ||
+    company?.logo ||
+    company?.logoUrl ||
+    defaults.logoSrc;
   const userLabel = getReportPrintUserLabel();
   const printedOn = formatPrintDate();
   const companyAddress = company?.address || "";
