@@ -322,10 +322,13 @@ class SalesmanCommissionPayment(BaseModel):
         on_delete=models.PROTECT,
         related_name="commission_payments",
     )
+    # Optional: kept for legacy single-invoice vouchers; multi-invoice uses lines.
     sales_invoice = models.ForeignKey(
         SalesInvoice,
         on_delete=models.PROTECT,
         related_name="salesman_commission_payments",
+        null=True,
+        blank=True,
     )
     payable_account = models.ForeignKey(
         Account,
@@ -348,9 +351,41 @@ class SalesmanCommissionPayment(BaseModel):
                 fields=["tenant_id", "voucher_number"],
                 condition=models.Q(deleted_at__isnull=True),
                 name="unique_active_salesman_commission_voucher_per_tenant",
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["tenant_id", "salesman", "date"],
+                condition=models.Q(deleted_at__isnull=True),
+                name="unique_active_salesman_commission_voucher_per_day",
+            ),
         ]
         ordering = ["-date", "-created_at"]
 
     def __str__(self):
         return self.voucher_number
+
+
+class SalesmanCommissionPaymentLine(BaseModel):
+    payment = models.ForeignKey(
+        SalesmanCommissionPayment,
+        on_delete=models.CASCADE,
+        related_name="lines",
+    )
+    sales_invoice = models.ForeignKey(
+        SalesInvoice,
+        on_delete=models.PROTECT,
+        related_name="salesman_commission_payment_lines",
+    )
+    amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+
+    class Meta:
+        ordering = ["created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["payment", "sales_invoice"],
+                condition=models.Q(deleted_at__isnull=True),
+                name="unique_active_commission_line_per_invoice",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.payment_id}:{self.sales_invoice_id}"

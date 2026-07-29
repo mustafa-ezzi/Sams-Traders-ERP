@@ -14,7 +14,13 @@ const CommissionVoucherPrintLayout = ({
   const amount = num(voucher?.payment);
   const salesmanName = voucher?.salesman?.name || "—";
   const salesmanCode = voucher?.salesman?.code || "";
-  const invoiceNumber = voucher?.sales_invoice?.invoice_number || "—";
+  const lines = Array.isArray(voucher?.lines) ? voucher.lines : [];
+  const invoiceLabel =
+    lines.length > 1
+      ? `${lines.length} invoices`
+      : lines[0]?.sales_invoice?.invoice_number ||
+        voucher?.sales_invoice?.invoice_number ||
+        "—";
   const payableLabel = voucher?.payable_account
     ? `${voucher.payable_account.code} — ${voucher.payable_account.name}`
     : "A/c Payables";
@@ -65,7 +71,7 @@ const CommissionVoucherPrintLayout = ({
               Against Invoice
             </p>
             <p className="mt-1 text-[14px] font-bold text-slate-900">
-              {invoiceNumber}
+              {invoiceLabel}
             </p>
           </div>
         </div>
@@ -108,19 +114,47 @@ const CommissionVoucherPrintLayout = ({
           </tr>
         </thead>
         <tbody>
-          <tr>
-            <td className="border border-slate-200 px-3 py-2.5">
-              Salesman commission
-              {voucher?.remarks ? (
-                <span className="mt-1 block text-[11px] text-slate-500">
-                  {voucher.remarks}
-                </span>
-              ) : null}
-            </td>
-            <td className="border border-slate-200 px-3 py-2.5 text-right font-semibold">
-              {formatMoney(amount)}
-            </td>
-          </tr>
+          {lines.length ? (
+            lines.map((line) => (
+              <tr key={line.id || line.sales_invoice?.id}>
+                <td className="border border-slate-200 px-3 py-2.5">
+                  Commission — {line.sales_invoice?.invoice_number || "Invoice"}
+                  {line.sales_invoice?.date ? (
+                    <span className="mt-0.5 block text-[11px] text-slate-500">
+                      Invoice date {formatDisplayDate(line.sales_invoice.date)}
+                    </span>
+                  ) : null}
+                </td>
+                <td className="border border-slate-200 px-3 py-2.5 text-right font-semibold">
+                  {formatMoney(line.amount)}
+                </td>
+              </tr>
+            ))
+          ) : (
+            <tr>
+              <td className="border border-slate-200 px-3 py-2.5">
+                Salesman commission
+                {voucher?.remarks ? (
+                  <span className="mt-1 block text-[11px] text-slate-500">
+                    {voucher.remarks}
+                  </span>
+                ) : null}
+              </td>
+              <td className="border border-slate-200 px-3 py-2.5 text-right font-semibold">
+                {formatMoney(amount)}
+              </td>
+            </tr>
+          )}
+          {voucher?.remarks && lines.length ? (
+            <tr>
+              <td
+                colSpan={2}
+                className="border border-slate-200 px-3 py-2 text-[11px] text-slate-500"
+              >
+                {voucher.remarks}
+              </td>
+            </tr>
+          ) : null}
           <tr>
             <td className="border border-slate-200 px-3 py-2 text-slate-600">
               Payable account: {payableLabel}

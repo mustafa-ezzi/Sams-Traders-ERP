@@ -8,6 +8,8 @@ const mapPayment = (payment) => ({
   salesInvoiceId: payment.sales_invoice?.id || payment.sales_invoice_id || "",
   paymentAccountId: payment.payment_account?.id || payment.payment_account_id || "",
   payment: payment.payment ?? 0,
+  invoice_count: payment.invoice_count ?? payment.lines?.length ?? 0,
+  lines: payment.lines || [],
   commissionAmount: payment.commission_amount ?? payment.commissionAmount ?? 0,
   commissionPaidAmount:
     payment.commission_paid_amount ?? payment.commissionPaidAmount ?? 0,

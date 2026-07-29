@@ -173,8 +173,8 @@ const GenerateCommissionVoucherModal = ({
             </h3>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
               {salesman?.code ? `${salesman.code} — ` : ""}
-              {salesman?.name || "Salesman"} · pending commission becomes a
-              payable voucher (Bank → Commission Vouchers).
+              {salesman?.name || "Salesman"} · one voucher for all pending
+              invoices (only one voucher per salesman per date).
             </p>
           </div>
           <Button type="button" variant="secondary" onClick={onClose}>
@@ -271,7 +271,9 @@ const GenerateCommissionVoucherModal = ({
               type="submit"
               disabled={submitting || loadingOptions || !pendingInvoices.length}
             >
-              {submitting ? "Generating…" : "Generate Voucher"}
+              {submitting
+                ? "Generating…"
+                : `Generate One Voucher (${pendingInvoices.length})`}
             </Button>
           </div>
         </form>

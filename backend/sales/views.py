@@ -973,6 +973,7 @@ class SalesmanCommissionPaymentViewSet(AuditedModelMixin, viewsets.ModelViewSet)
                 deleted_at__isnull=True,
             )
             .select_related("salesman", "sales_invoice", "payable_account", "payment_account")
+            .prefetch_related("lines__sales_invoice")
             .order_by("-date", "-created_at")
         )
         return filter_queryset_by_allowed_salesmen(queryset, self.request.user)
@@ -1110,9 +1111,8 @@ class SalesmanCommissionPaymentViewSet(AuditedModelMixin, viewsets.ModelViewSet)
     @action(detail=False, methods=["post"], url_path="generate-from-report")
     def generate_from_report(self, request):
         """
-        Create salesman commission vouchers for pending commission on a salesman.
-        Without payment_account_id, journals accrue expense → payable (BS liability).
-        With payment_account_id, journals clear payable from bank/cash.
+        Create one salesman commission voucher covering all pending invoices.
+        Only one active voucher per salesman per date is allowed.
         """
         salesman_id = request.data.get("salesman_id")
         voucher_date = request.data.get("date")
@@ -1126,6 +1126,23 @@ class SalesmanCommissionPaymentViewSet(AuditedModelMixin, viewsets.ModelViewSet)
             raise ValidationError({"date": "Voucher date is required."})
         if not user_can_access_salesman(request.user, salesman_id):
             raise ValidationError({"salesman_id": "You do not have access to this salesman."})
+
+        tenant_id = getattr(request, "tenant_id", None) or request.user.tenant_id
+        existing = SalesmanCommissionPayment.objects.filter(
+            tenant_id=tenant_id,
+            salesman_id=salesman_id,
+            date=voucher_date,
+            deleted_at__isnull=True,
+        ).first()
+        if existing:
+            raise ValidationError(
+                {
+                    "date": (
+                        f"Voucher {existing.voucher_number} already exists for this salesman "
+                        f"on {voucher_date}. Only one voucher per salesman per day is allowed."
+                    )
+                }
+            )
 
         shared_filter = get_shared_tenant_filter(request)
         invoices = (
@@ -1149,68 +1166,73 @@ class SalesmanCommissionPaymentViewSet(AuditedModelMixin, viewsets.ModelViewSet)
         if invoice_ids:
             invoices = invoices.filter(id__in=invoice_ids)
 
-        created = []
+        lines = []
         skipped = []
-        with transaction.atomic():
-            for invoice in invoices:
-                financials = get_salesman_commission_financials(
-                    invoice,
-                    salesman_id=salesman_id,
+        for invoice in invoices:
+            financials = get_salesman_commission_financials(
+                invoice,
+                salesman_id=salesman_id,
+            )
+            pending = financials["pending_amount"]
+            if pending <= Decimal("0.00"):
+                skipped.append(
+                    {
+                        "invoice_id": str(invoice.id),
+                        "invoice_number": invoice.invoice_number,
+                        "reason": "No pending commission",
+                    }
                 )
-                pending = financials["pending_amount"]
-                if pending <= Decimal("0.00"):
-                    skipped.append(
-                        {
-                            "invoice_id": str(invoice.id),
-                            "invoice_number": invoice.invoice_number,
-                            "reason": "No pending commission",
-                        }
-                    )
-                    continue
-
-                payload = {
-                    "date": voucher_date,
-                    "salesman_id": salesman_id,
+                continue
+            lines.append(
+                {
                     "sales_invoice_id": str(invoice.id),
-                    "payment": str(pending),
-                    "remarks": remarks
-                    or (
-                        f"Generated from salesman performance report "
-                        f"({invoice.invoice_number})"
-                    ),
+                    "amount": str(pending),
                 }
-                if payment_account_id:
-                    payload["payment_account_id"] = payment_account_id
+            )
 
-                serializer = self.get_serializer(data=payload)
-                serializer.is_valid(raise_exception=True)
-                payment = serializer.save()
-                sync_salesman_commission_payment_journal(
-                    self._get_serializable_payment(payment.id)
+        if not lines:
+            if skipped:
+                raise ValidationError(
+                    {
+                        "detail": "No pending commission left to voucher for this salesman.",
+                        "skipped": skipped,
+                    }
                 )
-                created.append(
-                    self.get_serializer(self._get_serializable_payment(payment.id)).data
-                )
-
-        if not created and not skipped:
             raise ValidationError(
                 {"detail": "No invoices with commission found for this salesman."}
             )
-        if not created:
-            raise ValidationError(
-                {
-                    "detail": "No pending commission left to voucher for this salesman.",
-                    "skipped": skipped,
-                }
+
+        payload = {
+            "date": voucher_date,
+            "salesman_id": salesman_id,
+            "remarks": remarks
+            or f"Generated from salesman performance report ({len(lines)} invoices)",
+            "payment": str(
+                sum((Decimal(line["amount"]) for line in lines), Decimal("0.00"))
+            ),
+            "lines": lines,
+        }
+        if payment_account_id:
+            payload["payment_account_id"] = payment_account_id
+
+        with transaction.atomic():
+            serializer = self.get_serializer(data=payload)
+            serializer.is_valid(raise_exception=True)
+            payment = serializer.save()
+            sync_salesman_commission_payment_journal(
+                self._get_serializable_payment(payment.id)
             )
+            created = self.get_serializer(
+                self._get_serializable_payment(payment.id)
+            ).data
 
         return Response(
             {
-                "data": created,
+                "data": [created],
                 "skipped": skipped,
                 "message": (
-                    f"Created {len(created)} salesman commission voucher"
-                    f"{'s' if len(created) != 1 else ''}."
+                    f"Created commission voucher {created.get('voucher_number')} "
+                    f"for {len(lines)} invoice{'s' if len(lines) != 1 else ''}."
                 ),
             },
             status=status.HTTP_201_CREATED,

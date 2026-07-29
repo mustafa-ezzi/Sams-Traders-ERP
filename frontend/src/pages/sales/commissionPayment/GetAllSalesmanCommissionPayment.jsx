@@ -224,7 +224,11 @@ const GetAllSalesmanCommissionPayment = () => {
                         {record.salesman?.name}
                       </td>
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
-                        {record.sales_invoice?.invoice_number}
+                        {record.invoice_count > 1
+                          ? `${record.invoice_count} invoices`
+                          : record.sales_invoice?.invoice_number ||
+                            record.lines?.[0]?.sales_invoice?.invoice_number ||
+                            "—"}
                       </td>
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
                         {record.payment_account

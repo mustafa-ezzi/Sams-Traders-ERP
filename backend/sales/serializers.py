@@ -22,6 +22,7 @@ from sales.models import (
     SalesReturn,
     SalesReturnLine,
     SalesmanCommissionPayment,
+    SalesmanCommissionPaymentLine,
 )
 from sales.services import (
     get_customer_opening_balance_financials,
@@ -1635,11 +1636,22 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
         return instance
 
 
+class SalesmanCommissionPaymentLineSerializer(serializers.Serializer):
+    id = serializers.UUIDField(read_only=True)
+    sales_invoice = SalesInvoiceMiniSerializer(read_only=True)
+    sales_invoice_id = serializers.UUIDField(write_only=True, required=False)
+    amount = serializers.DecimalField(max_digits=12, decimal_places=2)
+
+
 class SalesmanCommissionPaymentSerializer(serializers.ModelSerializer):
     salesman = SalesmanMiniSerializer(read_only=True)
     salesman_id = serializers.UUIDField(write_only=True)
     sales_invoice = SalesInvoiceMiniSerializer(read_only=True)
-    sales_invoice_id = serializers.UUIDField(write_only=True)
+    sales_invoice_id = serializers.UUIDField(
+        write_only=True,
+        required=False,
+        allow_null=True,
+    )
     payable_account = AccountMiniSerializer(read_only=True)
     payment_account = AccountMiniSerializer(read_only=True)
     payment_account_id = serializers.UUIDField(
@@ -1647,6 +1659,8 @@ class SalesmanCommissionPaymentSerializer(serializers.ModelSerializer):
         required=False,
         allow_null=True,
     )
+    lines = SalesmanCommissionPaymentLineSerializer(many=True, required=False)
+    invoice_count = serializers.SerializerMethodField()
     commission_amount = serializers.SerializerMethodField()
     commission_paid_amount = serializers.SerializerMethodField()
     commission_pending_amount = serializers.SerializerMethodField()
@@ -1666,6 +1680,8 @@ class SalesmanCommissionPaymentSerializer(serializers.ModelSerializer):
             "payment_account_id",
             "payment",
             "remarks",
+            "lines",
+            "invoice_count",
             "commission_amount",
             "commission_paid_amount",
             "commission_pending_amount",
@@ -1677,6 +1693,7 @@ class SalesmanCommissionPaymentSerializer(serializers.ModelSerializer):
             "voucher_number",
             "payable_account",
             "payment_account",
+            "invoice_count",
             "commission_amount",
             "commission_paid_amount",
             "commission_pending_amount",
@@ -1684,14 +1701,52 @@ class SalesmanCommissionPaymentSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
 
-    def _get_financials(self, obj):
-        excluded_ids = []
-        if obj and obj.pk:
-            excluded_ids = [obj.id]
-        return get_salesman_commission_financials(
-            obj.sales_invoice,
-            excluded_payment_ids=excluded_ids,
+    def get_invoice_count(self, obj):
+        lines = getattr(obj, "_prefetched_objects_cache", {}).get("lines")
+        if lines is not None:
+            return len([line for line in lines if line.deleted_at is None])
+        return obj.lines.filter(deleted_at__isnull=True).count() or (
+            1 if obj.sales_invoice_id else 0
         )
+
+    def _active_lines(self, obj):
+        lines = getattr(obj, "_prefetched_objects_cache", {}).get("lines")
+        if lines is not None:
+            return [line for line in lines if line.deleted_at is None]
+        return list(obj.lines.filter(deleted_at__isnull=True).select_related("sales_invoice"))
+
+    def _get_financials(self, obj):
+        excluded_ids = [obj.id] if obj and obj.pk else []
+        active_lines = self._active_lines(obj)
+        if active_lines:
+            commission = Decimal("0.00")
+            paid = Decimal("0.00")
+            pending = Decimal("0.00")
+            for line in active_lines:
+                financials = get_salesman_commission_financials(
+                    line.sales_invoice,
+                    salesman_id=obj.salesman_id,
+                    excluded_payment_ids=excluded_ids,
+                )
+                commission = quantize_money(commission + financials["commission_amount"])
+                paid = quantize_money(paid + financials["paid_amount"])
+                pending = quantize_money(pending + financials["pending_amount"])
+            return {
+                "commission_amount": commission,
+                "paid_amount": paid,
+                "pending_amount": pending,
+            }
+        if obj.sales_invoice_id:
+            return get_salesman_commission_financials(
+                obj.sales_invoice,
+                salesman_id=obj.salesman_id,
+                excluded_payment_ids=excluded_ids,
+            )
+        return {
+            "commission_amount": Decimal("0.00"),
+            "paid_amount": Decimal("0.00"),
+            "pending_amount": Decimal("0.00"),
+        }
 
     def get_commission_amount(self, obj):
         return str(self._get_financials(obj)["commission_amount"])
@@ -1708,6 +1763,19 @@ class SalesmanCommissionPaymentSerializer(serializers.ModelSerializer):
         )
         return str(pending_after_payment)
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        active_lines = (
+            instance.lines.filter(deleted_at__isnull=True)
+            .select_related("sales_invoice")
+            .order_by("created_at")
+        )
+        data["lines"] = SalesmanCommissionPaymentLineSerializer(
+            active_lines,
+            many=True,
+        ).data
+        return data
+
     def validate_salesman_id(self, value):
         if not shared_master_exists(Salesman, self.context["request"], value):
             raise serializers.ValidationError("Salesman not found")
@@ -1716,6 +1784,8 @@ class SalesmanCommissionPaymentSerializer(serializers.ModelSerializer):
         return value
 
     def validate_sales_invoice_id(self, value):
+        if value in (None, ""):
+            return None
         if not shared_master_exists(SalesInvoice, self.context["request"], value):
             raise serializers.ValidationError("Sales invoice not found")
         return value
@@ -1753,14 +1823,94 @@ class SalesmanCommissionPaymentSerializer(serializers.ModelSerializer):
 
         return value
 
+    def _assert_unique_salesman_date(self, salesman_id, voucher_date, exclude_id=None):
+        request = self.context["request"]
+        tenant_id = getattr(request, "tenant_id", None) or request.user.tenant_id
+        queryset = SalesmanCommissionPayment.objects.filter(
+            tenant_id=tenant_id,
+            salesman_id=salesman_id,
+            date=voucher_date,
+            deleted_at__isnull=True,
+        )
+        if exclude_id:
+            queryset = queryset.exclude(id=exclude_id)
+        if queryset.exists():
+            raise serializers.ValidationError(
+                {
+                    "date": (
+                        "A commission voucher already exists for this salesman on this date. "
+                        "Only one voucher per salesman per day is allowed."
+                    )
+                }
+            )
+
     def validate(self, attrs):
         request = self.context["request"]
         salesman_id = attrs.get("salesman_id") or getattr(self.instance, "salesman_id", None)
-        sales_invoice_id = attrs.get("sales_invoice_id") or getattr(
-            self.instance,
-            "sales_invoice_id",
-            None,
+        sales_invoice_id = attrs.get("sales_invoice_id", None)
+        if sales_invoice_id is None and self.instance:
+            sales_invoice_id = self.instance.sales_invoice_id
+        lines_data = attrs.get("lines")
+        voucher_date = attrs.get("date") or getattr(self.instance, "date", None)
+
+        self._assert_unique_salesman_date(
+            salesman_id,
+            voucher_date,
+            exclude_id=self.instance.id if self.instance else None,
         )
+
+        # Multi-line payload (generate / bulk).
+        if lines_data is not None:
+            if not lines_data:
+                raise serializers.ValidationError({"lines": "At least one invoice line is required."})
+            resolved_lines = []
+            total_payment = Decimal("0.00")
+            for line in lines_data:
+                invoice_id = line.get("sales_invoice_id")
+                amount = quantize_money(line.get("amount") or Decimal("0.00"))
+                if amount <= 0:
+                    raise serializers.ValidationError(
+                        {"lines": "Each line amount must be greater than 0."}
+                    )
+                sales_invoice = SalesInvoice.objects.select_related("salesman").filter(
+                    id=invoice_id,
+                    tenant_id__in=get_shared_tenant_ids(request),
+                    deleted_at__isnull=True,
+                ).first()
+                if not sales_invoice:
+                    raise serializers.ValidationError({"lines": "Sales invoice not found."})
+                if sales_invoice.salesman_id and sales_invoice.salesman_id != salesman_id:
+                    # Recovery-only invoices may have a different invoice salesman;
+                    # still allow when commission pending exists for this salesman.
+                    pass
+                excluded_ids = [self.instance.id] if self.instance else []
+                financials = get_salesman_commission_financials(
+                    sales_invoice,
+                    salesman_id=salesman_id,
+                    excluded_payment_ids=excluded_ids,
+                )
+                if amount > financials["pending_amount"]:
+                    raise serializers.ValidationError(
+                        {
+                            "lines": (
+                                f"Amount for {sales_invoice.invoice_number} exceeds pending "
+                                f"commission ({financials['pending_amount']})."
+                            )
+                        }
+                    )
+                resolved_lines.append(
+                    {"sales_invoice": sales_invoice, "amount": amount}
+                )
+                total_payment = quantize_money(total_payment + amount)
+
+            attrs["payment"] = total_payment
+            attrs["sales_invoice_id"] = resolved_lines[0]["sales_invoice"].id
+            self.context["resolved_lines"] = resolved_lines
+            return attrs
+
+        # Single-invoice create/update (manual form).
+        if not sales_invoice_id:
+            raise serializers.ValidationError({"sales_invoice_id": "Sales invoice is required."})
 
         sales_invoice = SalesInvoice.objects.select_related("salesman").filter(
             id=sales_invoice_id,
@@ -1769,25 +1919,16 @@ class SalesmanCommissionPaymentSerializer(serializers.ModelSerializer):
         ).first()
         if not sales_invoice:
             raise serializers.ValidationError({"sales_invoice_id": "Sales invoice not found."})
-        if not user_can_access_salesman(request.user, sales_invoice.salesman_id):
+        if not user_can_access_salesman(request.user, salesman_id):
             raise serializers.ValidationError(
                 {"sales_invoice_id": "You do not have access to this salesman's invoice."}
-            )
-
-        if not sales_invoice.salesman_id:
-            raise serializers.ValidationError(
-                {"sales_invoice_id": "Selected invoice has no salesman commission."}
-            )
-
-        if sales_invoice.salesman_id != salesman_id:
-            raise serializers.ValidationError(
-                {"sales_invoice_id": "Selected invoice does not belong to the chosen salesman."}
             )
 
         payment = attrs.get("payment", getattr(self.instance, "payment", Decimal("0.00")))
         excluded_ids = [self.instance.id] if self.instance else []
         financials = get_salesman_commission_financials(
             sales_invoice,
+            salesman_id=salesman_id,
             excluded_payment_ids=excluded_ids,
         )
         if payment > financials["pending_amount"]:
@@ -1801,6 +1942,9 @@ class SalesmanCommissionPaymentSerializer(serializers.ModelSerializer):
             )
 
         self.context["sales_invoice"] = sales_invoice
+        self.context["resolved_lines"] = [
+            {"sales_invoice": sales_invoice, "amount": quantize_money(payment)}
+        ]
         self.context["commission_financials"] = financials
         return attrs
 
@@ -1816,37 +1960,58 @@ class SalesmanCommissionPaymentSerializer(serializers.ModelSerializer):
             tenant_ids.append(current)
         return resolve_default_payable_account(tenant_ids)
 
+    def _replace_lines(self, payment, resolved_lines):
+        payment.lines.filter(deleted_at__isnull=True).update(deleted_at=now())
+        for line in resolved_lines:
+            SalesmanCommissionPaymentLine.objects.create(
+                tenant_id=payment.tenant_id,
+                payment=payment,
+                sales_invoice=line["sales_invoice"],
+                amount=line["amount"],
+            )
+
     @transaction.atomic
     def create(self, validated_data):
         tenant_id = self.context["request"].user.tenant_id
         salesman_id = validated_data.pop("salesman_id")
-        sales_invoice_id = validated_data.pop("sales_invoice_id")
+        sales_invoice_id = validated_data.pop("sales_invoice_id", None)
         payment_account_id = validated_data.pop("payment_account_id", None)
+        validated_data.pop("lines", None)
+        resolved_lines = self.context.get("resolved_lines") or []
 
-        return SalesmanCommissionPayment.objects.create(
+        payment = SalesmanCommissionPayment.objects.create(
             tenant_id=tenant_id,
             salesman_id=salesman_id,
-            sales_invoice_id=sales_invoice_id,
+            sales_invoice_id=sales_invoice_id or (
+                resolved_lines[0]["sales_invoice"].id if resolved_lines else None
+            ),
             payable_account=self._resolve_payable_account(),
             payment_account_id=payment_account_id or None,
             voucher_number=self._generate_voucher_number(tenant_id),
             **validated_data,
         )
+        self._replace_lines(payment, resolved_lines)
+        return payment
 
     @transaction.atomic
     def update(self, instance, validated_data):
         instance.salesman_id = validated_data.pop("salesman_id", instance.salesman_id)
-        instance.sales_invoice_id = validated_data.pop(
-            "sales_invoice_id",
-            instance.sales_invoice_id,
-        )
+        if "sales_invoice_id" in validated_data:
+            instance.sales_invoice_id = validated_data.pop("sales_invoice_id")
         if "payment_account_id" in validated_data:
             instance.payment_account_id = (
                 validated_data.pop("payment_account_id") or None
             )
+        validated_data.pop("lines", None)
         instance.payable_account = self._resolve_payable_account()
         instance.date = validated_data.get("date", instance.date)
         instance.payment = validated_data.get("payment", instance.payment)
         instance.remarks = validated_data.get("remarks", instance.remarks)
         instance.save()
+        resolved_lines = self.context.get("resolved_lines")
+        if resolved_lines is not None:
+            self._replace_lines(instance, resolved_lines)
+            if not instance.sales_invoice_id and resolved_lines:
+                instance.sales_invoice_id = resolved_lines[0]["sales_invoice"].id
+                instance.save(update_fields=["sales_invoice_id", "updated_at"])
         return instance

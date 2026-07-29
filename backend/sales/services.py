@@ -6,6 +6,7 @@ from sales.models import (
     SalesBankReceiptLine,
     SalesInvoiceLine,
     SalesmanCommissionPayment,
+    SalesmanCommissionPaymentLine,
     SalesReturn,
     SalesReturnLine,
 )
@@ -200,24 +201,41 @@ def get_salesman_commission_financials(
         or Decimal("0.00")
     )
 
-    payment_queryset = SalesmanCommissionPayment.objects.filter(
+    line_queryset = SalesmanCommissionPaymentLine.objects.filter(
+        sales_invoice=sales_invoice,
+        deleted_at__isnull=True,
+        payment__deleted_at__isnull=True,
+        payment__tenant_id=sales_invoice.tenant_id,
+    )
+    if salesman_id is not None:
+        line_queryset = line_queryset.filter(payment__salesman_id=salesman_id)
+    if excluded_payment_ids:
+        line_queryset = line_queryset.exclude(payment_id__in=excluded_payment_ids)
+
+    line_paid = line_queryset.aggregate(total=Sum("amount"))["total"] or Decimal("0.00")
+
+    # Legacy header-only vouchers that never received lines.
+    payments_with_lines = SalesmanCommissionPaymentLine.objects.filter(
+        deleted_at__isnull=True,
+    ).values_list("payment_id", flat=True)
+    header_queryset = SalesmanCommissionPayment.objects.filter(
         tenant_id=sales_invoice.tenant_id,
         sales_invoice=sales_invoice,
         deleted_at__isnull=True,
-    )
+    ).exclude(id__in=payments_with_lines)
     if salesman_id is not None:
-        payment_queryset = payment_queryset.filter(salesman_id=salesman_id)
+        header_queryset = header_queryset.filter(salesman_id=salesman_id)
+    if excluded_payment_ids:
+        header_queryset = header_queryset.exclude(id__in=excluded_payment_ids)
 
-    paid_amount = (
-        payment_queryset.exclude(id__in=excluded_payment_ids).aggregate(total=Sum("payment"))[
-            "total"
-        ]
-        or Decimal("0.00")
+    header_paid = (
+        header_queryset.aggregate(total=Sum("payment"))["total"] or Decimal("0.00")
     )
+
+    paid_amount = quantize_money(line_paid + header_paid)
     sales_commission_amount = quantize_money(sales_commission_amount)
     recovery_commission_amount = quantize_money(recovery_commission_amount)
     commission_amount = quantize_money(sales_commission_amount + recovery_commission_amount)
-    paid_amount = quantize_money(paid_amount)
     pending_amount = max(
         quantize_money(commission_amount - paid_amount),
         Decimal("0.00"),
