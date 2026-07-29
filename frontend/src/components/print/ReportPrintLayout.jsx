@@ -208,39 +208,40 @@ const ReportPrintLayout = ({
     >
       <style>{REPORT_PRINT_BODY_STYLE}</style>
 
-      <header className="flex items-start justify-between gap-6 border-b border-slate-200 pb-4">
-        <div className="min-w-0">
-          <h1 className="text-[26px] font-extrabold uppercase tracking-[0.04em] text-slate-800">
-            {title}
-          </h1>
-        </div>
-        <div className="flex shrink-0 items-start gap-2.5 text-right">
-          <div className="min-w-0">
-            <div className="flex items-center justify-end gap-2">
-              <img
-                src={logo}
-                alt=""
-                className="h-9 w-9 object-contain"
-                onError={(event) => {
-                  event.currentTarget.style.display = "none";
-                }}
-              />
-              <span className="text-[18px] font-semibold tracking-tight text-slate-700">
-                {brand}
-              </span>
-            </div>
-            {(companyAddress || companyPhone || companyEmail || companyNtn) && (
-              <div className="mt-1.5 space-y-0.5 text-[10px] leading-relaxed text-slate-500">
-                {companyAddress ? (
-                  <p className="whitespace-pre-wrap">{companyAddress}</p>
-                ) : null}
-                {companyPhone ? <p>{companyPhone}</p> : null}
-                {companyEmail ? <p>{companyEmail}</p> : null}
-                {companyNtn ? <p>NTN: {companyNtn}</p> : null}
-              </div>
-            )}
+      <header className="border-b border-slate-200 pb-4">
+        <div className="relative flex h-[110px] w-full items-center justify-center overflow-hidden bg-white print:h-[32mm]">
+          <img
+            src={logo}
+            alt={brand}
+            className="h-full w-full object-contain object-center p-1"
+            onError={(event) => {
+              event.currentTarget.style.display = "none";
+              const fallback = event.currentTarget.nextElementSibling;
+              if (fallback) fallback.style.display = "flex";
+            }}
+          />
+          <div
+            className="absolute inset-0 hidden items-center justify-center gap-3"
+            aria-hidden
+          >
+            <span className="text-2xl font-extrabold uppercase tracking-wide text-slate-800">
+              {brand}
+            </span>
           </div>
         </div>
+        <h1 className="mt-3 text-center text-[22px] font-extrabold uppercase tracking-[0.06em] text-slate-800">
+          {title}
+        </h1>
+        {(companyAddress || companyPhone || companyEmail || companyNtn) && (
+          <div className="mt-1.5 flex flex-wrap items-center justify-center gap-x-3 gap-y-0.5 text-center text-[10px] leading-relaxed text-slate-500">
+            {companyAddress ? (
+              <span className="whitespace-pre-wrap">{companyAddress}</span>
+            ) : null}
+            {companyPhone ? <span>{companyPhone}</span> : null}
+            {companyEmail ? <span>{companyEmail}</span> : null}
+            {companyNtn ? <span>NTN: {companyNtn}</span> : null}
+          </div>
+        )}
       </header>
 
       <div className="mt-4 grid grid-cols-2 gap-x-10 gap-y-1.5 text-[11px] text-slate-600">

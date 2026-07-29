@@ -1068,9 +1068,10 @@ class SalesmanCommissionPaymentViewSet(AuditedModelMixin, viewsets.ModelViewSet)
             .filter(
                 Q(salesman_id=salesman_id, salesman_commission_amount__gt=Decimal("0.00"))
                 | Q(
-                    bank_receipts__salesman_id=salesman_id,
-                    bank_receipts__recovery_commission_amount__gt=Decimal("0.00"),
-                    bank_receipts__deleted_at__isnull=True,
+                    bank_receipt_lines__salesman_id=salesman_id,
+                    bank_receipt_lines__recovery_commission_amount__gt=Decimal("0.00"),
+                    bank_receipt_lines__deleted_at__isnull=True,
+                    bank_receipt_lines__receipt__deleted_at__isnull=True,
                 )
             )
             .distinct()
@@ -1135,9 +1136,10 @@ class SalesmanCommissionPaymentViewSet(AuditedModelMixin, viewsets.ModelViewSet)
             .filter(
                 Q(salesman_id=salesman_id, salesman_commission_amount__gt=Decimal("0.00"))
                 | Q(
-                    bank_receipts__salesman_id=salesman_id,
-                    bank_receipts__recovery_commission_amount__gt=Decimal("0.00"),
-                    bank_receipts__deleted_at__isnull=True,
+                    bank_receipt_lines__salesman_id=salesman_id,
+                    bank_receipt_lines__recovery_commission_amount__gt=Decimal("0.00"),
+                    bank_receipt_lines__deleted_at__isnull=True,
+                    bank_receipt_lines__receipt__deleted_at__isnull=True,
                 )
             )
             .distinct()

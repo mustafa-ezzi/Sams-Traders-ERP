@@ -60,6 +60,65 @@ export const CompanyLogoMark = ({ companyName = "", logoSrc = "/logo.png" }) => 
   );
 };
 
+/** Full-width letterhead banner — logo spans the print header. */
+export const CompanyLetterheadBanner = ({
+  companyName = "",
+  logoSrc = "/logo.png",
+  address = "",
+  phone = "",
+  email = "",
+  ntn = "",
+}) => {
+  const initials = String(companyName || "IN")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word[0]?.toUpperCase() || "")
+    .join("") || "IN";
+
+  const hasContact = Boolean(address || phone || email || ntn);
+
+  return (
+    <header className="w-full">
+      <div className="relative flex h-[140px] w-full items-center justify-center overflow-hidden border-b-2 border-[color:var(--inv-accent)] bg-white print:h-[38mm]">
+        <img
+          src={logoSrc}
+          alt={companyName || "Company logo"}
+          className="h-full w-full object-contain object-center p-2"
+          onError={(event) => {
+            event.currentTarget.style.display = "none";
+            const fallback = event.currentTarget.nextElementSibling;
+            if (fallback) fallback.style.display = "flex";
+          }}
+        />
+        <div
+          className="absolute inset-0 hidden items-center justify-center bg-[color:var(--inv-accent-soft)] px-4"
+          aria-hidden
+        >
+          <span className="text-4xl font-black tracking-tight text-[color:var(--inv-accent)]">
+            {initials}
+          </span>
+          {companyName ? (
+            <span className="ml-3 text-2xl font-bold text-slate-800">
+              {companyName}
+            </span>
+          ) : null}
+        </div>
+      </div>
+      {hasContact ? (
+        <div className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-0.5 px-8 text-center text-[11px] leading-relaxed text-slate-600 print:px-0">
+          {address ? (
+            <span className="whitespace-pre-wrap">{address}</span>
+          ) : null}
+          {phone ? <span>{phone}</span> : null}
+          {email ? <span>{email}</span> : null}
+          {ntn ? <span>NTN: {ntn}</span> : null}
+        </div>
+      ) : null}
+    </header>
+  );
+};
+
 /**
  * Zoho-style invoice sheet used by sales and purchase prints.
  */
@@ -110,22 +169,20 @@ const InvoicePrintLayout = ({
           '"Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif',
       }}
     >
-      {/* Header: logo + company */}
-      <header className="flex items-start justify-between gap-6">
-        <CompanyLogoMark companyName={companyName} logoSrc={logoSrc} />
-        <div className="max-w-sm text-right text-[12px] leading-relaxed text-slate-600">
-          <p className="text-[15px] font-bold text-slate-900">{companyName}</p>
-          {companyAddress ? (
-            <p className="mt-1 whitespace-pre-wrap">{companyAddress}</p>
-          ) : null}
-          {companyPhone ? <p>{companyPhone}</p> : null}
-          {companyEmail ? <p>{companyEmail}</p> : null}
-          {companyNtn ? <p>NTN: {companyNtn}</p> : null}
-        </div>
-      </header>
+      {/* Full-width logo letterhead */}
+      <div className="-mx-8 print:mx-0">
+        <CompanyLetterheadBanner
+          companyName={companyName}
+          logoSrc={logoSrc}
+          address={companyAddress}
+          phone={companyPhone}
+          email={companyEmail}
+          ntn={companyNtn}
+        />
+      </div>
 
       {/* Centered title with rules */}
-      <div className="my-7 flex items-center gap-4">
+      <div className="my-6 flex items-center gap-4">
         <div className="h-px flex-1 bg-slate-200" />
         <h1 className="shrink-0 text-[28px] font-extrabold tracking-[0.12em] text-slate-800">
           {documentTitle}

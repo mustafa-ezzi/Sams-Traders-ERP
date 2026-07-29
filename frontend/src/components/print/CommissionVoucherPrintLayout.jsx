@@ -1,5 +1,5 @@
 import { amountInWords, formatMoney } from "../../utils/format";
-import { CompanyLogoMark, num } from "./InvoicePrintLayout";
+import { CompanyLetterheadBanner, num } from "./InvoicePrintLayout";
 
 /**
  * Printable salesman commission voucher (letterhead + voucher body).
@@ -32,20 +32,18 @@ const CommissionVoucherPrintLayout = ({
           '"Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif',
       }}
     >
-      <header className="flex items-start justify-between gap-6">
-        <CompanyLogoMark companyName={companyName} logoSrc={logoSrc} />
-        <div className="max-w-sm text-right text-[12px] leading-relaxed text-slate-600">
-          <p className="text-[15px] font-bold text-slate-900">{companyName}</p>
-          {company?.address ? (
-            <p className="mt-1 whitespace-pre-wrap">{company.address}</p>
-          ) : null}
-          {company?.phone ? <p>{company.phone}</p> : null}
-          {company?.email ? <p>{company.email}</p> : null}
-          {company?.ntn ? <p>NTN: {company.ntn}</p> : null}
-        </div>
-      </header>
+      <div className="-mx-8 print:mx-0">
+        <CompanyLetterheadBanner
+          companyName={companyName}
+          logoSrc={logoSrc}
+          address={company?.address || ""}
+          phone={company?.phone || ""}
+          email={company?.email || ""}
+          ntn={company?.ntn || ""}
+        />
+      </div>
 
-      <div className="my-7 flex items-center gap-4">
+      <div className="my-6 flex items-center gap-4">
         <div className="h-px flex-1 bg-slate-200" />
         <h1 className="shrink-0 text-[24px] font-extrabold tracking-[0.12em] text-slate-800">
           COMMISSION VOUCHER
