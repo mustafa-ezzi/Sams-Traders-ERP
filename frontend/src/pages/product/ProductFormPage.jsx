@@ -20,6 +20,8 @@ import {
   formatAccountLabel,
   getPostableInventoryAccounts,
   getSelectablePostingAccounts,
+  mergeAccountsById,
+  uniqueAccountsByCode,
 } from "../../utils/accounts";
 
 const schema = z.object({
@@ -138,7 +140,7 @@ const ProductFormPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const toast = useToast();
-  const { tenantId, createTenantIds } = useAuth();
+  const { tenantId, createTenantIds, allowedDimensions } = useAuth();
   const routeTenantId = location.state?.tenantId || "";
   const [createDimensionIds, setCreateDimensionIds] = useState(() =>
     createTenantIds?.length ? [...createTenantIds] : tenantId ? [tenantId] : [],
@@ -179,24 +181,41 @@ const ProductFormPage = () => {
   }, []);
 
   const loadAccountOptions = useCallback(async (selectedTenantId) => {
-    if (!selectedTenantId) {
+    const dimensionCodes = [
+      ...new Set(
+        (allowedDimensions || [])
+          .map((dimension) => dimension?.code)
+          .filter(Boolean),
+      ),
+    ];
+    if (!dimensionCodes.length && selectedTenantId) {
+      dimensionCodes.push(selectedTenantId);
+    }
+    if (!dimensionCodes.length) {
       setInventoryAccounts([]);
       setCogsAccounts([]);
       setRevenueAccounts([]);
       return;
     }
 
-    const accountRes = await accountService.list(undefined, selectedTenantId);
-    const flatAccounts = flattenAccountTree(accountRes || []);
+    const accountTrees = await Promise.all(
+      dimensionCodes.map((code) => accountService.list(undefined, code)),
+    );
+    const flatAccounts = mergeAccountsById(
+      accountTrees.map((tree) => flattenAccountTree(tree || [])),
+    );
 
     setInventoryAccounts(getPostableInventoryAccounts(flatAccounts));
     setCogsAccounts(
-      getSelectablePostingAccounts(flatAccounts, "COGS"),
+      uniqueAccountsByCode(
+        getSelectablePostingAccounts(flatAccounts, "COGS"),
+        selectedTenantId || "",
+      ),
     );
     setRevenueAccounts(
       getSelectablePostingAccounts(flatAccounts, "REVENUE"),
     );
-  }, []);
+  }, [allowedDimensions]);
 
   const loadComponentOptions = useCallback(
     async (selectedTenantId) => {
@@ -233,7 +252,7 @@ const ProductFormPage = () => {
     } catch (refreshError) {
       toast.error(
         refreshError?.response?.data?.message ||
-          "Failed to load account options for selected dimension",
+          "Failed to load account options",
       );
     } finally {
       setLoadingAccountOptions(false);

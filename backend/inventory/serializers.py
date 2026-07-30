@@ -215,6 +215,26 @@ def get_category_account_for_tenant(category, field_name, tenant_id):
     ).first()
 
 
+def resolve_account_for_product_tenant(account, tenant_id, field_name):
+    """
+    Prefer the same-code account in the product's dimension when the user
+    picked a COGS (or other) account from another dimension's chart.
+    If no clone exists, keep the selected account (shared COA usage).
+    """
+    if account is None:
+        return None
+    if account.tenant_id == tenant_id:
+        return account
+
+    match = Account.objects.filter(
+        tenant_id=tenant_id,
+        code=account.code,
+        deleted_at__isnull=True,
+        is_active=True,
+    ).first()
+    return match or account
+
+
 def get_request_user_dimension_codes(request):
     tenant_ids = get_user_active_dimension_codes(request.user)
     tenant_id = getattr(request, "tenant_id", None) or request.user.tenant_id
@@ -676,9 +696,15 @@ class ProductSerializer(serializers.ModelSerializer):
             [Account.AccountType.INVENTORY],
             require_postable=False,
         )
-        validate_account_mapping(
+        # COGS may be chosen from any of the user's dimensions (shared COA pick list).
+        data["cogs_account"] = resolve_account_for_product_tenant(
             data.get("cogs_account"),
             tenant_id,
+            "cogs_account",
+        )
+        validate_shared_account_mapping(
+            data.get("cogs_account"),
+            shared_tenant_ids,
             "cogs_account",
             [Account.AccountGroup.COGS],
         )
