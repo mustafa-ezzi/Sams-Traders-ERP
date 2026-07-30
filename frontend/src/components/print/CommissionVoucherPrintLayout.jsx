@@ -38,16 +38,14 @@ const CommissionVoucherPrintLayout = ({
           '"Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif',
       }}
     >
-      <div className="-mx-8 print:mx-0">
-        <CompanyLetterheadBanner
-          companyName={companyName}
-          logoSrc={logoSrc}
-          address={company?.address || ""}
-          phone={company?.phone || ""}
-          email={company?.email || ""}
-          ntn={company?.ntn || ""}
-        />
-      </div>
+      <CompanyLetterheadBanner
+        companyName={companyName}
+        logoSrc={logoSrc}
+        address={company?.address || ""}
+        phone={company?.phone || ""}
+        email={company?.email || ""}
+        ntn={company?.ntn || ""}
+      />
 
       <div className="my-6 flex items-center gap-4">
         <div className="h-px flex-1 bg-slate-200" />

@@ -209,39 +209,44 @@ const ReportPrintLayout = ({
       <style>{REPORT_PRINT_BODY_STYLE}</style>
 
       <header className="border-b border-slate-200 pb-4">
-        <div className="relative flex h-[110px] w-full items-center justify-center overflow-hidden bg-white print:h-[32mm]">
-          <img
-            src={logo}
-            alt={brand}
-            className="h-full w-full object-contain object-center p-1"
-            onError={(event) => {
-              event.currentTarget.style.display = "none";
-              const fallback = event.currentTarget.nextElementSibling;
-              if (fallback) fallback.style.display = "flex";
-            }}
-          />
-          <div
-            className="absolute inset-0 hidden items-center justify-center gap-3"
-            aria-hidden
-          >
-            <span className="text-2xl font-extrabold uppercase tracking-wide text-slate-800">
-              {brand}
-            </span>
+        <div className="flex items-center gap-4">
+          <div className="relative flex h-[88px] w-[160px] shrink-0 items-center justify-start overflow-hidden bg-white print:h-[24mm] print:w-[44mm]">
+            <img
+              src={logo}
+              alt={brand}
+              className="h-full w-full object-contain object-left"
+              onError={(event) => {
+                event.currentTarget.style.display = "none";
+                const fallback = event.currentTarget.nextElementSibling;
+                if (fallback) fallback.style.display = "flex";
+              }}
+            />
+            <div
+              className="absolute inset-0 hidden items-center justify-center"
+              aria-hidden
+            >
+              <span className="text-lg font-extrabold uppercase tracking-wide text-slate-800">
+                {brand}
+              </span>
+            </div>
+          </div>
+          <div className="min-w-0 flex-1 text-right">
+            <h1 className="text-[22px] font-extrabold uppercase tracking-[0.06em] text-slate-800">
+              {title}
+            </h1>
+            <p className="mt-1 text-[13px] font-semibold text-slate-700">{brand}</p>
+            {(companyAddress || companyPhone || companyEmail || companyNtn) && (
+              <div className="mt-1 space-y-0.5 text-[10px] leading-relaxed text-slate-500">
+                {companyAddress ? (
+                  <p className="whitespace-pre-wrap">{companyAddress}</p>
+                ) : null}
+                {companyPhone ? <p>{companyPhone}</p> : null}
+                {companyEmail ? <p>{companyEmail}</p> : null}
+                {companyNtn ? <p>NTN: {companyNtn}</p> : null}
+              </div>
+            )}
           </div>
         </div>
-        <h1 className="mt-3 text-center text-[22px] font-extrabold uppercase tracking-[0.06em] text-slate-800">
-          {title}
-        </h1>
-        {(companyAddress || companyPhone || companyEmail || companyNtn) && (
-          <div className="mt-1.5 flex flex-wrap items-center justify-center gap-x-3 gap-y-0.5 text-center text-[10px] leading-relaxed text-slate-500">
-            {companyAddress ? (
-              <span className="whitespace-pre-wrap">{companyAddress}</span>
-            ) : null}
-            {companyPhone ? <span>{companyPhone}</span> : null}
-            {companyEmail ? <span>{companyEmail}</span> : null}
-            {companyNtn ? <span>NTN: {companyNtn}</span> : null}
-          </div>
-        )}
       </header>
 
       <div className="mt-4 grid grid-cols-2 gap-x-10 gap-y-1.5 text-[11px] text-slate-600">

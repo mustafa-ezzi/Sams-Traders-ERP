@@ -60,7 +60,7 @@ export const CompanyLogoMark = ({ companyName = "", logoSrc = "/logo.png" }) => 
   );
 };
 
-/** Full-width letterhead banner — logo spans the print header. */
+/** Letterhead: fixed-size logo on the left, company details on the right. */
 export const CompanyLetterheadBanner = ({
   companyName = "",
   logoSrc = "/logo.png",
@@ -79,42 +79,42 @@ export const CompanyLetterheadBanner = ({
   const hasContact = Boolean(address || phone || email || ntn);
 
   return (
-    <header className="w-full">
-      <div className="relative flex h-[140px] w-full items-center justify-center overflow-hidden border-b-2 border-[color:var(--inv-accent)] bg-white print:h-[38mm]">
-        <img
-          src={logoSrc}
-          alt={companyName || "Company logo"}
-          className="h-full w-full object-contain object-center p-2"
-          onError={(event) => {
-            event.currentTarget.style.display = "none";
-            const fallback = event.currentTarget.nextElementSibling;
-            if (fallback) fallback.style.display = "flex";
-          }}
-        />
-        <div
-          className="absolute inset-0 hidden items-center justify-center bg-[color:var(--inv-accent-soft)] px-4"
-          aria-hidden
-        >
-          <span className="text-4xl font-black tracking-tight text-[color:var(--inv-accent)]">
-            {initials}
-          </span>
-          {companyName ? (
-            <span className="ml-3 text-2xl font-bold text-slate-800">
-              {companyName}
+    <header className="w-full border-b-2 border-[color:var(--inv-accent)] pb-3">
+      <div className="flex items-center gap-5">
+        <div className="relative flex h-[88px] w-[160px] shrink-0 items-center justify-start overflow-hidden bg-white print:h-[24mm] print:w-[44mm]">
+          <img
+            src={logoSrc}
+            alt={companyName || "Company logo"}
+            className="h-full w-full object-contain object-left"
+            onError={(event) => {
+              event.currentTarget.style.display = "none";
+              const fallback = event.currentTarget.nextElementSibling;
+              if (fallback) fallback.style.display = "flex";
+            }}
+          />
+          <div
+            className="absolute inset-0 hidden items-center justify-center rounded-sm bg-[color:var(--inv-accent-soft)]"
+            aria-hidden
+          >
+            <span className="text-2xl font-black tracking-tight text-[color:var(--inv-accent)]">
+              {initials}
             </span>
+          </div>
+        </div>
+        <div className="min-w-0 flex-1 text-right text-[12px] leading-relaxed text-slate-600">
+          <p className="text-[16px] font-bold text-slate-900">{companyName}</p>
+          {hasContact ? (
+            <div className="mt-1 space-y-0.5">
+              {address ? (
+                <p className="whitespace-pre-wrap">{address}</p>
+              ) : null}
+              {phone ? <p>{phone}</p> : null}
+              {email ? <p>{email}</p> : null}
+              {ntn ? <p>NTN: {ntn}</p> : null}
+            </div>
           ) : null}
         </div>
       </div>
-      {hasContact ? (
-        <div className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-0.5 px-8 text-center text-[11px] leading-relaxed text-slate-600 print:px-0">
-          {address ? (
-            <span className="whitespace-pre-wrap">{address}</span>
-          ) : null}
-          {phone ? <span>{phone}</span> : null}
-          {email ? <span>{email}</span> : null}
-          {ntn ? <span>NTN: {ntn}</span> : null}
-        </div>
-      ) : null}
     </header>
   );
 };
@@ -169,17 +169,15 @@ const InvoicePrintLayout = ({
           '"Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif',
       }}
     >
-      {/* Full-width logo letterhead */}
-      <div className="-mx-8 print:mx-0">
-        <CompanyLetterheadBanner
-          companyName={companyName}
-          logoSrc={logoSrc}
-          address={companyAddress}
-          phone={companyPhone}
-          email={companyEmail}
-          ntn={companyNtn}
-        />
-      </div>
+      {/* Logo left + company details */}
+      <CompanyLetterheadBanner
+        companyName={companyName}
+        logoSrc={logoSrc}
+        address={companyAddress}
+        phone={companyPhone}
+        email={companyEmail}
+        ntn={companyNtn}
+      />
 
       {/* Centered title with rules */}
       <div className="my-6 flex items-center gap-4">
