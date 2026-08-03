@@ -52,6 +52,7 @@ import TrialBalancePage from "./pages/reports/TrialBalancePage";
 import GeneralLedgerPage from "./pages/reports/GeneralLedgerPage";
 import DayBookPage from "./pages/reports/DayBookPage";
 import CashFlowSummaryPage from "./pages/reports/CashFlowSummaryPage";
+import IntercompanyCashReportPage from "./pages/reports/IntercompanyCashReportPage";
 import AccountStatementPage from "./pages/reports/AccountStatementPage";
 import ComparativeProfitLossPage from "./pages/reports/ComparativeProfitLossPage";
 import ExpenseAnalysisPage from "./pages/reports/ExpenseAnalysisPage";
@@ -170,6 +171,10 @@ const App = () => (
         <Route path="reports/general-ledger" element={<GeneralLedgerPage />} />
         <Route path="reports/day-book" element={<DayBookPage />} />
         <Route path="reports/cash-flow" element={<CashFlowSummaryPage />} />
+        <Route
+          path="reports/intercompany-cash"
+          element={<IntercompanyCashReportPage />}
+        />
         <Route path="reports/account-statement" element={<AccountStatementPage />} />
         <Route path="reports/comparative-profit-loss" element={<ComparativeProfitLossPage />} />
         <Route path="reports/expense-analysis" element={<ExpenseAnalysisPage />} />

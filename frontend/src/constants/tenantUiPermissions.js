@@ -45,6 +45,7 @@ export const TENANT_UI_PERMISSION_GROUPS = [
       { id: "reports_general_ledger", label: "General ledger" },
       { id: "reports_day_book", label: "Day book" },
       { id: "reports_cash_flow", label: "Cash flow summary" },
+      { id: "reports_intercompany_cash", label: "Inter-company cash" },
       { id: "reports_account_statement", label: "Account statement" },
       { id: "reports_comparative_profit_loss", label: "Comparative P&L" },
       { id: "reports_expense_analysis", label: "Expense analysis" },

@@ -2550,3 +2550,175 @@ class SalesmanPerformanceReportTests(TestCase):
             cogs_account=cogs_account,
             revenue_account=revenue_account,
         )
+
+
+class IntercompanyCashReportTests(TestCase):
+    def setUp(self):
+        self.am = "IC_AM"
+        self.sams = "IC_SAMS"
+        Dimension.objects.get_or_create(
+            code=self.am,
+            defaults={"name": "IC AM Traders", "is_active": True},
+        )
+        Dimension.objects.get_or_create(
+            code=self.sams,
+            defaults={"name": "IC Sams Traders", "is_active": True},
+        )
+
+        self.am_cash = Account.objects.create(
+            tenant_id=self.am,
+            code="1120",
+            name="AM Cash",
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.CASH,
+            account_nature=Account.AccountNature.DEBIT,
+            level=1,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+        self.sams_cash = Account.objects.create(
+            tenant_id=self.sams,
+            code="1120",
+            name="SAMS Cash",
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.CASH,
+            account_nature=Account.AccountNature.DEBIT,
+            level=1,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+        self.expense_account = Account.objects.create(
+            tenant_id=self.sams,
+            code="6100",
+            name="Fixed Expenses",
+            account_group=Account.AccountGroup.EXPENSE,
+            account_type=Account.AccountType.GENERAL,
+            account_nature=Account.AccountNature.DEBIT,
+            level=1,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+        am_receivable = Account.objects.create(
+            tenant_id=self.am,
+            code="1140",
+            name="Receivables",
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.RECEIVABLE,
+            account_nature=Account.AccountNature.DEBIT,
+            level=1,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+        sams_receivable = Account.objects.create(
+            tenant_id=self.sams,
+            code="1140",
+            name="Receivables",
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.RECEIVABLE,
+            account_nature=Account.AccountNature.DEBIT,
+            level=1,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+        self.am_customer = Customer.objects.create(
+            tenant_id=self.am,
+            name="ABC AM",
+            business_name="ABC AM",
+            phone_number="1",
+            address="A",
+            account=am_receivable,
+        )
+        self.sams_customer = Customer.objects.create(
+            tenant_id=self.sams,
+            name="ABC SAMS",
+            business_name="ABC SAMS",
+            phone_number="2",
+            address="B",
+            account=sams_receivable,
+        )
+
+    def test_cross_dimension_transfer_creates_owing(self):
+        from datetime import date
+
+        from accounts.models import BankTransfer
+        from accounts.reporting import build_intercompany_cash_report
+
+        day = date(2026, 8, 1)
+
+        receipt = SalesBankReceipt.objects.create(
+            tenant_id=self.am,
+            receipt_number="SBR-IC-001",
+            date=day,
+            amount=Decimal("50000.00"),
+            remarks="Split cash",
+        )
+        SalesBankReceiptLine.objects.create(
+            tenant_id=self.am,
+            receipt=receipt,
+            customer=self.am_customer,
+            receipt_against=SalesBankReceiptLine.ReceiptAgainst.OPENING_BALANCE,
+            bank_account=self.am_cash,
+            amount=Decimal("25000.00"),
+        )
+        SalesBankReceiptLine.objects.create(
+            tenant_id=self.sams,
+            receipt=receipt,
+            customer=self.sams_customer,
+            receipt_against=SalesBankReceiptLine.ReceiptAgainst.OPENING_BALANCE,
+            bank_account=self.sams_cash,
+            amount=Decimal("25000.00"),
+        )
+
+        expense = Expense.objects.create(
+            tenant_id=self.sams,
+            expense_number="EXP-IC-001",
+            date=day,
+            amount=Decimal("35000.00"),
+            remarks="SAMS expense",
+        )
+        ExpenseLine.objects.create(
+            tenant_id=self.sams,
+            expense=expense,
+            bank_account=self.sams_cash,
+            expense_account=self.expense_account,
+            description="Ops",
+            amount=Decimal("35000.00"),
+        )
+
+        BankTransfer.objects.create(
+            tenant_id=self.am,
+            transfer_number="BT-IC-001",
+            date=day,
+            from_bank_account=self.am_cash,
+            to_bank_account=self.sams_cash,
+            amount=Decimal("10000.00"),
+            remarks="Cover SAMS shortfall",
+        )
+
+        report = build_intercompany_cash_report(
+            tenant_ids=[self.am, self.sams],
+            from_date=day,
+            to_date=day,
+        )
+
+        by_tenant = {row["tenant_id"]: row for row in report["summaries"]}
+        self.assertEqual(by_tenant[self.am]["receipts"], "25000.00")
+        self.assertEqual(by_tenant[self.sams]["receipts"], "25000.00")
+        self.assertEqual(by_tenant[self.sams]["expenses"], "35000.00")
+        self.assertEqual(by_tenant[self.am]["transfers_out"], "10000.00")
+        self.assertEqual(by_tenant[self.sams]["transfers_in"], "10000.00")
+
+        self.assertEqual(len(report["owing_pairs"]), 1)
+        owing = report["owing_pairs"][0]
+        self.assertEqual(owing["creditor_tenant_id"], self.am)
+        self.assertEqual(owing["debtor_tenant_id"], self.sams)
+        self.assertEqual(owing["amount"], "10000.00")
+        self.assertEqual(len(report["receipt_rows"]), 2)
+        self.assertEqual(len(report["expense_rows"]), 1)
+        self.assertEqual(len(report["transfer_rows"]), 1)
+        self.assertTrue(report["transfer_rows"][0]["is_cross_dimension"])

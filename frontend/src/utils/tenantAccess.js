@@ -23,6 +23,7 @@ const PERM_HOME = {
   reports_general_ledger: "/reports/general-ledger",
   reports_day_book: "/reports/day-book",
   reports_cash_flow: "/reports/cash-flow",
+  reports_intercompany_cash: "/reports/intercompany-cash",
   reports_account_statement: "/reports/account-statement",
   reports_comparative_profit_loss: "/reports/comparative-profit-loss",
   reports_expense_analysis: "/reports/expense-analysis",
@@ -94,6 +95,7 @@ export function pathToPermissionKey(pathname) {
   if (p.startsWith("/reports/general-ledger")) return "reports_general_ledger";
   if (p.startsWith("/reports/day-book")) return "reports_day_book";
   if (p.startsWith("/reports/cash-flow")) return "reports_cash_flow";
+  if (p.startsWith("/reports/intercompany-cash")) return "reports_intercompany_cash";
   if (p.startsWith("/reports/account-statement")) return "reports_account_statement";
   if (p.startsWith("/reports/comparative-profit-loss")) {
     return "reports_comparative_profit_loss";

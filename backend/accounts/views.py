@@ -26,6 +26,7 @@ from accounts.reporting import (
     build_day_book_report,
     build_expense_analysis_report,
     build_general_ledger_report,
+    build_intercompany_cash_report,
     build_ledger_report,
     build_party_ledger_report,
     build_payable_aging_report,
@@ -1463,6 +1464,19 @@ class AccountViewSet(ModelViewSet):
         from_date, to_date = self._parse_report_date_range()
         tenant_ids = self._resolve_tenant_ids(tenant_scope)
         payload = build_cash_flow_summary_report(
+            tenant_ids=tenant_ids,
+            from_date=from_date,
+            to_date=to_date,
+        )
+        return self._financial_report_response(tenant_scope, payload)
+
+    @action(detail=False, methods=["get"], url_path="intercompany-cash-report")
+    def intercompany_cash_report(self, request):
+        # Default BOTH — this report is meaningful across companies.
+        tenant_scope = request.query_params.get("tenant_scope") or "BOTH"
+        from_date, to_date = self._parse_report_date_range()
+        tenant_ids = self._resolve_tenant_ids(tenant_scope)
+        payload = build_intercompany_cash_report(
             tenant_ids=tenant_ids,
             from_date=from_date,
             to_date=to_date,

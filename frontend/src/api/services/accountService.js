@@ -196,6 +196,16 @@ const accountService = {
     });
     return response.data.data || {};
   },
+  async getIntercompanyCashReport(params, selectedTenant = "") {
+    const response = await axiosInstance.get(
+      "/accounts/accounts/intercompany-cash-report/",
+      {
+        params,
+        headers: tenantHeader(selectedTenant),
+      },
+    );
+    return response.data.data || {};
+  },
   async getAccountStatementReport(params, selectedTenant = "") {
     const response = await axiosInstance.get("/accounts/accounts/account-statement-report/", {
       params,

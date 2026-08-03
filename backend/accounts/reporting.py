@@ -5,7 +5,8 @@ from datetime import date, timedelta
 from django.db.models import Prefetch, Q, Sum
 from django.db.models.functions import Coalesce
 
-from accounts.models import Account, Dimension, JournalEntry, JournalLine
+from accounts.models import Account, Dimension, ExpenseLine, JournalEntry, JournalLine, BankTransfer
+from sales.models import SalesBankReceiptLine
 
 
 def _money(value):
@@ -2727,5 +2728,340 @@ def build_inventory_stock_report(tenant_ids, item_category="both", report_mode="
             "raw_materials_value": str(_money(raw_value)),
             "finished_goods_quantity": str(_money(finished_qty)),
             "finished_goods_value": str(_money(finished_value)),
+        },
+    }
+
+
+def build_intercompany_cash_report(tenant_ids, from_date, to_date):
+    """
+    Per-dimension cash in/out by voucher plus who-owes-whom from cross-dimension
+    bank transfers. Separate bank accounts per company; IC owing = net transfers.
+    """
+    tenant_ids = list(tenant_ids or [])
+    dimension_names = _dimension_name_map(tenant_ids)
+
+    cash_accounts = list(
+        Account.objects.filter(
+            tenant_id__in=tenant_ids,
+            deleted_at__isnull=True,
+            is_active=True,
+            is_postable=True,
+            account_type__in=[Account.AccountType.BANK, Account.AccountType.CASH],
+        ).order_by("code", "tenant_id", "name")
+    )
+    cash_account_ids = [account.id for account in cash_accounts]
+    accounts_by_tenant = defaultdict(list)
+    for account in cash_accounts:
+        accounts_by_tenant[account.tenant_id].append(account)
+
+    opening_totals = {
+        row["account_id"]: {
+            "debit": _money(row["debit"]),
+            "credit": _money(row["credit"]),
+        }
+        for row in JournalLine.objects.filter(
+            tenant_id__in=tenant_ids,
+            deleted_at__isnull=True,
+            journal_entry__deleted_at__isnull=True,
+            journal_entry__date__lt=from_date,
+            account_id__in=cash_account_ids,
+        )
+        .values("account_id")
+        .annotate(
+            debit=Coalesce(Sum("debit"), Decimal("0.00")),
+            credit=Coalesce(Sum("credit"), Decimal("0.00")),
+        )
+    }
+
+    period_cash_totals = {
+        row["account_id"]: {
+            "debit": _money(row["debit"]),
+            "credit": _money(row["credit"]),
+        }
+        for row in JournalLine.objects.filter(
+            tenant_id__in=tenant_ids,
+            deleted_at__isnull=True,
+            journal_entry__deleted_at__isnull=True,
+            journal_entry__date__gte=from_date,
+            journal_entry__date__lte=to_date,
+            account_id__in=cash_account_ids,
+        )
+        .values("account_id")
+        .annotate(
+            debit=Coalesce(Sum("debit"), Decimal("0.00")),
+            credit=Coalesce(Sum("credit"), Decimal("0.00")),
+        )
+    }
+
+    receipt_lines = (
+        SalesBankReceiptLine.objects.filter(
+            tenant_id__in=tenant_ids,
+            deleted_at__isnull=True,
+            receipt__deleted_at__isnull=True,
+            receipt__date__gte=from_date,
+            receipt__date__lte=to_date,
+        )
+        .select_related("receipt", "customer", "bank_account", "sales_invoice")
+        .order_by("receipt__date", "receipt__receipt_number", "created_at")
+    )
+
+    expense_lines = (
+        ExpenseLine.objects.filter(
+            tenant_id__in=tenant_ids,
+            deleted_at__isnull=True,
+            expense__deleted_at__isnull=True,
+            expense__date__gte=from_date,
+            expense__date__lte=to_date,
+        )
+        .select_related("expense", "bank_account", "expense_account")
+        .order_by("expense__date", "expense__expense_number", "created_at")
+    )
+
+    transfers = (
+        BankTransfer.objects.filter(
+            deleted_at__isnull=True,
+            date__gte=from_date,
+            date__lte=to_date,
+        )
+        .filter(
+            Q(from_bank_account__tenant_id__in=tenant_ids)
+            | Q(to_bank_account__tenant_id__in=tenant_ids)
+        )
+        .select_related("from_bank_account", "to_bank_account")
+        .order_by("date", "transfer_number")
+    )
+
+    receipt_by_tenant = defaultdict(lambda: Decimal("0.00"))
+    expense_by_tenant = defaultdict(lambda: Decimal("0.00"))
+    transfer_in_by_tenant = defaultdict(lambda: Decimal("0.00"))
+    transfer_out_by_tenant = defaultdict(lambda: Decimal("0.00"))
+
+    receipt_rows = []
+    for line in receipt_lines:
+        amount = _money(line.amount)
+        receipt_by_tenant[line.tenant_id] += amount
+        bank = line.bank_account
+        receipt_rows.append(
+            {
+                "receipt_id": str(line.receipt_id),
+                "line_id": str(line.id),
+                "voucher_number": line.receipt.receipt_number,
+                "date": line.receipt.date.isoformat(),
+                "customer_name": (
+                    line.customer.business_name if line.customer_id else ""
+                ),
+                "invoice_number": (
+                    line.sales_invoice.invoice_number if line.sales_invoice_id else ""
+                ),
+                "amount": str(amount),
+                "tenant_id": line.tenant_id,
+                "dimension_name": dimension_names.get(line.tenant_id, line.tenant_id),
+                "bank_account_id": str(bank.id) if bank else "",
+                "bank_label": f"{bank.code} — {bank.name}" if bank else "",
+                "source_type": JournalEntry.SourceType.SALES_BANK_RECEIPT,
+                "source_id": str(line.receipt_id),
+            }
+        )
+
+    expense_rows = []
+    for line in expense_lines:
+        amount = _money(line.amount)
+        expense_by_tenant[line.tenant_id] += amount
+        bank = line.bank_account
+        expense_account = line.expense_account
+        expense_rows.append(
+            {
+                "expense_id": str(line.expense_id),
+                "line_id": str(line.id),
+                "voucher_number": line.expense.expense_number,
+                "date": line.expense.date.isoformat(),
+                "description": line.description or "",
+                "expense_account_label": (
+                    f"{expense_account.code} — {expense_account.name}"
+                    if expense_account
+                    else ""
+                ),
+                "amount": str(amount),
+                "tenant_id": line.tenant_id,
+                "dimension_name": dimension_names.get(line.tenant_id, line.tenant_id),
+                "bank_account_id": str(bank.id) if bank else "",
+                "bank_label": f"{bank.code} — {bank.name}" if bank else "",
+                "source_type": JournalEntry.SourceType.EXPENSE,
+                "source_id": str(line.expense_id),
+            }
+        )
+
+    transfer_rows = []
+    # pair_key (from, to) -> amount lent (from funds to)
+    pair_flows = defaultdict(lambda: Decimal("0.00"))
+    for transfer in transfers:
+        amount = _money(transfer.amount)
+        from_bank = transfer.from_bank_account
+        to_bank = transfer.to_bank_account
+        from_tenant = from_bank.tenant_id if from_bank else ""
+        to_tenant = to_bank.tenant_id if to_bank else ""
+        is_cross = bool(from_tenant and to_tenant and from_tenant != to_tenant)
+
+        if from_tenant in tenant_ids:
+            transfer_out_by_tenant[from_tenant] += amount
+        if to_tenant in tenant_ids:
+            transfer_in_by_tenant[to_tenant] += amount
+
+        if is_cross and from_tenant in tenant_ids and to_tenant in tenant_ids:
+            pair_flows[(from_tenant, to_tenant)] += amount
+
+        transfer_rows.append(
+            {
+                "transfer_id": str(transfer.id),
+                "voucher_number": transfer.transfer_number,
+                "date": transfer.date.isoformat(),
+                "amount": str(amount),
+                "is_cross_dimension": is_cross,
+                "from_tenant_id": from_tenant,
+                "from_dimension_name": dimension_names.get(from_tenant, from_tenant),
+                "from_bank_label": (
+                    f"{from_bank.code} — {from_bank.name}" if from_bank else ""
+                ),
+                "to_tenant_id": to_tenant,
+                "to_dimension_name": dimension_names.get(to_tenant, to_tenant),
+                "to_bank_label": (
+                    f"{to_bank.code} — {to_bank.name}" if to_bank else ""
+                ),
+                "remarks": transfer.remarks or "",
+                "source_type": JournalEntry.SourceType.BANK_TRANSFER,
+                "source_id": str(transfer.id),
+            }
+        )
+
+    # Net owing: if A transferred more to B than B to A, B owes A the net.
+    owing_pairs = []
+    seen_pairs = set()
+    for (from_tenant, to_tenant), amount_ab in pair_flows.items():
+        pair_key = tuple(sorted((from_tenant, to_tenant)))
+        if pair_key in seen_pairs:
+            continue
+        seen_pairs.add(pair_key)
+        a, b = pair_key
+        a_to_b = _money(pair_flows.get((a, b), Decimal("0.00")))
+        b_to_a = _money(pair_flows.get((b, a), Decimal("0.00")))
+        net = _money(a_to_b - b_to_a)
+        if net == 0:
+            continue
+        if net > 0:
+            creditor, debtor, owed = a, b, net
+        else:
+            creditor, debtor, owed = b, a, _money(-net)
+        related = [
+            row
+            for row in transfer_rows
+            if row["is_cross_dimension"]
+            and (
+                (row["from_tenant_id"] == a and row["to_tenant_id"] == b)
+                or (row["from_tenant_id"] == b and row["to_tenant_id"] == a)
+            )
+        ]
+        owing_pairs.append(
+            {
+                "creditor_tenant_id": creditor,
+                "creditor_name": dimension_names.get(creditor, creditor),
+                "debtor_tenant_id": debtor,
+                "debtor_name": dimension_names.get(debtor, debtor),
+                "amount": str(owed),
+                "label": (
+                    f"{dimension_names.get(debtor, debtor)} owes "
+                    f"{dimension_names.get(creditor, creditor)}"
+                ),
+                "transfer_ids": [row["transfer_id"] for row in related],
+                "transfer_count": len(related),
+            }
+        )
+    owing_pairs.sort(key=lambda row: Decimal(row["amount"]), reverse=True)
+
+    summaries = []
+    total_opening = Decimal("0.00")
+    total_receipts = Decimal("0.00")
+    total_expenses = Decimal("0.00")
+    total_transfer_in = Decimal("0.00")
+    total_transfer_out = Decimal("0.00")
+    total_closing = Decimal("0.00")
+    total_shortfall = Decimal("0.00")
+
+    for tenant_id in tenant_ids:
+        opening = Decimal("0.00")
+        journal_inflow = Decimal("0.00")
+        journal_outflow = Decimal("0.00")
+        for account in accounts_by_tenant.get(tenant_id, []):
+            open_row = opening_totals.get(
+                account.id,
+                {"debit": Decimal("0.00"), "credit": Decimal("0.00")},
+            )
+            period_row = period_cash_totals.get(
+                account.id,
+                {"debit": Decimal("0.00"), "credit": Decimal("0.00")},
+            )
+            opening += _balance_for_account(
+                account,
+                open_row["debit"],
+                open_row["credit"],
+            )
+            journal_inflow += period_row["debit"]
+            journal_outflow += period_row["credit"]
+
+        receipts = _money(receipt_by_tenant.get(tenant_id, Decimal("0.00")))
+        expenses = _money(expense_by_tenant.get(tenant_id, Decimal("0.00")))
+        transfers_in = _money(transfer_in_by_tenant.get(tenant_id, Decimal("0.00")))
+        transfers_out = _money(transfer_out_by_tenant.get(tenant_id, Decimal("0.00")))
+        opening = _money(opening)
+        closing = _money(opening + journal_inflow - journal_outflow)
+
+        # Funding gap vs own receipts + transfers in (ignores opening):
+        # if expenses + transfers out exceed receipts + transfers in.
+        period_own_in = _money(receipts + transfers_in)
+        period_own_out = _money(expenses + transfers_out)
+        shortfall = max(_money(period_own_out - period_own_in), Decimal("0.00"))
+        if closing < 0:
+            shortfall = max(shortfall, _money(-closing))
+
+        summaries.append(
+            {
+                "tenant_id": tenant_id,
+                "dimension_name": dimension_names.get(tenant_id, tenant_id),
+                "opening_cash": str(opening),
+                "receipts": str(receipts),
+                "expenses": str(expenses),
+                "transfers_in": str(transfers_in),
+                "transfers_out": str(transfers_out),
+                "closing_cash": str(closing),
+                "shortfall": str(shortfall),
+            }
+        )
+        total_opening += opening
+        total_receipts += receipts
+        total_expenses += expenses
+        total_transfer_in += transfers_in
+        total_transfer_out += transfers_out
+        total_closing += closing
+        total_shortfall += shortfall
+
+    summaries.sort(key=lambda row: row["dimension_name"])
+
+    return {
+        "from_date": from_date.isoformat(),
+        "to_date": to_date.isoformat(),
+        "summaries": summaries,
+        "receipt_rows": receipt_rows,
+        "expense_rows": expense_rows,
+        "transfer_rows": transfer_rows,
+        "owing_pairs": owing_pairs,
+        "summary": {
+            "dimension_count": len(summaries),
+            "opening_cash": str(_money(total_opening)),
+            "total_receipts": str(_money(total_receipts)),
+            "total_expenses": str(_money(total_expenses)),
+            "total_transfers_in": str(_money(total_transfer_in)),
+            "total_transfers_out": str(_money(total_transfer_out)),
+            "closing_cash": str(_money(total_closing)),
+            "total_shortfall": str(_money(total_shortfall)),
+            "owing_pair_count": len(owing_pairs),
         },
     }

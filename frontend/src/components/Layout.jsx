@@ -327,6 +327,12 @@ const navigation = [
             perm: "reports_cash_flow",
           },
           {
+            to: "/reports/intercompany-cash",
+            label: "Inter-company Cash",
+            icon: icons.reports,
+            perm: "reports_intercompany_cash",
+          },
+          {
             to: "/reports/expense-analysis",
             label: "Expense Analysis",
             icon: icons.reports,
@@ -574,6 +580,10 @@ const pageTitles = {
   "/reports/general-ledger": { title: "General Ledger", eyebrow: "Reports" },
   "/reports/day-book": { title: "Day Book", eyebrow: "Reports" },
   "/reports/cash-flow": { title: "Cash Flow Summary", eyebrow: "Reports" },
+  "/reports/intercompany-cash": {
+    title: "Inter-company Cash",
+    eyebrow: "Reports",
+  },
   "/reports/account-statement": { title: "Account Statement", eyebrow: "Reports" },
   "/reports/comparative-profit-loss": { title: "Comparative P&L", eyebrow: "Reports" },
   "/reports/expense-analysis": { title: "Expense Analysis", eyebrow: "Reports" },

@@ -23,6 +23,7 @@ TENANT_UI_PERMISSION_KEYS = frozenset(
         "reports_general_ledger",
         "reports_day_book",
         "reports_cash_flow",
+        "reports_intercompany_cash",
         "reports_account_statement",
         "reports_comparative_profit_loss",
         "reports_expense_analysis",
