@@ -14,6 +14,8 @@ import { formatDisplayDate } from "./salesInvoiceShared";
 import salesInvoiceService from "../../../api/services/salesInvoiceService";
 import dimensionService from "../../../api/services/dimensionService";
 import { formatDecimal } from "../../../utils/format";
+import { buildListOrdering } from "../../../utils/listOrdering";
+import { usePersistedListState } from "../../../hooks/usePersistedListState";
 import { useToast } from "../../../context/ToastContext";
 import { useAuth } from "../../../context/AuthContext";
 import IconButton from "../../../components/ui/IconButton";
@@ -45,10 +47,6 @@ const orderingFields = {
   profit: "_profit",
   balance: "_balance_amount",
 };
-const getOrdering = (sortConfig) => {
-  const field = orderingFields[sortConfig.key] || "date";
-  return sortConfig.direction === "desc" ? `-${field}` : field;
-};
 const GetAllSalesInvoice = () => {
   const navigate = useNavigate();
   const toast = useToast();
@@ -60,21 +58,24 @@ const GetAllSalesInvoice = () => {
       ),
     [allowedDimensions],
   );
+  const {
+    search,
+    page,
+    limit,
+    sortConfig,
+    setSearch,
+    setPage,
+    setLimit,
+    setSortConfig,
+  } = usePersistedListState("sales-invoices");
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [deleteId, setDeleteId] = useState("");
   const [printModal, setPrintModal] = useState(null);
   const [printLoadingId, setPrintLoadingId] = useState("");
   const printCancelledRef = useRef(false);
-  const [limit, setLimit] = useState(10);
-  const [sortConfig, setSortConfig] = useState({
-    key: "date",
-    direction: "desc",
-  });
   const loadInvoices = async (
     nextPage = page,
     nextSearch = search,
@@ -88,7 +89,7 @@ const GetAllSalesInvoice = () => {
         page: nextPage,
         limit: nextLimit,
         search: nextSearch,
-        ordering: getOrdering(nextSortConfig),
+        ordering: buildListOrdering(nextSortConfig, orderingFields),
       });
       setRecords(response.data || []);
       setTotal(response.total || 0);
@@ -102,7 +103,8 @@ const GetAllSalesInvoice = () => {
     }
   };
   useEffect(() => {
-    loadInvoices(1, "");
+    loadInvoices(page, search, limit, sortConfig);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- restore once on mount
   }, []);
   const handleClosePrint = () => {
     printCancelledRef.current = true;
@@ -169,7 +171,6 @@ const GetAllSalesInvoice = () => {
   };
   const handlePageSizeChange = (value) => {
     setLimit(value);
-    setPage(1);
     loadInvoices(1, search, value, sortConfig);
   };
   const handleSort = (key) => {
@@ -181,7 +182,6 @@ const GetAllSalesInvoice = () => {
           : "asc",
     };
     setSortConfig(nextSortConfig);
-    setPage(1);
     loadInvoices(1, search, limit, nextSortConfig);
   };
   return (

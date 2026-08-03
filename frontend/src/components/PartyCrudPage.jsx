@@ -18,6 +18,8 @@ import partyOpeningBalanceService from "../api/services/partyOpeningBalanceServi
 import PartyOpeningBalanceModal from "./parties/PartyOpeningBalanceModal";
 import { formatAccountLabel } from "../utils/accounts";
 import { formatMoney } from "../utils/format";
+import { buildListOrdering } from "../utils/listOrdering";
+import { usePersistedListState } from "../hooks/usePersistedListState";
 
 const schema = z.object({
   name: z.string().trim().min(1, "Name is required"),
@@ -55,12 +57,6 @@ const partyOrderingFields = {
   address: "address",
 };
 
-const getOrdering = (sortConfig, fields) => {
-  const field = fields[sortConfig.key];
-  if (!field) return "";
-  return sortConfig.direction === "desc" ? `-${field}` : field;
-};
-
 const PartyCrudPage = ({
   title,
   service,
@@ -79,19 +75,24 @@ const PartyCrudPage = ({
   const isFormView = view === "form";
   const isCombinedView = !isListView && !isFormView;
 
+  const listStorageKey = `party:${partyType || basePath || title}`;
+  const {
+    search,
+    page,
+    limit,
+    sortConfig,
+    setSearch,
+    setPage,
+    setLimit,
+    setSortConfig,
+  } = usePersistedListState(listStorageKey);
+
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [inlineEditingId, setInlineEditingId] = useState("");
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
-  const [limit, setLimit] = useState(10);
   const [deleteId, setDeleteId] = useState("");
-  const [sortConfig, setSortConfig] = useState({
-    key: "businessName",
-    direction: "asc",
-  });
   const [openingBalances, setOpeningBalances] = useState([]);
   const [openingPartyOptions, setOpeningPartyOptions] = useState([]);
   const [openingDimensionOptions, setOpeningDimensionOptions] = useState([]);
@@ -169,7 +170,7 @@ const PartyCrudPage = ({
         page: nextPage,
         limit: nextLimit,
         search: nextSearch,
-        ordering: getOrdering(nextSortConfig, partyOrderingFields),
+        ordering: buildListOrdering(nextSortConfig, partyOrderingFields),
       });
       setRecords(response.data || []);
       setTotal(response.total || 0);
@@ -200,7 +201,7 @@ const PartyCrudPage = ({
         search: nextSearch,
         partyType,
         tenantId: nextDimension,
-        ordering: getOrdering(nextSortConfig, {
+        ordering: buildListOrdering(nextSortConfig, {
           party:
             partyType === "customer"
               ? "customer__business_name"
@@ -290,9 +291,10 @@ const PartyCrudPage = ({
 
   useEffect(() => {
     if (!isFormView) {
-      loadRecords(1, "");
+      loadRecords(page, search, limit, sortConfig);
       loadOpeningBalances(1, "", openingLimit, "");
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- restore list state once per view
   }, [isFormView, partyType]);
 
   useEffect(() => {

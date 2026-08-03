@@ -8,6 +8,8 @@ import StateView from "../../../components/StateView";
 import SortableHeader from "../../../components/ui/SortableHeader";
 import purchaseReturnService from "../../../api/services/purchaseReturnService";
 import { formatDecimal } from "../../../utils/format";
+import { buildListOrdering } from "../../../utils/listOrdering";
+import { usePersistedListState } from "../../../hooks/usePersistedListState";
 import { useToast } from "../../../context/ToastContext";
 const orderingFields = {
   return: "return_number",
@@ -15,10 +17,6 @@ const orderingFields = {
   supplier: "supplier__business_name",
   invoice: "purchase_invoice__invoice_number",
   amount: "gross_amount",
-};
-const getOrdering = (sortConfig) => {
-  const field = orderingFields[sortConfig.key] || "date";
-  return sortConfig.direction === "desc" ? `-${field}` : field;
 };
 const extractErrorMessage = (error) => {
   const data = error?.response?.data;
@@ -38,18 +36,20 @@ const extractErrorMessage = (error) => {
 const GetAllPurchaseReturn = () => {
   const navigate = useNavigate();
   const toast = useToast();
+  const {
+    search,
+    page,
+    limit,
+    sortConfig,
+    setSearch,
+    setPage,
+    setSortConfig,
+  } = usePersistedListState("purchase-returns");
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [deleteId, setDeleteId] = useState("");
-  const [sortConfig, setSortConfig] = useState({
-    key: "date",
-    direction: "desc",
-  });
-  const limit = 10;
   const loadReturns = async (
     nextPage = page,
     nextSearch = search,
@@ -62,7 +62,7 @@ const GetAllPurchaseReturn = () => {
         page: nextPage,
         limit,
         search: nextSearch,
-        ordering: getOrdering(nextSortConfig),
+        ordering: buildListOrdering(nextSortConfig, orderingFields),
       });
       setRecords(response.data || []);
       setTotal(response.total || 0);
@@ -76,7 +76,8 @@ const GetAllPurchaseReturn = () => {
     }
   };
   useEffect(() => {
-    loadReturns(1, "", sortConfig);
+    loadReturns(page, search, sortConfig);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- restore once on mount
   }, []);
   const handleSort = (key) => {
     const nextSortConfig = {
@@ -87,7 +88,6 @@ const GetAllPurchaseReturn = () => {
           : "asc",
     };
     setSortConfig(nextSortConfig);
-    setPage(1);
     loadReturns(1, search, nextSortConfig);
   };
   const confirmDelete = async () => {

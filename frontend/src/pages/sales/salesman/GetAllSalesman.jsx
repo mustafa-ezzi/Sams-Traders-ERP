@@ -6,6 +6,7 @@ import Card from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
 import ConfirmModal from "../../../components/ui/ConfirmModal";
 import IconButton from "../../../components/ui/IconButton";
+import { usePersistedListState } from "../../../hooks/usePersistedListState";
 import { useToast } from "../../../context/ToastContext";
 
 const formatPercent = (value) => {
@@ -17,13 +18,12 @@ const formatPercent = (value) => {
 const GetAllSalesman = () => {
   const navigate = useNavigate();
   const toast = useToast();
+  const { search, page, limit, setSearch, setPage } =
+    usePersistedListState("salesmen");
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
-  const [limit] = useState(10);
   const [deleteId, setDeleteId] = useState("");
 
   const loadRecords = async (nextPage = page, nextSearch = search) => {
@@ -34,6 +34,7 @@ const GetAllSalesman = () => {
         page: nextPage,
         limit,
         search: nextSearch,
+        ordering: "-created_at,-id",
       });
       setRecords(response.data || []);
       setTotal(response.total || 0);
@@ -48,7 +49,8 @@ const GetAllSalesman = () => {
   };
 
   useEffect(() => {
-    loadRecords(1, "");
+    loadRecords(page, search);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- restore once on mount
   }, []);
 
   const onDelete = async (recordId) => {

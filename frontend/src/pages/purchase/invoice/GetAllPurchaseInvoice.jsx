@@ -10,6 +10,8 @@ import SortableHeader from "../../../components/ui/SortableHeader";
 import purchaseInvoiceService from "../../../api/services/purchaseInvoiceService";
 import dimensionService from "../../../api/services/dimensionService";
 import { formatDecimal } from "../../../utils/format";
+import { buildListOrdering } from "../../../utils/listOrdering";
+import { usePersistedListState } from "../../../hooks/usePersistedListState";
 import { useToast } from "../../../context/ToastContext";
 import { useAuth } from "../../../context/AuthContext";
 import IconButton from "../../../components/ui/IconButton";
@@ -33,10 +35,6 @@ const orderingFields = {
   warehouse: "warehouse__name",
   status: "_balance_amount",
 };
-const getOrdering = (sortConfig) => {
-  const field = orderingFields[sortConfig.key] || "date";
-  return sortConfig.direction === "desc" ? `-${field}` : field;
-};
 const GetAllPurchaseInvoice = () => {
   const navigate = useNavigate();
   const toast = useToast();
@@ -48,21 +46,24 @@ const GetAllPurchaseInvoice = () => {
       ),
     [allowedDimensions],
   );
+  const {
+    search,
+    page,
+    limit,
+    sortConfig,
+    setSearch,
+    setPage,
+    setLimit,
+    setSortConfig,
+  } = usePersistedListState("purchase-invoices");
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [deleteId, setDeleteId] = useState("");
   const [printModal, setPrintModal] = useState(null);
   const [printLoadingId, setPrintLoadingId] = useState("");
   const printCancelledRef = useRef(false);
-  const [limit, setLimit] = useState(10);
-  const [sortConfig, setSortConfig] = useState({
-    key: "date",
-    direction: "desc",
-  });
   const unpaidPageTotal = useMemo(
     () =>
       records.reduce(
@@ -84,7 +85,7 @@ const GetAllPurchaseInvoice = () => {
         page: nextPage,
         limit: nextLimit,
         search: nextSearch,
-        ordering: getOrdering(nextSortConfig),
+        ordering: buildListOrdering(nextSortConfig, orderingFields),
       });
       setRecords(response.data || []);
       setTotal(response.total || 0);
@@ -98,7 +99,8 @@ const GetAllPurchaseInvoice = () => {
     }
   };
   useEffect(() => {
-    loadInvoices(1, "");
+    loadInvoices(page, search, limit, sortConfig);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- restore once on mount
   }, []);
   const handleClosePrint = () => {
     printCancelledRef.current = true;
@@ -166,7 +168,6 @@ const GetAllPurchaseInvoice = () => {
   };
   const handlePageSizeChange = (value) => {
     setLimit(value);
-    setPage(1);
     loadInvoices(1, search, value, sortConfig);
   };
   const handleSort = (key) => {
@@ -178,7 +179,6 @@ const GetAllPurchaseInvoice = () => {
           : "asc",
     };
     setSortConfig(nextSortConfig);
-    setPage(1);
     loadInvoices(1, search, limit, nextSortConfig);
   };
   return (

@@ -8,6 +8,7 @@ import Button from "../../../components/ui/Button";
 import ConfirmModal from "../../../components/ui/ConfirmModal";
 import IconButton from "../../../components/ui/IconButton";
 import { useToast } from "../../../context/ToastContext";
+import { usePersistedListState } from "../../../hooks/usePersistedListState";
 import {
   flattenAccountTree,
   formatAccountLabel,
@@ -19,12 +20,11 @@ const GetAllCategories = () => {
   const [loadingAccounts, setLoadingAccounts] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
+  const { search, page, limit, setSearch, setPage } =
+    usePersistedListState("categories");
   const [total, setTotal] = useState(0);
   const [deleteId, setDeleteId] = useState("");
   const toast = useToast();
-  const limit = 10;
   const flattenedAccounts = useMemo(
     () => flattenAccountTree(accounts),
     [accounts],
@@ -44,6 +44,7 @@ const GetAllCategories = () => {
         page: nextPage,
         limit,
         search: nextSearch,
+        ordering: "-created_at,-id",
       });
       setRecords(response.data || []);
       setTotal(response.total || 0);
@@ -68,8 +69,9 @@ const GetAllCategories = () => {
     }
   };
   useEffect(() => {
-    loadRecords(1, "");
+    loadRecords(page, search);
     loadAccounts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- restore once on mount
   }, []);
   const onDelete = async (id) => {
     try {

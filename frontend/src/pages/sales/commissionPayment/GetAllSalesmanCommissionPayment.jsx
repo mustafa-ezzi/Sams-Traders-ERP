@@ -11,6 +11,7 @@ import salesmanCommissionPaymentService from "../../../api/services/salesmanComm
 import dimensionService from "../../../api/services/dimensionService";
 import { formatDecimal } from "../../../utils/format";
 import { dimensionToCompanyConfig } from "../../../utils/dimensionCompany";
+import { usePersistedListState } from "../../../hooks/usePersistedListState";
 import { useToast } from "../../../context/ToastContext";
 import { useAuth } from "../../../context/AuthContext";
 
@@ -34,18 +35,17 @@ const GetAllSalesmanCommissionPayment = () => {
   const navigate = useNavigate();
   const toast = useToast();
   const { allowedDimensions } = useAuth();
+  const { search, page, limit, setSearch, setPage } =
+    usePersistedListState("commission-payments");
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [deleteId, setDeleteId] = useState("");
   const [printDimensions, setPrintDimensions] = useState([]);
   const [printModal, setPrintModal] = useState(null);
   const [printLoadingId, setPrintLoadingId] = useState("");
   const printCancelledRef = useRef(false);
-  const limit = 10;
 
   const loadPayments = async (nextPage = page, nextSearch = search) => {
     setLoading(true);
@@ -55,6 +55,7 @@ const GetAllSalesmanCommissionPayment = () => {
         page: nextPage,
         limit,
         search: nextSearch,
+        ordering: "-created_at,-id",
       });
       setRecords(response.data || []);
       setTotal(response.total || 0);
@@ -70,7 +71,8 @@ const GetAllSalesmanCommissionPayment = () => {
   };
 
   useEffect(() => {
-    loadPayments(1, "");
+    loadPayments(page, search);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- restore once on mount
   }, []);
 
   useEffect(() => {

@@ -7,6 +7,7 @@ import ConfirmModal from "../../../components/ui/ConfirmModal";
 import StateView from "../../../components/StateView";
 import bankTransferService from "../../../api/services/bankTransferService";
 import { formatDecimal } from "../../../utils/format";
+import { usePersistedListState } from "../../../hooks/usePersistedListState";
 import { useToast } from "../../../context/ToastContext";
 
 const extractErrorMessage = (error) => {
@@ -28,23 +29,23 @@ const extractErrorMessage = (error) => {
 const GetAllBankTransfer = () => {
   const navigate = useNavigate();
   const toast = useToast();
+  const { search, page, limit, setSearch, setPage } =
+    usePersistedListState("bank-transfers");
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [deleteId, setDeleteId] = useState("");
-  const limit = 10;
 
-  const loadTransfers = async (nextPage = page) => {
+  const loadTransfers = async (nextPage = page, nextSearch = search) => {
     setLoading(true);
     setError("");
     try {
       const response = await bankTransferService.list({
         page: nextPage,
         limit,
-        search,
+        search: nextSearch,
+        ordering: "-created_at,-id",
       });
       setRecords(response.data || []);
       setTotal(response.total || 0);
@@ -57,7 +58,8 @@ const GetAllBankTransfer = () => {
   };
 
   useEffect(() => {
-    loadTransfers(1);
+    loadTransfers(page, search);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- restore once on mount
   }, []);
 
   const handleDelete = async () => {
@@ -103,7 +105,7 @@ const GetAllBankTransfer = () => {
                 if (event.key === "Enter") {
                   event.preventDefault();
                   setPage(1);
-                  loadTransfers(1);
+                  loadTransfers(1, search);
                 }
               }}
             />
@@ -111,7 +113,7 @@ const GetAllBankTransfer = () => {
               variant="secondary"
               onClick={() => {
                 setPage(1);
-                loadTransfers(1);
+                loadTransfers(1, search);
               }}
             >
               Search

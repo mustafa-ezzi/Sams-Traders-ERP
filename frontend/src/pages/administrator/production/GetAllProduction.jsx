@@ -8,16 +8,16 @@ import Button from "../../../components/ui/Button";
 import ConfirmModal from "../../../components/ui/ConfirmModal";
 import IconButton from "../../../components/ui/IconButton";
 import { useToast } from "../../../context/ToastContext";
+import { usePersistedListState } from "../../../hooks/usePersistedListState";
 const GetAllProduction = () => {
   const navigate = useNavigate();
+  const { search, page, limit, setSearch, setPage } =
+    usePersistedListState("production");
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [deleteId, setDeleteId] = useState("");
-  const limit = 10;
   const toast = useToast();
   const load = async (nextPage = page, nextSearch = search) => {
     setLoading(true);
@@ -27,6 +27,7 @@ const GetAllProduction = () => {
         page: nextPage,
         limit,
         search: nextSearch,
+        ordering: "-created_at,-id",
       });
       const transformedRecords = (response.data || []).map((item) => ({
         ...item,
@@ -50,7 +51,8 @@ const GetAllProduction = () => {
     }
   };
   useEffect(() => {
-    load(1, "");
+    load(page, search);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- restore once on mount
   }, []);
   const onDelete = async (id) => {
     try {

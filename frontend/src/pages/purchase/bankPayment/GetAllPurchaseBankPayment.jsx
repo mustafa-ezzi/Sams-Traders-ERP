@@ -8,6 +8,8 @@ import StateView from "../../../components/StateView";
 import SortableHeader from "../../../components/ui/SortableHeader";
 import purchaseBankPaymentService from "../../../api/services/purchaseBankPaymentService";
 import { formatDecimal } from "../../../utils/format";
+import { buildListOrdering } from "../../../utils/listOrdering";
+import { usePersistedListState } from "../../../hooks/usePersistedListState";
 import { useToast } from "../../../context/ToastContext";
 
 const extractErrorMessage = (error) => {
@@ -36,26 +38,23 @@ const orderingFields = {
   amount: "amount",
 };
 
-const getOrdering = (sortConfig) => {
-  const field = orderingFields[sortConfig.key] || "date";
-  return sortConfig.direction === "desc" ? `-${field}` : field;
-};
-
 const GetAllPurchaseBankPayment = () => {
   const navigate = useNavigate();
   const toast = useToast();
+  const {
+    search,
+    page,
+    limit,
+    sortConfig,
+    setSearch,
+    setPage,
+    setSortConfig,
+  } = usePersistedListState("purchase-bank-payments");
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [deleteId, setDeleteId] = useState("");
-  const [sortConfig, setSortConfig] = useState({
-    key: "date",
-    direction: "desc",
-  });
-  const limit = 10;
 
   const loadPayments = async (
     nextPage = page,
@@ -69,7 +68,7 @@ const GetAllPurchaseBankPayment = () => {
         page: nextPage,
         limit,
         search: nextSearch,
-        ordering: getOrdering(nextSortConfig),
+        ordering: buildListOrdering(nextSortConfig, orderingFields),
       });
       setRecords(response.data || []);
       setTotal(response.total || 0);
@@ -85,7 +84,8 @@ const GetAllPurchaseBankPayment = () => {
   };
 
   useEffect(() => {
-    loadPayments(1, "", sortConfig);
+    loadPayments(page, search, sortConfig);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- restore once on mount
   }, []);
 
   const handleSort = (key) => {
@@ -97,7 +97,6 @@ const GetAllPurchaseBankPayment = () => {
           : "asc",
     };
     setSortConfig(nextSortConfig);
-    setPage(1);
     loadPayments(1, search, nextSortConfig);
   };
 

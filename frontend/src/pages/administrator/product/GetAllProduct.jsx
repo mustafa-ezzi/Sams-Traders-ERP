@@ -10,6 +10,7 @@ import Button from "../../../components/ui/Button";
 import ConfirmModal from "../../../components/ui/ConfirmModal";
 import IconButton from "../../../components/ui/IconButton";
 import { useToast } from "../../../context/ToastContext";
+import { usePersistedListState } from "../../../hooks/usePersistedListState";
 import {
   flattenAccountTree,
   getPostableInventoryAccounts,
@@ -37,20 +38,28 @@ const extractErrorMessage = (error) => {
 const GetAllProduct = () => {
   const navigate = useNavigate();
   const toast = useToast();
+  const {
+    search,
+    page,
+    limit,
+    extras,
+    setSearch,
+    setPage,
+    setExtra,
+  } = usePersistedListState("products", {
+    extras: { productTypeFilter: "", sortBy: "-created_at" },
+  });
+  const productTypeFilter = extras.productTypeFilter ?? "";
+  const sortBy = extras.sortBy || "-created_at";
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
-  const [productTypeFilter, setProductTypeFilter] = useState("");
-  const [sortBy, setSortBy] = useState("-created_at");
-  const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [unitOptions, setUnitOptions] = useState([]);
   const [inventoryAccounts, setInventoryAccounts] = useState([]);
   const [cogsAccounts, setCogsAccounts] = useState([]);
   const [revenueAccounts, setRevenueAccounts] = useState([]);
   const [deleteId, setDeleteId] = useState("");
-  const limit = 10;
 
   const load = async (nextPage = page, options = {}) => {
     const nextSearch = options.search ?? search;
@@ -81,7 +90,7 @@ const GetAllProduct = () => {
   };
 
   useEffect(() => {
-    load(1, { search: "", productTypeFilter: "", sortBy: "-created_at" });
+    load(page, { search, productTypeFilter, sortBy });
     Promise.all([
       unitService.list({ page: 1, limit: 100, search: "" }),
       accountService.list(),
@@ -98,6 +107,7 @@ const GetAllProduct = () => {
         );
       })
       .catch(() => toast.error("Failed to load product setup options"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- restore once on mount
   }, []);
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
@@ -148,7 +158,7 @@ const GetAllProduct = () => {
                 value={productTypeFilter}
                 onChange={(event) => {
                   const value = event.target.value;
-                  setProductTypeFilter(value);
+                  setExtra("productTypeFilter", value);
                   load(1, { productTypeFilter: value });
                 }}
                 aria-label="Filter by product type"
@@ -162,7 +172,7 @@ const GetAllProduct = () => {
                 value={sortBy}
                 onChange={(event) => {
                   const value = event.target.value;
-                  setSortBy(value);
+                  setExtra("sortBy", value);
                   load(1, { sortBy: value });
                 }}
                 aria-label="Sort products"

@@ -119,8 +119,10 @@ class BaseTenantViewSet(UnpaginatedOptionsMixin, ModelViewSet):
 
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
-    filter_backends = [filters.SearchFilter]
+    filter_backends = [filters.SearchFilter, OrderingFilter]
     search_fields = ["name"]
+    ordering_fields = ["name", "created_at", "id"]
+    ordering = ["-created_at", "-id"]
 
     def get_queryset(self):
         return self.queryset.filter(
@@ -215,8 +217,10 @@ class RawMaterialViewSet(UnpaginatedOptionsMixin, ModelViewSet):
     queryset = RawMaterial.objects.all()
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
-    filter_backends = [filters.SearchFilter]
+    filter_backends = [filters.SearchFilter, OrderingFilter]
     search_fields = ["name"]
+    ordering_fields = ["name", "created_at", "id"]
+    ordering = ["-created_at", "-id"]
     option_serializer_class = RawMaterialDropdownOptionSerializer
 
     def get_serializer_class(self):
@@ -255,7 +259,7 @@ class RawMaterialViewSet(UnpaginatedOptionsMixin, ModelViewSet):
             qs = qs.filter(category_id=category_id)
         if purchase_unit_id:
             qs = qs.filter(purchase_unit_id=purchase_unit_id)
-        return qs
+        return qs.order_by("-created_at", "-id")
 
     def perform_create(self, serializer):
         serializer.save(tenant_id=self.request.user.tenant_id)
@@ -292,8 +296,9 @@ class ProductViewSet(UnpaginatedOptionsMixin, viewsets.ModelViewSet):
         "_average_cost",
         "_stock_value",
         "created_at",
+        "id",
     ]
-    ordering = ["-created_at"]
+    ordering = ["-created_at", "-id"]
 
     def get_queryset(self):
         active_materials = ProductMaterial.objects.filter(
@@ -624,8 +629,10 @@ class ProductionViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     serializer_class = ProductionSerializer
     pagination_class = StandardResultsSetPagination
-    filter_backends = [filters.SearchFilter]
+    filter_backends = [filters.SearchFilter, OrderingFilter]
     search_fields = ["warehouse__name", "product__name"]
+    ordering_fields = ["date", "created_at", "id", "quantity"]
+    ordering = ["-created_at", "-date", "-id"]
 
     def get_queryset(self):
         return (
@@ -633,7 +640,7 @@ class ProductionViewSet(viewsets.ModelViewSet):
                 **get_request_tenant_filter(self.request), deleted_at__isnull=True
             )
             .select_related("warehouse", "product")
-            .order_by("-date", "-created_at")
+            .order_by("-created_at", "-date", "-id")
         )
 
     def _get_total_quantities_for_products(self, tenant_id, warehouse_product_pairs):
@@ -1070,8 +1077,9 @@ class BasePartyViewSet(UnpaginatedOptionsMixin, viewsets.ModelViewSet):
         "phone_number",
         "account__code",
         "address",
+        "created_at",
     ]
-    ordering = ["business_name", "name"]
+    ordering = ["-created_at", "-id"]
     option_serializer_class = PartyDropdownOptionSerializer
     option_ordering = ("business_name", "name", "id")
 
@@ -1165,8 +1173,10 @@ class PartyOpeningBalanceViewSet(AuditedModelMixin, SharedMasterViewSet):
         "date",
         "amount",
         "remarks",
+            "created_at",
+        "id",
     ]
-    ordering = ["-date", "-created_at"]
+    ordering = ["-created_at", "-date", "-id"]
 
     def perform_create(self, serializer):
         serializer.save()

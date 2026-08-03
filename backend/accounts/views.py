@@ -2220,8 +2220,10 @@ class ExpenseViewSet(AuditedModelMixin, ModelViewSet):
         "_description",
         "amount",
         "remarks",
+            "created_at",
+        "id",
     ]
-    ordering = ["-date", "-created_at"]
+    ordering = ["-created_at", "-date", "-id"]
     search_fields = [
         "expense_number",
         "lines__bank_account__name",
@@ -2318,7 +2320,7 @@ class BankTransferViewSet(AuditedModelMixin, ModelViewSet):
     serializer_class = BankTransferSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
-    filter_backends = [filters.SearchFilter]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = [
         "transfer_number",
         "from_bank_account__name",
@@ -2327,6 +2329,8 @@ class BankTransferViewSet(AuditedModelMixin, ModelViewSet):
         "to_bank_account__code",
         "remarks",
     ]
+    ordering_fields = ["date", "transfer_number", "amount", "created_at", "id"]
+    ordering = ["-created_at", "-date", "-id"]
 
     def get_queryset(self):
         tenant_ids = get_shared_tenant_ids(self.request) or [self.request.user.tenant_id]
@@ -2338,7 +2342,7 @@ class BankTransferViewSet(AuditedModelMixin, ModelViewSet):
             )
             .select_related("from_bank_account__parent", "to_bank_account__parent")
             .distinct()
-            .order_by("-date", "-created_at")
+            .order_by("-created_at", "-date", "-id")
         )
 
     def get_serializer_context(self):

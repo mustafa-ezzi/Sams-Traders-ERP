@@ -9,6 +9,7 @@ import Button from "../../../components/ui/Button";
 import ConfirmModal from "../../../components/ui/ConfirmModal";
 import IconButton from "../../../components/ui/IconButton";
 import { useToast } from "../../../context/ToastContext";
+import { usePersistedListState } from "../../../hooks/usePersistedListState";
 import {
   flattenAccountTree,
   formatAccountLabel,
@@ -17,15 +18,14 @@ import {
 const GetAllRawMaterial = () => {
   const navigate = useNavigate();
   const toast = useToast();
+  const { search, page, limit, setSearch, setPage } =
+    usePersistedListState("raw-materials");
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [inventoryAccounts, setInventoryAccounts] = useState([]);
   const [deleteId, setDeleteId] = useState("");
-  const limit = 10;
   const load = async (nextPage = page, nextSearch = search) => {
     setLoading(true);
     setError("");
@@ -34,6 +34,7 @@ const GetAllRawMaterial = () => {
         page: nextPage,
         limit,
         search: nextSearch,
+        ordering: "-created_at,-id",
       });
       setRecords(response.data || []);
       setTotal(response.total || 0);
@@ -47,7 +48,7 @@ const GetAllRawMaterial = () => {
     }
   };
   useEffect(() => {
-    load(1, "");
+    load(page, search);
     accountService
       .list()
       .then((accountRes) => {
@@ -56,6 +57,7 @@ const GetAllRawMaterial = () => {
         );
       })
       .catch(() => toast.error("Failed to load accounts"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- restore once on mount
   }, []);
   const onDelete = async (id) => {
     try {

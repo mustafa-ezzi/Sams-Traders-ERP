@@ -76,8 +76,10 @@ class SalesInvoiceViewSet(AuditedModelMixin, viewsets.ModelViewSet):
         "_cost_total",
         "_profit",
         "_balance_amount",
+            "created_at",
+        "id",
     ]
-    ordering = ["-date", "-created_at"]
+    ordering = ["-created_at", "-date", "-id"]
     search_fields = [
         "invoice_number",
         "dc_number",
@@ -310,8 +312,10 @@ class SalesOrderViewSet(viewsets.ModelViewSet):
         "gross_amount",
         "net_amount",
         "_is_invoiced",
+            "created_at",
+        "id",
     ]
-    ordering = ["-date", "-created_at"]
+    ordering = ["-created_at", "-date", "-id"]
     search_fields = [
         "order_number",
         "dc_number",
@@ -467,8 +471,10 @@ class SalesReturnViewSet(AuditedModelMixin, viewsets.ModelViewSet):
         "customer__business_name",
         "sales_invoice__invoice_number",
         "gross_amount",
+            "created_at",
+        "id",
     ]
-    ordering = ["-date", "-created_at"]
+    ordering = ["-created_at", "-date", "-id"]
     search_fields = [
         "return_number",
         "sales_invoice__invoice_number",
@@ -715,8 +721,10 @@ class SalesBankReceiptViewSet(AuditedModelMixin, viewsets.ModelViewSet):
         "_reference_name",
         "_bank_name",
         "_line_tenant_id",
+            "created_at",
+        "id",
     ]
-    ordering = ["-date", "-created_at"]
+    ordering = ["-created_at", "-date", "-id"]
     search_fields = [
         "receipt_number",
         "lines__sales_invoice__invoice_number",
@@ -957,7 +965,7 @@ class SalesmanCommissionPaymentViewSet(AuditedModelMixin, viewsets.ModelViewSet)
     serializer_class = SalesmanCommissionPaymentSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
-    filter_backends = [filters.SearchFilter]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = [
         "voucher_number",
         "sales_invoice__invoice_number",
@@ -965,6 +973,8 @@ class SalesmanCommissionPaymentViewSet(AuditedModelMixin, viewsets.ModelViewSet)
         "salesman__code",
         "remarks",
     ]
+    ordering_fields = ["date", "voucher_number", "amount", "created_at", "id"]
+    ordering = ["-created_at", "-date", "-id"]
 
     def get_queryset(self):
         queryset = (
@@ -974,7 +984,7 @@ class SalesmanCommissionPaymentViewSet(AuditedModelMixin, viewsets.ModelViewSet)
             )
             .select_related("salesman", "sales_invoice", "payable_account", "payment_account")
             .prefetch_related("lines__sales_invoice")
-            .order_by("-date", "-created_at")
+            .order_by("-created_at", "-date", "-id")
         )
         return filter_queryset_by_allowed_salesmen(queryset, self.request.user)
 

@@ -63,8 +63,10 @@ class PurchaseInvoiceViewSet(AuditedModelMixin, viewsets.ModelViewSet):
         "supplier__business_name",
         "warehouse__name",
         "_balance_amount",
+            "created_at",
+        "id",
     ]
-    ordering = ["-date", "-created_at"]
+    ordering = ["-created_at", "-date", "-id"]
     search_fields = ["invoice_number", "supplier__business_name", "remarks", "warehouse__name"]
 
     def get_queryset(self):
@@ -335,8 +337,10 @@ class PurchaseReturnViewSet(AuditedModelMixin, viewsets.ModelViewSet):
         "supplier__business_name",
         "purchase_invoice__invoice_number",
         "gross_amount",
+            "created_at",
+        "id",
     ]
-    ordering = ["-date", "-created_at"]
+    ordering = ["-created_at", "-date", "-id"]
     search_fields = [
         "return_number",
         "purchase_invoice__invoice_number",
@@ -574,8 +578,10 @@ class PurchaseBankPaymentViewSet(AuditedModelMixin, viewsets.ModelViewSet):
         "_line_count",
         "_supplier_name",
         "_reference_name",
+            "created_at",
+        "id",
     ]
-    ordering = ["-date", "-created_at"]
+    ordering = ["-created_at", "-date", "-id"]
     search_fields = [
         "payment_number",
         "lines__purchase_invoice__invoice_number",

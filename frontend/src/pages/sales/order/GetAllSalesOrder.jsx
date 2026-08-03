@@ -9,6 +9,8 @@ import PageSizeSelect from "../../../components/ui/PageSizeSelect";
 import SortableHeader from "../../../components/ui/SortableHeader";
 import salesOrderService from "../../../api/services/salesOrderService";
 import { formatDecimal } from "../../../utils/format";
+import { buildListOrdering } from "../../../utils/listOrdering";
+import { usePersistedListState } from "../../../hooks/usePersistedListState";
 import { useToast } from "../../../context/ToastContext";
 
 const extractErrorMessage = (error) => {
@@ -26,6 +28,7 @@ const extractErrorMessage = (error) => {
   }
   return "Something went wrong";
 };
+
 const orderingFields = {
   order: "order_number",
   date: "date",
@@ -35,32 +38,50 @@ const orderingFields = {
   net: "net_amount",
   status: "_is_invoiced",
 };
-const getOrdering = (sortConfig) => {
-  const field = orderingFields[sortConfig.key] || "date";
-  return sortConfig.direction === "desc" ? `-${field}` : field;
+
+const STATUS_FILTERS = [
+  { id: "all", label: "All" },
+  { id: "pending", label: "Pending" },
+  { id: "invoiced", label: "Invoiced" },
+];
+
+const statusToInvoicedParam = (status) => {
+  if (status === "pending") return false;
+  if (status === "invoiced") return true;
+  return "";
 };
 
 const GetAllSalesOrder = () => {
   const navigate = useNavigate();
   const toast = useToast();
+  const {
+    search,
+    page,
+    limit,
+    sortConfig,
+    extras,
+    setSearch,
+    setPage,
+    setLimit,
+    setSortConfig,
+    setExtra,
+  } = usePersistedListState("sales-orders", {
+    extras: { status: "pending" },
+  });
+  const statusFilter = extras.status || "pending";
+
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
-  const [total, setTotal] = useState(0);
   const [deleteId, setDeleteId] = useState("");
-  const [limit, setLimit] = useState(10);
-  const [sortConfig, setSortConfig] = useState({
-    key: "date",
-    direction: "desc",
-  });
+  const [total, setTotal] = useState(0);
 
   const loadOrders = async (
     nextPage = page,
     nextSearch = search,
     nextLimit = limit,
     nextSortConfig = sortConfig,
+    nextStatus = statusFilter,
   ) => {
     setLoading(true);
     setError("");
@@ -69,7 +90,8 @@ const GetAllSalesOrder = () => {
         page: nextPage,
         limit: nextLimit,
         search: nextSearch,
-        ordering: getOrdering(nextSortConfig),
+        ordering: buildListOrdering(nextSortConfig, orderingFields),
+        invoiced: statusToInvoicedParam(nextStatus),
       });
       setRecords(response.data || []);
       setTotal(response.total || 0);
@@ -82,7 +104,8 @@ const GetAllSalesOrder = () => {
   };
 
   useEffect(() => {
-    loadOrders(1, "");
+    loadOrders(page, search, limit, sortConfig, statusFilter);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- restore once on mount
   }, []);
 
   const confirmDelete = async () => {
@@ -95,11 +118,12 @@ const GetAllSalesOrder = () => {
       toast.error(extractErrorMessage(deleteError) || "Failed to delete order");
     }
   };
+
   const handlePageSizeChange = (value) => {
     setLimit(value);
-    setPage(1);
-    loadOrders(1, search, value, sortConfig);
+    loadOrders(1, search, value, sortConfig, statusFilter);
   };
+
   const handleSort = (key) => {
     const nextSortConfig = {
       key,
@@ -109,8 +133,12 @@ const GetAllSalesOrder = () => {
           : "asc",
     };
     setSortConfig(nextSortConfig);
-    setPage(1);
-    loadOrders(1, search, limit, nextSortConfig);
+    loadOrders(1, search, limit, nextSortConfig, statusFilter);
+  };
+
+  const handleStatusFilter = (nextStatus) => {
+    setExtra("status", nextStatus);
+    loadOrders(1, search, limit, sortConfig, nextStatus);
   };
 
   return (
@@ -152,11 +180,36 @@ const GetAllSalesOrder = () => {
             </Button>
           </div>
         </div>
+
+        <div className="flex flex-wrap gap-2">
+          {STATUS_FILTERS.map((item) => {
+            const active = statusFilter === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => handleStatusFilter(item.id)}
+                className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
+                  active
+                    ? "bg-blue-600 text-white"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                }`}
+              >
+                {item.label}
+              </button>
+            );
+          })}
+        </div>
+
         <StateView
           loading={loading}
           error={error}
           isEmpty={!loading && !error && records.length === 0}
-          emptyMessage="No sales orders found yet."
+          emptyMessage={
+            statusFilter === "pending"
+              ? "No pending sales orders found."
+              : "No sales orders found yet."
+          }
         >
           <div className="overflow-hidden rounded-[24px] border border-slate-200 dark:border-slate-700">
             <div className="overflow-x-auto">
