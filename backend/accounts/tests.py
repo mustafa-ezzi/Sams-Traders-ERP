@@ -702,6 +702,78 @@ class LedgerReportTests(TestCase):
         self.assertEqual(totals["Opening Balance"], "800.00")
         self.assertEqual(totals["Sales Invoice"], "200.00")
         self.assertEqual(payload["summary"]["grand_total"], "1000.00")
+        self.assertEqual(payload["rows"][0]["balance"], "800.00")
+        self.assertEqual(payload["rows"][1]["balance"], "1000.00")
+
+    def test_customer_party_ledger_negative_opening_balance_nets_correctly(self):
+        """Negative OB posts as credit on AR → party debit; must subtract from invoices."""
+        opening_entry = JournalEntry.objects.create(
+            tenant_id=self.tenant_id,
+            date="2026-01-01",
+            reference="OB-CUST-NEG01",
+            source_type=JournalEntry.SourceType.PARTY_OPENING_BALANCE,
+            source_id="ffffffff-ffff-ffff-ffff-ffffffffffff",
+            document_type="Opening Balance",
+            description="Customer Opening Balance (Negative)",
+            people_type="Customer",
+            people_name=self.customer.business_name,
+        )
+        JournalLine.objects.create(
+            tenant_id=self.tenant_id,
+            journal_entry=opening_entry,
+            account=self.customer_account,
+            debit=Decimal("0.00"),
+            credit=Decimal("1170.00"),
+            people_type="Customer",
+            people_name=self.customer.business_name,
+            line_description="Customer Opening Balance (Negative)",
+        )
+
+        sales_entry = JournalEntry.objects.create(
+            tenant_id=self.tenant_id,
+            date="2026-01-30",
+            reference="SI-0043",
+            source_type=JournalEntry.SourceType.SALES_INVOICE,
+            source_id="abcdefab-abcd-abcd-abcd-abcdefabcdef",
+            document_type="Sales Invoice",
+            description="Customer Receivable",
+            people_type="Customer",
+            people_name=self.customer.business_name,
+        )
+        JournalLine.objects.create(
+            tenant_id=self.tenant_id,
+            journal_entry=sales_entry,
+            account=self.customer_account,
+            debit=Decimal("1500.00"),
+            credit=Decimal("0.00"),
+            people_type="Customer",
+            people_name=self.customer.business_name,
+            line_description="Customer Receivable",
+        )
+
+        request = self.factory.get(
+            "/api/accounts/accounts/party-ledger-report/",
+            {
+                "partner_type": "customer",
+                "partner_id": str(self.customer.id),
+                "from_date": "2026-01-01",
+                "to_date": "2026-12-31",
+            },
+        )
+        force_authenticate(request, user=self.user)
+        response = AccountViewSet.as_view({"get": "party_ledger_report"})(request)
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.data["data"]
+        self.assertEqual(payload["rows"][0]["debit"], "1170.00")
+        self.assertEqual(payload["rows"][0]["credit"], "0.00")
+        self.assertEqual(payload["rows"][1]["debit"], "0.00")
+        self.assertEqual(payload["rows"][1]["credit"], "1500.00")
+        self.assertEqual(payload["summary"]["total_debit"], "1170.00")
+        self.assertEqual(payload["summary"]["total_credit"], "1500.00")
+        self.assertEqual(payload["summary"]["grand_total"], "330.00")
+        self.assertEqual(payload["rows"][0]["balance"], "-1170.00")
+        self.assertEqual(payload["rows"][1]["balance"], "330.00")
 
     def test_supplier_ledger_report_includes_opening_balance_brought_forward(self):
         opening_entry = JournalEntry.objects.create(

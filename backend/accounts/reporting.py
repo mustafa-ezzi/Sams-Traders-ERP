@@ -308,20 +308,25 @@ def build_party_ledger_report(
             }
         )
 
+    # Net outstanding from party-statement columns:
+    # customer invoices/credits increase credit; receipts/advances increase debit.
+    # supplier invoices increase debit; payments increase credit.
     if partner_type == "customer":
-        grand_total = _money(
-            document_totals.get("Opening Balance", Decimal("0.00"))
-            + document_totals.get("Sales Invoice", Decimal("0.00"))
-            - document_totals.get("Sales Return", Decimal("0.00"))
-            - document_totals.get("Bank Receipt", Decimal("0.00"))
-        )
+        running = Decimal("0.00")
+        for row in rows:
+            running = _money(
+                running + Decimal(str(row["credit"])) - Decimal(str(row["debit"]))
+            )
+            row["balance"] = str(running)
+        grand_total = _money(total_credit - total_debit)
     else:
-        grand_total = _money(
-            document_totals.get("Opening Balance", Decimal("0.00"))
-            + document_totals.get("Purchase Invoice", Decimal("0.00"))
-            - document_totals.get("Purchase Return", Decimal("0.00"))
-            - document_totals.get("Bank Payment", Decimal("0.00"))
-        )
+        running = Decimal("0.00")
+        for row in rows:
+            running = _money(
+                running + Decimal(str(row["debit"])) - Decimal(str(row["credit"]))
+            )
+            row["balance"] = str(running)
+        grand_total = _money(total_debit - total_credit)
 
     return {
         "rows": rows,
@@ -704,6 +709,74 @@ def _ensure_aging_party_row(party_map, *, party, tenant_id, dimension_names):
     return party_map[party_key]
 
 
+def _normalize_aging_party_name(name):
+    return " ".join(str(name or "").strip().casefold().split())
+
+
+def _group_aging_party_rows(party_rows):
+    """
+    Keep same-named parties across dimensions adjacent, then append a Combined row.
+    Sorted by party name, then dimension (not by outstanding amount).
+    """
+    if not party_rows:
+        return []
+
+    ordered = sorted(
+        party_rows,
+        key=lambda row: (
+            _normalize_aging_party_name(row.get("party_name")),
+            str(row.get("dimension_name") or row.get("tenant_id") or "").casefold(),
+            str(row.get("party_id") or ""),
+        ),
+    )
+
+    grouped = []
+    sort_index = 0
+    index = 0
+    while index < len(ordered):
+        name_key = _normalize_aging_party_name(ordered[index].get("party_name"))
+        group = []
+        while index < len(ordered) and _normalize_aging_party_name(
+            ordered[index].get("party_name")
+        ) == name_key:
+            group.append(ordered[index])
+            index += 1
+
+        for row in group:
+            row["is_combined"] = False
+            row["sort_index"] = sort_index
+            sort_index += 1
+            grouped.append(row)
+
+        if len(group) > 1:
+            combined_buckets = _empty_aging_buckets()
+            combined_total = Decimal("0.00")
+            invoice_count = 0
+            for row in group:
+                for key in AGING_BUCKET_KEYS:
+                    combined_buckets[key] = _money(
+                        combined_buckets[key] + _money(row["buckets"][key])
+                    )
+                combined_total = _money(combined_total + _money(row["total"]))
+                invoice_count += int(row.get("invoice_count") or 0)
+            grouped.append(
+                {
+                    "party_id": f"combined:{name_key}",
+                    "party_name": group[0].get("party_name") or "",
+                    "tenant_id": "",
+                    "dimension_name": "Combined",
+                    "buckets": combined_buckets,
+                    "total": combined_total,
+                    "invoice_count": invoice_count,
+                    "is_combined": True,
+                    "sort_index": sort_index,
+                }
+            )
+            sort_index += 1
+
+    return grouped
+
+
 def _add_aging_balance(
     *,
     party_map,
@@ -978,18 +1051,24 @@ def _build_invoice_aging_report(
             )
         )
 
-    party_rows = sorted(
-        party_map.values(),
-        key=lambda row: (row["total"], row["party_name"]),
-        reverse=True,
-    )
+    party_rows = _group_aging_party_rows(list(party_map.values()))
     for row in party_rows:
-        row["buckets"] = {key: str(row["buckets"][key]) for key in AGING_BUCKET_KEYS}
-        row["total"] = str(row["total"])
+        if isinstance(row["buckets"], dict) and row["buckets"]:
+            sample = next(iter(row["buckets"].values()))
+            if not isinstance(sample, str):
+                row["buckets"] = {
+                    key: str(row["buckets"][key]) for key in AGING_BUCKET_KEYS
+                }
+        if not isinstance(row["total"], str):
+            row["total"] = str(row["total"])
 
     detail_rows.sort(
-        key=lambda row: (row["days_overdue"], row["party_name"], row["document_number"]),
-        reverse=True,
+        key=lambda row: (
+            (row["party_name"] or "").casefold(),
+            row.get("dimension_name") or row.get("tenant_id") or "",
+            -row["days_overdue"],
+            row["document_number"],
+        ),
     )
 
     return {
@@ -1001,7 +1080,9 @@ def _build_invoice_aging_report(
         "summary": {
             "total_outstanding": str(total_outstanding),
             "bucket_totals": {key: str(bucket_totals[key]) for key in AGING_BUCKET_KEYS},
-            "party_count": len(party_rows),
+            "party_count": len(
+                [row for row in party_rows if not row.get("is_combined")]
+            ),
             "invoice_count": len(detail_rows),
         },
         "party_rows": party_rows,

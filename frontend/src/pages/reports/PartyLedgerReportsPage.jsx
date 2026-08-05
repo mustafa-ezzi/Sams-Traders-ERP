@@ -64,6 +64,13 @@ const PARTY_LEDGER_COLUMNS = [
   { key: "date", label: "Date", width: "90px" },
   { key: "remarks", label: "Remarks" },
   {
+    key: "debit",
+    label: "Debit",
+    align: "right",
+    type: "money",
+    width: "100px",
+  },
+  {
     key: "credit",
     label: "Credit",
     align: "right",
@@ -71,11 +78,11 @@ const PARTY_LEDGER_COLUMNS = [
     width: "100px",
   },
   {
-    key: "debit",
-    label: "Debit",
+    key: "balance",
+    label: "Balance",
     align: "right",
     type: "money",
-    width: "100px",
+    width: "110px",
   },
 ];
 
@@ -140,8 +147,9 @@ const PartyLedgerReportsPage = () => {
         document_type: row.document_type,
         date: row.date,
         remarks: row.remarks || "—",
-        credit: row.credit,
         debit: row.debit,
+        credit: row.credit,
+        balance: row.balance,
       })),
     [report],
   );
@@ -398,18 +406,18 @@ const PartyLedgerReportsPage = () => {
                 <div className="grid gap-3 sm:grid-cols-3">
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-right">
                     <p className="text-xs uppercase tracking-wide text-slate-400">
-                      Credit
-                    </p>
-                    <p className="mt-1 text-lg font-bold text-emerald-700">
-                      {formatDecimal(report.summary?.total_credit)}
-                    </p>
-                  </div>
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-right">
-                    <p className="text-xs uppercase tracking-wide text-slate-400">
                       Debit
                     </p>
                     <p className="mt-1 text-lg font-bold text-rose-700">
                       {formatDecimal(report.summary?.total_debit)}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-right">
+                    <p className="text-xs uppercase tracking-wide text-slate-400">
+                      Credit
+                    </p>
+                    <p className="mt-1 text-lg font-bold text-emerald-700">
+                      {formatDecimal(report.summary?.total_credit)}
                     </p>
                   </div>
                   <div className="rounded-2xl border border-slate-200 bg-slate-900 px-4 py-3 text-right text-white">
@@ -467,6 +475,13 @@ const PartyLedgerReportsPage = () => {
                           className="px-4 py-3"
                         />
                         <SortableHeader
+                          label="Debit"
+                          sortKey="debit"
+                          sortConfig={sortConfig}
+                          onSort={handleSort}
+                          className="px-4 py-3 text-right"
+                        />
+                        <SortableHeader
                           label="Credit"
                           sortKey="credit"
                           sortConfig={sortConfig}
@@ -474,8 +489,8 @@ const PartyLedgerReportsPage = () => {
                           className="px-4 py-3 text-right"
                         />
                         <SortableHeader
-                          label="Debit"
-                          sortKey="debit"
+                          label="Balance"
+                          sortKey="balance"
                           sortConfig={sortConfig}
                           onSort={handleSort}
                           className="px-4 py-3 text-right"
@@ -512,11 +527,14 @@ const PartyLedgerReportsPage = () => {
                           <td className="px-4 py-3 text-slate-600">
                             {row.remarks || "-"}
                           </td>
+                          <td className="px-4 py-3 text-right font-semibold text-rose-700">
+                            {formatDecimal(row.debit)}
+                          </td>
                           <td className="px-4 py-3 text-right font-semibold text-emerald-700">
                             {formatDecimal(row.credit)}
                           </td>
-                          <td className="px-4 py-3 text-right font-semibold text-rose-700">
-                            {formatDecimal(row.debit)}
+                          <td className="px-4 py-3 text-right font-bold text-slate-900">
+                            {formatDecimal(row.balance)}
                           </td>
                         </tr>
                       ))}

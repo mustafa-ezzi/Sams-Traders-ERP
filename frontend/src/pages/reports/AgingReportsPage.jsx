@@ -84,26 +84,56 @@ const BucketSummary = ({ buckets, bucketTotals, totalOutstanding }) => (
 
 const PartyAgingTable = ({ report, showDimension, partnerType }) => {
   const buckets = report?.buckets || [];
-  const rows = report?.party_rows || [];
+  const rows = useMemo(
+    () =>
+      (report?.party_rows || []).map((row) => ({
+        ...row,
+        _rowClassName: row.is_combined
+          ? "bg-indigo-50/70 dark:bg-indigo-950/30"
+          : undefined,
+      })),
+    [report],
+  );
 
   const columns = useMemo(() => {
     const cols = [
       {
-        key: "party_name",
+        key: "sort_index",
         label: "Party",
         strong: true,
-        render: (row) => (
-          <ReportLink
-            to={REPORT_PATHS.partyLedger(partnerType, row.party_id)}
-            title="Open party ledger"
-          >
-            {row.party_name}
-          </ReportLink>
-        ),
+        getValue: (row) => row.sort_index ?? 0,
+        render: (row) => {
+          if (row.is_combined) {
+            return (
+              <span className="font-extrabold text-indigo-700 dark:text-indigo-300">
+                {row.party_name} (Combined)
+              </span>
+            );
+          }
+          return (
+            <ReportLink
+              to={REPORT_PATHS.partyLedger(partnerType, row.party_id)}
+              title="Open party ledger"
+            >
+              {row.party_name}
+            </ReportLink>
+          );
+        },
       },
     ];
     if (showDimension) {
-      cols.push({ key: "dimension_name", label: "Dimension" });
+      cols.push({
+        key: "dimension_name",
+        label: "Dimension",
+        render: (row) =>
+          row.is_combined ? (
+            <span className="font-semibold text-indigo-600 dark:text-indigo-400">
+              Combined
+            </span>
+          ) : (
+            row.dimension_name
+          ),
+      });
     }
     cols.push({
       key: "invoice_count",
@@ -124,7 +154,13 @@ const PartyAgingTable = ({ report, showDimension, partnerType }) => {
       label: "Total",
       align: "right",
       render: (row) => (
-        <span className="font-bold text-indigo-600 dark:text-indigo-400">
+        <span
+          className={`font-bold ${
+            row.is_combined
+              ? "text-indigo-800 dark:text-indigo-200"
+              : "text-indigo-600 dark:text-indigo-400"
+          }`}
+        >
           {formatDecimal(row.total)}
         </span>
       ),
@@ -138,8 +174,12 @@ const PartyAgingTable = ({ report, showDimension, partnerType }) => {
       columns={columns}
       showCount={false}
       emptyMessage="No outstanding balances by party for this report."
-      initialSort={{ key: "total", direction: "desc" }}
-      rowKey={(row) => `${row.tenant_id}-${row.party_id}`}
+      initialSort={{ key: "sort_index", direction: "asc" }}
+      rowKey={(row) =>
+        row.is_combined
+          ? `combined-${row.party_id}`
+          : `${row.tenant_id}-${row.party_id}`
+      }
     />
   );
 };
@@ -256,7 +296,7 @@ const InvoiceDetailTable = ({ report, showDimension, partyLabel, partnerType }) 
       columns={columns}
       showCount={false}
       emptyMessage="No invoice detail rows."
-      initialSort={{ key: "days_overdue", direction: "desc" }}
+      initialSort={{ key: "party_name", direction: "asc" }}
       rowKey={(row) => row.invoice_id}
     />
   );
