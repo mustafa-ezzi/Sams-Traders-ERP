@@ -19,6 +19,7 @@ const SalesInvoicePrintModal = ({
     <PrintPreviewShell
       title={`Print preview · ${invNo}`}
       documentTitle={invoice ? downloadName : ""}
+      bareSheet
       onClose={onClose}
     >
       {loading ? (
