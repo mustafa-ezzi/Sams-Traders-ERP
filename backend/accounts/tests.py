@@ -1255,6 +1255,95 @@ class OpeningAccountsStructureTests(TestCase):
         finished_products.refresh_from_db()
         self.assertFalse(finished_products.is_postable)
 
+    def test_child_code_overflows_when_short_block_is_full(self):
+        """Partners Salaries style: after 6141-6149, next child is 61401 (not 6150)."""
+        expenses = Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="6000",
+            name="Expenses",
+            account_group=Account.AccountGroup.EXPENSE,
+            account_nature=Account.AccountNature.DEBIT,
+            level=1,
+            is_postable=False,
+            is_active=True,
+            sort_order=0,
+        )
+        fixed = Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="6100",
+            name="Fixed Expenses",
+            parent=expenses,
+            account_group=Account.AccountGroup.EXPENSE,
+            account_nature=Account.AccountNature.DEBIT,
+            level=2,
+            is_postable=False,
+            is_active=True,
+            sort_order=0,
+        )
+        partners = Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="6140",
+            name="Partners Salaries",
+            parent=fixed,
+            account_group=Account.AccountGroup.EXPENSE,
+            account_nature=Account.AccountNature.DEBIT,
+            level=3,
+            is_postable=False,
+            is_active=True,
+            sort_order=0,
+        )
+        # Sibling head that must stay free — overflow must not steal 6150.
+        Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="6150",
+            name="Rent",
+            parent=fixed,
+            account_group=Account.AccountGroup.EXPENSE,
+            account_nature=Account.AccountNature.DEBIT,
+            level=3,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+        for index in range(1, 10):
+            Account.objects.create(
+                tenant_id=self.tenant_id,
+                code=f"614{index}",
+                name=f"Partner {index}",
+                parent=partners,
+                account_group=Account.AccountGroup.EXPENSE,
+                account_nature=Account.AccountNature.DEBIT,
+                level=4,
+                is_postable=True,
+                is_active=True,
+                sort_order=0,
+            )
+
+        request = self._build_request(
+            "post",
+            "/accounts/accounts/",
+            {
+                "name": "Partner 10 Overflow",
+                "parent": str(partners.id),
+                "account_group": Account.AccountGroup.EXPENSE,
+                "account_type": Account.AccountType.GENERAL,
+                "account_nature": Account.AccountNature.DEBIT,
+                "is_postable": True,
+                "is_active": True,
+            },
+        )
+        response = AccountViewSet.as_view({"post": "create"})(request)
+
+        self.assertEqual(response.status_code, 201)
+        created = Account.objects.get(name="Partner 10 Overflow")
+        self.assertEqual(created.code, "61401")
+        self.assertEqual(created.parent_id, partners.id)
+        self.assertTrue(
+            Account.objects.filter(
+                tenant_id=self.tenant_id, code="6150", name="Rent"
+            ).exists()
+        )
+
     def test_custom_chart_codes_are_shared_across_dimensions_after_level_three(self):
         sams_dimension, _ = Dimension.objects.get_or_create(
             code=self.tenant_id,

@@ -302,6 +302,41 @@ class AccountSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"code": "Account code must contain only digits."})
         return code_str
 
+    @staticmethod
+    def _generate_overflow_child_code(parent_code, tenant_codes):
+        """
+        When the classic short numeric block is full (e.g. 6141-6149 under 6140),
+        allocate longer digit-only codes by appending a counter: 61401, 61402, ...
+        Existing short codes and sibling ranges (6150, 6160, ...) stay untouched.
+        """
+        parent_code = str(parent_code or "").strip()
+        max_code_len = Account._meta.get_field("code").max_length or 10
+        tenant_codes = {str(code) for code in tenant_codes}
+
+        used_suffixes = []
+        for code in tenant_codes:
+            if not code.startswith(parent_code) or len(code) <= len(parent_code):
+                continue
+            suffix = code[len(parent_code) :]
+            if suffix.isdigit():
+                used_suffixes.append(int(suffix))
+
+        next_suffix = (max(used_suffixes) + 1) if used_suffixes else 1
+        while True:
+            candidate = f"{parent_code}{next_suffix}"
+            if len(candidate) > max_code_len:
+                raise serializers.ValidationError(
+                    {
+                        "code": (
+                            "No more child account codes are available under "
+                            f"parent {parent_code}."
+                        )
+                    }
+                )
+            if candidate not in tenant_codes and len(candidate) > len(parent_code):
+                return candidate
+            next_suffix += 1
+
     def _generate_next_child_code(self, parent, tenant_id):
         normalized_parent_code = self._normalize_code_for_generation(parent.code)
 
@@ -358,7 +393,10 @@ class AccountSerializer(serializers.ModelSerializer):
 
         normalized_existing_codes = []
         for code in direct_child_codes:
-            normalized_child_code = self._normalize_code_for_generation(code)
+            try:
+                normalized_child_code = self._normalize_code_for_generation(code)
+            except serializers.ValidationError:
+                continue
             child_code_value = int(normalized_child_code)
             if (
                 len(normalized_child_code) == child_code_width
@@ -372,15 +410,18 @@ class AccountSerializer(serializers.ModelSerializer):
             else first_code_value
         )
 
-        while next_code_value < branch_limit and str(next_code_value).zfill(child_code_width) in tenant_codes:
+        while (
+            next_code_value < branch_limit
+            and str(next_code_value).zfill(child_code_width) in tenant_codes
+        ):
             next_code_value += step
 
-        if next_code_value >= branch_limit:
-            raise serializers.ValidationError(
-                {"code": f"No more child account codes are available under parent {parent.code}."}
-            )
+        if next_code_value < branch_limit:
+            return str(next_code_value).zfill(child_code_width)
 
-        return str(next_code_value).zfill(child_code_width)
+        # Short block exhausted (e.g. 6141-6149) — keep existing codes,
+        # allocate longer overflow codes under the same parent.
+        return self._generate_overflow_child_code(parent.code, tenant_codes)
 
     def _ensure_parent_is_header(self, parent):
         if parent and parent.is_postable:

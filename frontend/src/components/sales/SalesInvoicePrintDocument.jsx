@@ -70,8 +70,8 @@ const SalesInvoicePrintDocument = ({ invoice, formatDisplayDate, company }) => {
         </p>
 
         {/* Brand row */}
-        <div className="mt-3 grid grid-cols-[88px_1fr_72px] items-start gap-3 border-b-2 border-slate-800 pb-3">
-          <div className="flex h-[72px] w-[88px] items-center justify-center overflow-hidden bg-[#f7f1d8] print:h-[20mm] print:w-[24mm]">
+        <div className="mt-3 grid grid-cols-[140px_1fr_72px] items-start gap-3 border-b-2 border-slate-800 pb-3">
+          <div className="flex h-[110px] w-[140px] items-center justify-center overflow-hidden bg-[#f7f1d8] print:h-[32mm] print:w-[40mm]">
             <img
               src={logoSrc}
               alt={companyName}
