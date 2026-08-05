@@ -115,6 +115,28 @@ const normalizeCodeForGeneration = (code) => {
   return /^\d+$/.test(codeText) ? codeText : "";
 };
 
+const getOverflowChildCode = (parentCode, usedCodes) => {
+  const parent = String(parentCode || "").trim();
+  if (!parent) return "";
+
+  const usedSuffixes = [];
+  for (const code of usedCodes) {
+    if (!code.startsWith(parent) || code.length <= parent.length) continue;
+    const suffix = code.slice(parent.length);
+    if (/^\d+$/.test(suffix)) {
+      usedSuffixes.push(Number(suffix));
+    }
+  }
+
+  let nextSuffix = usedSuffixes.length ? Math.max(...usedSuffixes) + 1 : 1;
+  while (true) {
+    const candidate = `${parent}${nextSuffix}`;
+    if (candidate.length > 10) return "";
+    if (!usedCodes.has(candidate)) return candidate;
+    nextSuffix += 1;
+  }
+};
+
 const getNextChildCode = (parentAccount, allAccounts) => {
   if (!parentAccount) return "";
 
@@ -184,9 +206,12 @@ const getNextChildCode = (parentAccount, allAccounts) => {
     nextValue += step;
   }
 
-  if (nextValue >= branchLimit) return "";
+  if (nextValue < branchLimit) {
+    return String(nextValue).padStart(childCodeWidth, "0");
+  }
 
-  return String(nextValue).padStart(childCodeWidth, "0");
+  // Short block full (e.g. 1151-1159) — longer overflow under same parent.
+  return getOverflowChildCode(normalizedParentCode, usedCodes);
 };
 
 const AccountFormPage = () => {
