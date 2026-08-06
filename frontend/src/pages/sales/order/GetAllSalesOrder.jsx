@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Card from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
@@ -7,11 +7,17 @@ import ConfirmModal from "../../../components/ui/ConfirmModal";
 import StateView from "../../../components/StateView";
 import PageSizeSelect from "../../../components/ui/PageSizeSelect";
 import SortableHeader from "../../../components/ui/SortableHeader";
+import DimensionPrintButtons from "../../../components/ui/DimensionPrintButtons";
+import SalesOrderPrintModal from "../../../components/sales/SalesOrderPrintModal";
 import salesOrderService from "../../../api/services/salesOrderService";
+import dimensionService from "../../../api/services/dimensionService";
 import { formatDecimal } from "../../../utils/format";
 import { buildListOrdering } from "../../../utils/listOrdering";
 import { usePersistedListState } from "../../../hooks/usePersistedListState";
+import { dimensionToCompanyConfig } from "../../../utils/dimensionCompany";
 import { useToast } from "../../../context/ToastContext";
+import { useAuth } from "../../../context/AuthContext";
+import { formatDisplayDate } from "../invoice/salesInvoiceShared";
 
 const extractErrorMessage = (error) => {
   const data = error?.response?.data;
@@ -54,6 +60,14 @@ const statusToInvoicedParam = (status) => {
 const GetAllSalesOrder = () => {
   const navigate = useNavigate();
   const toast = useToast();
+  const { allowedDimensions, tenantId } = useAuth();
+  const printDimensions = useMemo(
+    () =>
+      (allowedDimensions || []).filter(
+        (dimension) => dimension?.code && dimension.is_active !== false,
+      ),
+    [allowedDimensions],
+  );
   const {
     search,
     page,
@@ -75,6 +89,9 @@ const GetAllSalesOrder = () => {
   const [error, setError] = useState("");
   const [deleteId, setDeleteId] = useState("");
   const [total, setTotal] = useState(0);
+  const [printModal, setPrintModal] = useState(null);
+  const [printLoadingId, setPrintLoadingId] = useState("");
+  const printCancelledRef = useRef(false);
 
   const loadOrders = async (
     nextPage = page,
@@ -107,6 +124,57 @@ const GetAllSalesOrder = () => {
     loadOrders(page, search, limit, sortConfig, statusFilter);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- restore once on mount
   }, []);
+
+  const handleClosePrint = () => {
+    printCancelledRef.current = true;
+    setPrintModal(null);
+  };
+
+  const handleOpenPrint = async (recordId, dimensionCode) => {
+    printCancelledRef.current = false;
+    setPrintLoadingId(recordId);
+    const dimension =
+      printDimensions.find((item) => item.code === dimensionCode) ||
+      printDimensions.find((item) => item.code === tenantId) ||
+      printDimensions[0] ||
+      (dimensionCode || tenantId
+        ? { code: dimensionCode || tenantId, name: dimensionCode || tenantId }
+        : null);
+    setPrintModal({
+      loading: true,
+      order: null,
+      company: dimensionToCompanyConfig(dimension),
+    });
+    try {
+      let companyDimension = dimension;
+      try {
+        const items = await dimensionService.list();
+        const match =
+          (items || []).find((item) => item.code === dimension?.code) ||
+          (items || []).find((item) => item.code === tenantId) ||
+          (items || [])[0];
+        if (match) companyDimension = match;
+      } catch {
+        // Keep login dimension if lookup fails.
+      }
+      const order = await salesOrderService.getById(recordId);
+      if (printCancelledRef.current) return;
+      setPrintModal({
+        loading: false,
+        order,
+        company: dimensionToCompanyConfig(companyDimension),
+      });
+    } catch (printError) {
+      if (!printCancelledRef.current) {
+        toast.error(
+          extractErrorMessage(printError) || "Could not load order for printing",
+        );
+        setPrintModal(null);
+      }
+    } finally {
+      setPrintLoadingId("");
+    }
+  };
 
   const confirmDelete = async () => {
     try {
@@ -262,7 +330,13 @@ const GetAllSalesOrder = () => {
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        <div className="flex gap-2">
+                        <div className="inline-flex flex-nowrap items-center gap-1 whitespace-nowrap">
+                          <DimensionPrintButtons
+                            dimensions={printDimensions}
+                            recordId={record.id}
+                            disabled={printLoadingId === record.id}
+                            onPrint={handleOpenPrint}
+                          />
                           <Button
                             variant="secondary"
                             disabled={record.isInvoiced}
@@ -322,6 +396,15 @@ const GetAllSalesOrder = () => {
         onCancel={() => setDeleteId("")}
         onConfirm={confirmDelete}
       />
+      {printModal ? (
+        <SalesOrderPrintModal
+          order={printModal.order}
+          company={printModal.company}
+          loading={printModal.loading}
+          onClose={handleClosePrint}
+          formatDisplayDate={formatDisplayDate}
+        />
+      ) : null}
     </div>
   );
 };

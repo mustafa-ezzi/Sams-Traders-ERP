@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import Button from "../ui/Button";
 
 const buildPrintStyle = (orientation = "portrait") => `
-  @page { margin: 10mm; size: A4 ${orientation}; }
+  @page { margin: 6mm; size: A4 ${orientation}; }
   @media print {
     html, body {
       height: auto !important;
