@@ -20,6 +20,7 @@ const SalesInvoicePrintModal = ({
       title={`Print preview · ${invNo}`}
       documentTitle={invoice ? downloadName : ""}
       bareSheet
+      orientation="landscape"
       onClose={onClose}
     >
       {loading ? (

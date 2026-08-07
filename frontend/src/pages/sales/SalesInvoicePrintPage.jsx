@@ -95,7 +95,7 @@ const SalesInvoicePrintPage = () => {
     <>
       <style>
         {`
-          @page { margin: 14mm; size: A4; }
+          @page { margin: 6mm; size: A4 landscape; }
           html, body, #root {
             height: 100%;
             background: #f1f5f9;

@@ -20,6 +20,7 @@ const SalesOrderPrintModal = ({
       title={`Print preview · ${orderNo}`}
       documentTitle={order ? downloadName : ""}
       bareSheet
+      orientation="landscape"
       onClose={onClose}
     >
       {loading ? (

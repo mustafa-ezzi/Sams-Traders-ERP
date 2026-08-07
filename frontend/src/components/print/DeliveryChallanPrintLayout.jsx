@@ -8,8 +8,11 @@ export const CHALLAN_FOOTER = {
   email: "samsenterprise.pk@gmail.com",
 };
 
-/** Fixed product lines per printed page (both copies). */
-const ROWS_PER_PAGE = 6;
+/**
+ * Product lines per landscape page (two side-by-side copies).
+ * Landscape height fits far more rows than portrait half-slips.
+ */
+const ROWS_PER_PAGE = 14;
 
 const urduCompanyName = (companyName = "", companyCode = "") => {
   const blob = `${companyName} ${companyCode}`.toUpperCase();
@@ -19,7 +22,7 @@ const urduCompanyName = (companyName = "", companyCode = "") => {
   return "";
 };
 
-/** Split product lines into pages of exactly ROWS_PER_PAGE (6). */
+/** Split product lines into pages of exactly ROWS_PER_PAGE. */
 const chunkLinesForPages = (lines = []) => {
   const items = Array.isArray(lines) ? [...lines] : [];
   if (!items.length) {
@@ -50,7 +53,7 @@ const chunkLinesForPages = (lines = []) => {
 };
 
 /**
- * One half-page challan slip (white). Used twice per A4 for customer + office.
+ * One challan slip (half of a landscape A4 — customer or office copy).
  */
 export const DeliveryChallanSlip = ({
   documentTitle = "Delivery Challan / Invoice",
@@ -82,7 +85,7 @@ export const DeliveryChallanSlip = ({
 
   return (
     <section
-      className="relative flex h-[130mm] flex-col overflow-hidden bg-white px-4 py-3 text-slate-900 print:h-[130mm] print:overflow-visible"
+      className="relative flex h-full min-h-[190mm] flex-col overflow-hidden bg-white px-3 py-2.5 text-slate-900 print:min-h-0 print:overflow-visible"
       style={{
         fontFamily:
           '"Times New Roman", Times, "Noto Nastaliq Urdu", "Segoe UI", serif',
@@ -93,7 +96,7 @@ export const DeliveryChallanSlip = ({
         aria-hidden
       >
         <span
-          className="select-none text-[28px] font-black uppercase tracking-[0.16em] opacity-[0.06] sm:text-[34px]"
+          className="select-none text-[22px] font-black uppercase tracking-[0.14em] opacity-[0.06] sm:text-[26px]"
           style={{ transform: "rotate(-28deg)" }}
         >
           {watermarkText}
@@ -102,19 +105,19 @@ export const DeliveryChallanSlip = ({
 
       <div className="relative z-[1] flex min-h-0 flex-1 flex-col">
         <div className="flex items-center justify-between gap-2">
-          <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-800">
+          <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-slate-800">
             {documentTitle}
             {pageLabel}
           </p>
           {copyLabel ? (
-            <span className="rounded border border-slate-800 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide">
+            <span className="rounded border border-slate-800 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide">
               {copyLabel}
             </span>
           ) : null}
         </div>
 
-        <div className="mt-2 grid grid-cols-[96px_1fr_56px] items-start gap-2 border-b-2 border-slate-800 pb-2">
-          <div className="flex h-[72px] w-[96px] items-center justify-center overflow-hidden bg-white print:h-[20mm] print:w-[26mm]">
+        <div className="mt-1.5 grid grid-cols-[72px_1fr_40px] items-start gap-1.5 border-b-2 border-slate-800 pb-1.5">
+          <div className="flex h-[56px] w-[72px] items-center justify-center overflow-hidden bg-white print:h-[16mm] print:w-[20mm]">
             <img
               src={logoSrc}
               alt={companyName}
@@ -125,12 +128,12 @@ export const DeliveryChallanSlip = ({
             />
           </div>
           <div className="min-w-0 text-center">
-            <h1 className="text-[20px] font-black uppercase leading-none tracking-[0.03em] text-slate-900 sm:text-[22px]">
+            <h1 className="text-[16px] font-black uppercase leading-none tracking-[0.03em] text-slate-900 sm:text-[18px]">
               {companyName}
             </h1>
             {urduName ? (
               <p
-                className="mt-0.5 text-[14px] font-semibold leading-tight text-slate-800"
+                className="mt-0.5 text-[12px] font-semibold leading-tight text-slate-800"
                 dir="rtl"
                 lang="ur"
               >
@@ -141,30 +144,30 @@ export const DeliveryChallanSlip = ({
           <div />
         </div>
 
-        <div className="mt-2 grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 border-b border-slate-800 pb-2 text-[12px]">
+        <div className="mt-1.5 grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 border-b border-slate-800 pb-1.5 text-[11px]">
           <div className="min-w-0">
-            <div className="flex items-baseline gap-2">
+            <div className="flex items-baseline gap-1.5">
               <span className="shrink-0 font-bold uppercase tracking-wide">
                 M/S:
               </span>
-              <span className="min-w-0 flex-1 border-b border-dotted border-slate-500 pb-0.5 text-[13px] font-bold">
+              <span className="min-w-0 flex-1 border-b border-dotted border-slate-500 pb-0.5 text-[12px] font-bold">
                 {customerName}
               </span>
             </div>
             {customerAddress ? (
-              <p className="mt-0.5 whitespace-pre-wrap pl-[2.4rem] text-[11px] leading-snug text-slate-700">
+              <p className="mt-0.5 whitespace-pre-wrap pl-[2.2rem] text-[10px] leading-snug text-slate-700">
                 {customerAddress}
               </p>
             ) : null}
           </div>
-          <div className="w-[130px] shrink-0 space-y-1.5 text-[12px]">
-            <div className="flex items-baseline gap-2">
+          <div className="w-[118px] shrink-0 space-y-1 text-[11px]">
+            <div className="flex items-baseline gap-1.5">
               <span className="font-bold uppercase">No.</span>
               <span className="flex-1 border-b border-dotted border-slate-500 pb-0.5 text-right font-bold tabular-nums">
                 {docNumber}
               </span>
             </div>
-            <div className="flex items-baseline gap-2">
+            <div className="flex items-baseline gap-1.5">
               <span className="font-bold uppercase">Date</span>
               <span className="flex-1 border-b border-dotted border-slate-500 pb-0.5 text-right font-semibold tabular-nums">
                 {dateStr}
@@ -173,15 +176,15 @@ export const DeliveryChallanSlip = ({
           </div>
         </div>
 
-        <div className="mt-2 min-h-0 flex-1 overflow-hidden border-2 border-slate-800 print:overflow-visible">
-          <table className="w-full border-collapse text-[12px]">
+        <div className="mt-1.5 min-h-0 flex-1 overflow-hidden border-2 border-slate-800 print:overflow-visible">
+          <table className="w-full border-collapse text-[11px]">
             <thead>
-              <tr className="border-b-2 border-slate-800 bg-slate-100 text-[10px] font-black uppercase tracking-wide">
-                <th className="w-[48px] border-r border-slate-800 px-1.5 py-1.5 text-center">
+              <tr className="border-b-2 border-slate-800 bg-slate-100 text-[9px] font-black uppercase tracking-wide">
+                <th className="w-[40px] border-r border-slate-800 px-1 py-1 text-center">
                   Qty.
                 </th>
                 <th
-                  className={`px-1.5 py-1.5 text-left ${
+                  className={`px-1 py-1 text-left ${
                     showAmounts ? "border-r border-slate-800" : ""
                   }`}
                 >
@@ -189,10 +192,10 @@ export const DeliveryChallanSlip = ({
                 </th>
                 {showAmounts ? (
                   <>
-                    <th className="w-[72px] border-r border-slate-800 px-1.5 py-1.5 text-right">
+                    <th className="w-[60px] border-r border-slate-800 px-1 py-1 text-right">
                       Rate
                     </th>
-                    <th className="w-[90px] px-1.5 py-1.5 text-right">Amount</th>
+                    <th className="w-[72px] px-1 py-1 text-right">Amount</th>
                   </>
                 ) : null}
               </tr>
@@ -214,13 +217,13 @@ export const DeliveryChallanSlip = ({
                   <tr
                     key={line?.id || `blank-${pageIndex}-${index}`}
                     className="border-b border-slate-700/70"
-                    style={{ height: "22px" }}
+                    style={{ height: "18px" }}
                   >
-                    <td className="border-r border-slate-800 px-1.5 py-1 text-center tabular-nums">
+                    <td className="border-r border-slate-800 px-1 py-0.5 text-center tabular-nums">
                       {isEmpty ? "" : formatMoney(qty)}
                     </td>
                     <td
-                      className={`px-1.5 py-1 font-semibold ${
+                      className={`px-1 py-0.5 font-semibold ${
                         showAmounts ? "border-r border-slate-800" : ""
                       }`}
                     >
@@ -228,10 +231,10 @@ export const DeliveryChallanSlip = ({
                     </td>
                     {showAmounts ? (
                       <>
-                        <td className="border-r border-slate-800 px-1.5 py-1 text-right tabular-nums">
+                        <td className="border-r border-slate-800 px-1 py-0.5 text-right tabular-nums">
                           {isEmpty ? "" : formatMoney(rate)}
                         </td>
-                        <td className="px-1.5 py-1 text-right font-semibold tabular-nums">
+                        <td className="px-1 py-0.5 text-right font-semibold tabular-nums">
                           {isEmpty ? "" : formatMoney(amount)}
                         </td>
                       </>
@@ -244,7 +247,7 @@ export const DeliveryChallanSlip = ({
                 <tr className="bg-slate-50">
                   <td
                     colSpan={showAmounts ? 4 : 2}
-                    className="px-1.5 py-1 text-center text-[10px] font-semibold uppercase tracking-wide text-slate-500"
+                    className="px-1 py-0.5 text-center text-[9px] font-semibold uppercase tracking-wide text-slate-500"
                   >
                     Continued on next page…
                   </td>
@@ -253,12 +256,12 @@ export const DeliveryChallanSlip = ({
 
               {showTotals && invoiceDiscount > 0 ? (
                 <tr className="border-b border-slate-800 bg-slate-50">
-                  <td className="border-r border-slate-800 px-1.5 py-1.5" />
-                  <td className="border-r border-slate-800 px-1.5 py-1.5 text-right font-bold uppercase">
+                  <td className="border-r border-slate-800 px-1 py-1" />
+                  <td className="border-r border-slate-800 px-1 py-1 text-right font-bold uppercase">
                     Discount
                   </td>
-                  <td className="border-r border-slate-800 px-1.5 py-1.5" />
-                  <td className="px-1.5 py-1.5 text-right font-bold tabular-nums">
+                  <td className="border-r border-slate-800 px-1 py-1" />
+                  <td className="px-1 py-1 text-right font-bold tabular-nums">
                     − {formatMoney(invoiceDiscount)}
                   </td>
                 </tr>
@@ -266,12 +269,12 @@ export const DeliveryChallanSlip = ({
 
               {showTotals ? (
                 <tr className="bg-slate-100">
-                  <td className="border-r border-slate-800 px-1.5 py-1.5" />
-                  <td className="border-r border-slate-800 px-1.5 py-1.5 text-right text-[12px] font-black uppercase tracking-wide">
+                  <td className="border-r border-slate-800 px-1 py-1" />
+                  <td className="border-r border-slate-800 px-1 py-1 text-right text-[11px] font-black uppercase tracking-wide">
                     Total
                   </td>
-                  <td className="border-r border-slate-800 px-1.5 py-1.5" />
-                  <td className="px-1.5 py-1.5 text-right text-[13px] font-black tabular-nums">
+                  <td className="border-r border-slate-800 px-1 py-1" />
+                  <td className="px-1 py-1 text-right text-[12px] font-black tabular-nums">
                     {formatMoney(totalAmount)}
                   </td>
                 </tr>
@@ -281,22 +284,22 @@ export const DeliveryChallanSlip = ({
         </div>
 
         {remarks && isLastPage ? (
-          <p className="mt-1.5 text-[11px] leading-snug text-slate-700">
+          <p className="mt-1 text-[10px] leading-snug text-slate-700">
             <span className="font-bold">Remarks: </span>
             {remarks}
           </p>
         ) : null}
 
-        <div className="mt-auto flex items-end justify-between gap-4 pt-3">
-          <footer className="min-w-0 flex-1 text-[9px] leading-snug text-slate-700">
+        <div className="mt-auto flex items-end justify-between gap-3 pt-2">
+          <footer className="min-w-0 flex-1 text-[8px] leading-snug text-slate-700">
             <p>{CHALLAN_FOOTER.address}</p>
             <p className="mt-0.5">
               Ph: {CHALLAN_FOOTER.phone}, E-mail: {CHALLAN_FOOTER.email}
             </p>
           </footer>
-          <div className="w-[140px] shrink-0 text-center">
-            <div className="mb-0.5 h-8 border-b border-slate-800" />
-            <p className="text-[10px] font-bold uppercase tracking-wide">
+          <div className="w-[110px] shrink-0 text-center">
+            <div className="mb-0.5 h-6 border-b border-slate-800" />
+            <p className="text-[9px] font-bold uppercase tracking-wide">
               Signature
             </p>
           </div>
@@ -307,14 +310,14 @@ export const DeliveryChallanSlip = ({
 };
 
 /**
- * Dual slips (customer + office) per A4 page.
- * Exactly 6 product lines per page; extra lines continue on the next page.
+ * Landscape A4: Customer Copy | Office Copy side by side.
+ * Up to 14 product lines per page; extra lines continue on the next page.
  */
 export const DeliveryChallanDualPage = (props) => {
   const pages = chunkLinesForPages(props.lines);
 
   return (
-    <div className="inv-print-sheet si-challan-sheet mx-auto max-w-[210mm] bg-white text-slate-900 print:max-w-none">
+    <div className="inv-print-sheet si-challan-sheet mx-auto max-w-[297mm] bg-white text-slate-900 print:max-w-none">
       <style>{`
         @media print {
           .si-challan-sheet,
@@ -322,8 +325,10 @@ export const DeliveryChallanDualPage = (props) => {
             overflow: visible !important;
           }
           .dc-print-page {
-            display: block;
+            display: grid !important;
+            grid-template-columns: 1fr auto 1fr;
             width: 100%;
+            min-height: 0;
             break-inside: avoid;
             page-break-inside: avoid;
             break-after: page;
@@ -333,12 +338,16 @@ export const DeliveryChallanDualPage = (props) => {
             break-after: auto;
             page-break-after: auto;
           }
+          .dc-print-cut {
+            width: 8px;
+            align-self: stretch;
+          }
         }
       `}</style>
       {pages.map((page, index) => (
         <article
           key={`challan-page-${page.pageIndex}`}
-          className={`dc-print-page bg-white ${
+          className={`dc-print-page grid grid-cols-[1fr_auto_1fr] bg-white ${
             index < pages.length - 1
               ? "mb-6 border-b border-dashed border-slate-300 pb-6 print:mb-0 print:border-0 print:pb-0"
               : ""
@@ -358,12 +367,17 @@ export const DeliveryChallanDualPage = (props) => {
             rowSlots={page.rowSlots}
           />
           <div
-            className="flex items-center gap-3 px-4 py-1 text-[9px] font-semibold uppercase tracking-[0.2em] text-slate-400"
+            className="dc-print-cut flex w-5 flex-col items-center justify-center gap-2 py-4 text-[8px] font-semibold uppercase tracking-[0.18em] text-slate-400"
             aria-hidden
           >
-            <div className="h-px flex-1 border-t border-dashed border-slate-400" />
-            <span>Cut / fold</span>
-            <div className="h-px flex-1 border-t border-dashed border-slate-400" />
+            <div className="h-full w-px flex-1 border-l border-dashed border-slate-400" />
+            <span
+              className="whitespace-nowrap"
+              style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}
+            >
+              Cut / fold
+            </span>
+            <div className="h-full w-px flex-1 border-l border-dashed border-slate-400" />
           </div>
           <DeliveryChallanSlip
             {...props}

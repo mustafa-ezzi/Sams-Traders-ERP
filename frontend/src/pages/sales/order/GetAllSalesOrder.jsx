@@ -39,7 +39,7 @@ const orderingFields = {
   order: "order_number",
   date: "date",
   customer: "customer__business_name",
-  warehouse: "warehouse__name",
+  address: "customer__address",
   gross: "gross_amount",
   net: "net_amount",
   status: "_is_invoiced",
@@ -226,7 +226,7 @@ const GetAllSalesOrder = () => {
               <Button type="button">New order</Button>
             </Link>
             <FormInput
-              placeholder="Search order, customer, warehouse"
+              placeholder="Search order, customer, address"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               onKeyDown={(event) => {
@@ -287,7 +287,7 @@ const GetAllSalesOrder = () => {
                     <SortableHeader className="px-4 py-3" label="Order" sortKey="order" sortConfig={sortConfig} onSort={handleSort} />
                     <SortableHeader className="px-4 py-3" label="Date" sortKey="date" sortConfig={sortConfig} onSort={handleSort} />
                     <SortableHeader className="px-4 py-3" label="Customer" sortKey="customer" sortConfig={sortConfig} onSort={handleSort} />
-                    <SortableHeader className="px-4 py-3" label="Warehouse" sortKey="warehouse" sortConfig={sortConfig} onSort={handleSort} />
+                    <SortableHeader className="px-4 py-3" label="Address" sortKey="address" sortConfig={sortConfig} onSort={handleSort} />
                     <SortableHeader className="px-4 py-3" label="Gross" sortKey="gross" sortConfig={sortConfig} onSort={handleSort} />
                     <SortableHeader className="px-4 py-3" label="Net" sortKey="net" sortConfig={sortConfig} onSort={handleSort} />
                     <SortableHeader className="px-4 py-3" label="Status" sortKey="status" sortConfig={sortConfig} onSort={handleSort} />
@@ -309,8 +309,10 @@ const GetAllSalesOrder = () => {
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
                         {record.customer?.business_name}
                       </td>
-                      <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
-                        {record.warehouse?.name}
+                      <td className="max-w-[220px] px-4 py-3 text-slate-600 dark:text-slate-300">
+                        <span className="line-clamp-2 whitespace-pre-wrap">
+                          {(record.customer?.address || "").trim() || "—"}
+                        </span>
                       </td>
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
                         {formatDecimal(record.grossAmount)}

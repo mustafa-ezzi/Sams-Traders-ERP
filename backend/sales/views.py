@@ -308,6 +308,7 @@ class SalesOrderViewSet(viewsets.ModelViewSet):
         "order_number",
         "date",
         "customer__business_name",
+        "customer__address",
         "warehouse__name",
         "gross_amount",
         "net_amount",
@@ -321,6 +322,7 @@ class SalesOrderViewSet(viewsets.ModelViewSet):
         "dc_number",
         "due_date",
         "customer__business_name",
+        "customer__address",
         "remarks",
         "warehouse__name",
     ]
