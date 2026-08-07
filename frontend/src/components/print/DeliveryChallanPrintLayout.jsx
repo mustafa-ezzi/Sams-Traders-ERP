@@ -8,10 +8,8 @@ export const CHALLAN_FOOTER = {
   email: "samsenterprise.pk@gmail.com",
 };
 
-/** Item rows that fit on one half-page slip (continuation / no totals). */
-const ROWS_PER_PAGE = 8;
-/** Leave room for Discount + Total rows on the last invoice page. */
-const ROWS_LAST_PAGE_WITH_AMOUNTS = 6;
+/** Fixed product lines per printed page (both copies). */
+const ROWS_PER_PAGE = 6;
 
 const urduCompanyName = (companyName = "", companyCode = "") => {
   const blob = `${companyName} ${companyCode}`.toUpperCase();
@@ -21,7 +19,8 @@ const urduCompanyName = (companyName = "", companyCode = "") => {
   return "";
 };
 
-const chunkLinesForPages = (lines = [], showAmounts = true) => {
+/** Split product lines into pages of exactly ROWS_PER_PAGE (6). */
+const chunkLinesForPages = (lines = []) => {
   const items = Array.isArray(lines) ? [...lines] : [];
   if (!items.length) {
     return [
@@ -30,39 +29,24 @@ const chunkLinesForPages = (lines = [], showAmounts = true) => {
         isLast: true,
         pageIndex: 1,
         pageCount: 1,
-        rowSlots: showAmounts ? ROWS_LAST_PAGE_WITH_AMOUNTS : ROWS_PER_PAGE,
+        rowSlots: ROWS_PER_PAGE,
       },
     ];
   }
 
   const pages = [];
-  let remaining = items;
-
-  while (remaining.length > 0) {
-    const lastPageCapacity = showAmounts
-      ? ROWS_LAST_PAGE_WITH_AMOUNTS
-      : ROWS_PER_PAGE;
-
-    if (remaining.length <= lastPageCapacity) {
-      pages.push(remaining);
-      break;
-    }
-
-    pages.push(remaining.slice(0, ROWS_PER_PAGE));
-    remaining = remaining.slice(ROWS_PER_PAGE);
+  for (let i = 0; i < items.length; i += ROWS_PER_PAGE) {
+    pages.push(items.slice(i, i + ROWS_PER_PAGE));
   }
 
   const pageCount = pages.length;
-  return pages.map((pageLines, index) => {
-    const isLast = index === pageCount - 1;
-    return {
-      lines: pageLines,
-      isLast,
-      pageIndex: index + 1,
-      pageCount,
-      rowSlots: isLast && showAmounts ? ROWS_LAST_PAGE_WITH_AMOUNTS : ROWS_PER_PAGE,
-    };
-  });
+  return pages.map((pageLines, index) => ({
+    lines: pageLines,
+    isLast: index === pageCount - 1,
+    pageIndex: index + 1,
+    pageCount,
+    rowSlots: ROWS_PER_PAGE,
+  }));
 };
 
 /**
@@ -98,7 +82,7 @@ export const DeliveryChallanSlip = ({
 
   return (
     <section
-      className="relative flex h-[130mm] flex-col overflow-hidden bg-white px-4 py-3 text-slate-900 print:h-[130mm]"
+      className="relative flex h-[130mm] flex-col overflow-hidden bg-white px-4 py-3 text-slate-900 print:h-[130mm] print:overflow-visible"
       style={{
         fontFamily:
           '"Times New Roman", Times, "Noto Nastaliq Urdu", "Segoe UI", serif',
@@ -189,7 +173,7 @@ export const DeliveryChallanSlip = ({
           </div>
         </div>
 
-        <div className="mt-2 min-h-0 flex-1 overflow-hidden border-2 border-slate-800">
+        <div className="mt-2 min-h-0 flex-1 overflow-hidden border-2 border-slate-800 print:overflow-visible">
           <table className="w-full border-collapse text-[12px]">
             <thead>
               <tr className="border-b-2 border-slate-800 bg-slate-100 text-[10px] font-black uppercase tracking-wide">
@@ -324,17 +308,37 @@ export const DeliveryChallanSlip = ({
 
 /**
  * Dual slips (customer + office) per A4 page.
- * Extra item lines continue on following pages with the same pattern.
+ * Exactly 6 product lines per page; extra lines continue on the next page.
  */
 export const DeliveryChallanDualPage = (props) => {
-  const pages = chunkLinesForPages(props.lines, props.showAmounts !== false);
+  const pages = chunkLinesForPages(props.lines);
 
   return (
     <div className="inv-print-sheet si-challan-sheet mx-auto max-w-[210mm] bg-white text-slate-900 print:max-w-none">
+      <style>{`
+        @media print {
+          .si-challan-sheet,
+          .dc-print-page {
+            overflow: visible !important;
+          }
+          .dc-print-page {
+            display: block;
+            width: 100%;
+            break-inside: avoid;
+            page-break-inside: avoid;
+            break-after: page;
+            page-break-after: always;
+          }
+          .dc-print-page:last-child {
+            break-after: auto;
+            page-break-after: auto;
+          }
+        }
+      `}</style>
       {pages.map((page, index) => (
         <article
           key={`challan-page-${page.pageIndex}`}
-          className={`bg-white ${
+          className={`dc-print-page bg-white ${
             index < pages.length - 1
               ? "mb-6 border-b border-dashed border-slate-300 pb-6 print:mb-0 print:border-0 print:pb-0"
               : ""
@@ -342,9 +346,6 @@ export const DeliveryChallanDualPage = (props) => {
           style={{
             fontFamily:
               '"Times New Roman", Times, "Noto Nastaliq Urdu", "Segoe UI", serif',
-            ...(index < pages.length - 1
-              ? { breakAfter: "page", pageBreakAfter: "always" }
-              : {}),
           }}
         >
           <DeliveryChallanSlip

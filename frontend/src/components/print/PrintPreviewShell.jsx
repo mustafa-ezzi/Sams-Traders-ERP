@@ -30,18 +30,22 @@ const buildPrintStyle = (orientation = "portrait") => `
       display: none !important;
     }
     .cl-print-overlay {
+      display: block !important;
       position: static !important;
       background: white !important;
       backdrop-filter: none !important;
     }
     .cl-print-scroll {
+      display: block !important;
       overflow: visible !important;
       max-height: none !important;
+      height: auto !important;
       padding: 0 !important;
     }
     .cl-print-sheet,
     .inv-print-sheet,
     .rpt-print-sheet {
+      display: block !important;
       box-shadow: none !important;
       border-radius: 0 !important;
       max-width: none !important;
@@ -49,6 +53,16 @@ const buildPrintStyle = (orientation = "portrait") => `
       margin: 0 !important;
       padding: 0 !important;
       overflow: visible !important;
+    }
+    .dc-print-page {
+      break-inside: avoid;
+      page-break-inside: avoid;
+      break-after: page;
+      page-break-after: always;
+    }
+    .dc-print-page:last-child {
+      break-after: auto;
+      page-break-after: auto;
     }
     .cl-no-print {
       display: none !important;
@@ -153,13 +167,13 @@ const PrintPreviewShell = ({
         <div className="cl-print-scroll flex-1 overflow-y-auto p-4 md:p-8">
           {bareSheet ? (
             <div
-              className={`cl-print-sheet mx-auto ${sheetMaxWidth} w-full overflow-x-hidden rounded-sm bg-white p-6 shadow-2xl shadow-slate-900/20 print:shadow-none md:px-8 md:py-7`}
+              className={`cl-print-sheet mx-auto ${sheetMaxWidth} w-full overflow-x-hidden rounded-sm bg-white p-6 shadow-2xl shadow-slate-900/20 print:overflow-visible print:shadow-none md:px-8 md:py-7`}
             >
               {children}
             </div>
           ) : (
             <div
-              className={`cl-print-sheet mx-auto ${sheetMaxWidth} w-full overflow-x-hidden rounded-2xl bg-white p-6 shadow-2xl shadow-slate-900/20 print:shadow-none md:p-8`}
+              className={`cl-print-sheet mx-auto ${sheetMaxWidth} w-full overflow-x-hidden rounded-2xl bg-white p-6 shadow-2xl shadow-slate-900/20 print:overflow-visible print:shadow-none md:p-8`}
             >
               {children}
             </div>
