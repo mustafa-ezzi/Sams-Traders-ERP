@@ -9,10 +9,10 @@ export const CHALLAN_FOOTER = {
 };
 
 /**
- * Product lines per landscape page (two side-by-side copies).
- * Landscape height fits far more rows than portrait half-slips.
+ * Product lines per landscape page (Customer | Office side by side).
+ * Sized to fill slip height so we don't leave empty table space unused.
  */
-const ROWS_PER_PAGE = 14;
+const ROWS_PER_PAGE = 24;
 
 const urduCompanyName = (companyName = "", companyCode = "") => {
   const blob = `${companyName} ${companyCode}`.toUpperCase();
@@ -176,8 +176,8 @@ export const DeliveryChallanSlip = ({
           </div>
         </div>
 
-        <div className="mt-1.5 min-h-0 flex-1 overflow-hidden border-2 border-slate-800 print:overflow-visible">
-          <table className="w-full border-collapse text-[11px]">
+        <div className="mt-1.5 flex min-h-0 flex-1 flex-col overflow-hidden border-2 border-slate-800 print:overflow-visible">
+          <table className="h-full w-full border-collapse text-[11px]">
             <thead>
               <tr className="border-b-2 border-slate-800 bg-slate-100 text-[9px] font-black uppercase tracking-wide">
                 <th className="w-[40px] border-r border-slate-800 px-1 py-1 text-center">
@@ -217,7 +217,7 @@ export const DeliveryChallanSlip = ({
                   <tr
                     key={line?.id || `blank-${pageIndex}-${index}`}
                     className="border-b border-slate-700/70"
-                    style={{ height: "18px" }}
+                    style={{ height: "16px" }}
                   >
                     <td className="border-r border-slate-800 px-1 py-0.5 text-center tabular-nums">
                       {isEmpty ? "" : formatMoney(qty)}
@@ -311,7 +311,7 @@ export const DeliveryChallanSlip = ({
 
 /**
  * Landscape A4: Customer Copy | Office Copy side by side.
- * Up to 14 product lines per page; extra lines continue on the next page.
+ * Up to 24 product lines per page; extra lines continue on the next page.
  */
 export const DeliveryChallanDualPage = (props) => {
   const pages = chunkLinesForPages(props.lines);
