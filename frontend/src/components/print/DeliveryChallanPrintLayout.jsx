@@ -12,7 +12,7 @@ export const CHALLAN_FOOTER = {
  * Product lines per landscape page (Customer | Office side by side).
  * Sized to fill slip height so we don't leave empty table space unused.
  */
-const ROWS_PER_PAGE = 24;
+const ROWS_PER_PAGE = 22;
 
 const urduCompanyName = (companyName = "", companyCode = "") => {
   const blob = `${companyName} ${companyCode}`.toUpperCase();
@@ -311,7 +311,7 @@ export const DeliveryChallanSlip = ({
 
 /**
  * Landscape A4: Customer Copy | Office Copy side by side.
- * Up to 24 product lines per page; extra lines continue on the next page.
+ * Up to 22 product lines per page; extra lines continue on the next page.
  */
 export const DeliveryChallanDualPage = (props) => {
   const pages = chunkLinesForPages(props.lines);
