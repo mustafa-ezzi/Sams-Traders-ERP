@@ -7,10 +7,11 @@ export const ToastProvider = ({ children }) => {
 
   const showToast = (type, message) => {
     const id = crypto.randomUUID();
+    const duration = type === "error" ? 8000 : 2600;
     setToasts((prev) => [...prev, { id, type, message }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((toast) => toast.id !== id));
-    }, 2600);
+    }, duration);
   };
 
   const value = useMemo(
@@ -28,7 +29,7 @@ export const ToastProvider = ({ children }) => {
         {toasts.map((toast) => (
           <div
             key={toast.id}
-            className={`rounded-lg border px-3 py-2 text-sm shadow-sm backdrop-blur-sm ${
+            className={`max-w-md whitespace-pre-line rounded-lg border px-3 py-2 text-sm shadow-sm backdrop-blur-sm ${
               toast.type === "success"
                 ? "border-emerald-200 bg-emerald-50/90 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300"
                 : "border-red-200 bg-red-50/90 text-red-700 dark:border-red-800 dark:bg-red-950/70 dark:text-red-300"

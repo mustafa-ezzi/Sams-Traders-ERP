@@ -100,27 +100,54 @@ def validate_account_mapping(
     if account is None:
         return
 
-    if account.tenant_id != tenant_id or account.deleted_at is not None:
+    if account.deleted_at is not None:
         raise serializers.ValidationError(
-            {field_name: "Selected account is not available for this tenant."}
+            {
+                field_name: (
+                    f"Selected account '{account.code} — {account.name}' has been deleted "
+                    f"and cannot be used."
+                )
+            }
+        )
+
+    if account.tenant_id != tenant_id:
+        raise serializers.ValidationError(
+            {
+                field_name: (
+                    f"Selected account '{account.code} — {account.name}' belongs to dimension "
+                    f"'{account.tenant_id}', but this product is being saved in '{tenant_id}'. "
+                    f"Choose an account from dimension '{tenant_id}', or create the same account "
+                    f"code in that dimension."
+                )
+            }
         )
 
     if not account.is_active:
         raise serializers.ValidationError(
-            {field_name: "Selected account is inactive."}
+            {
+                field_name: (
+                    f"Selected account '{account.code} — {account.name}' is inactive."
+                )
+            }
         )
 
     has_children = account.children.filter(deleted_at__isnull=True).exists()
     if require_postable and not account.is_postable and has_children:
         raise serializers.ValidationError(
-            {field_name: "Selected account must be postable."}
+            {
+                field_name: (
+                    f"Selected account '{account.code} — {account.name}' must be a postable "
+                    f"(leaf) account."
+                )
+            }
         )
 
     if allowed_groups and account.account_group not in allowed_groups:
         raise serializers.ValidationError(
             {
                 field_name: (
-                    f"Selected account must belong to: {', '.join(allowed_groups)}."
+                    f"Selected account '{account.code}' must belong to: "
+                    f"{', '.join(allowed_groups)}."
                 )
             }
         )
@@ -129,7 +156,8 @@ def validate_account_mapping(
         raise serializers.ValidationError(
             {
                 field_name: (
-                    f"Selected account must have account type: {', '.join(allowed_types)}."
+                    f"Selected account '{account.code}' must have account type: "
+                    f"{', '.join(allowed_types)}."
                 )
             }
         )
@@ -146,27 +174,54 @@ def validate_shared_account_mapping(
     if account is None:
         return
 
-    if account.tenant_id not in tenant_ids or account.deleted_at is not None:
+    if account.deleted_at is not None:
         raise serializers.ValidationError(
-            {field_name: "Selected account is not available for this tenant."}
+            {
+                field_name: (
+                    f"Selected account '{account.code} — {account.name}' has been deleted "
+                    f"and cannot be used."
+                )
+            }
+        )
+
+    if account.tenant_id not in tenant_ids:
+        allowed = ", ".join(tenant_ids) if tenant_ids else "(none)"
+        raise serializers.ValidationError(
+            {
+                field_name: (
+                    f"Selected account '{account.code} — {account.name}' belongs to dimension "
+                    f"'{account.tenant_id}', which is outside your allowed dimensions "
+                    f"({allowed})."
+                )
+            }
         )
 
     if not account.is_active:
         raise serializers.ValidationError(
-            {field_name: "Selected account is inactive."}
+            {
+                field_name: (
+                    f"Selected account '{account.code} — {account.name}' is inactive."
+                )
+            }
         )
 
     has_children = account.children.filter(deleted_at__isnull=True).exists()
     if require_postable and not account.is_postable and has_children:
         raise serializers.ValidationError(
-            {field_name: "Selected account must be postable."}
+            {
+                field_name: (
+                    f"Selected account '{account.code} — {account.name}' must be a postable "
+                    f"(leaf) account."
+                )
+            }
         )
 
     if allowed_groups and account.account_group not in allowed_groups:
         raise serializers.ValidationError(
             {
                 field_name: (
-                    f"Selected account must belong to: {', '.join(allowed_groups)}."
+                    f"Selected account '{account.code}' must belong to: "
+                    f"{', '.join(allowed_groups)}."
                 )
             }
         )
@@ -175,7 +230,8 @@ def validate_shared_account_mapping(
         raise serializers.ValidationError(
             {
                 field_name: (
-                    f"Selected account must have account type: {', '.join(allowed_types)}."
+                    f"Selected account '{account.code}' must have account type: "
+                    f"{', '.join(allowed_types)}."
                 )
             }
         )
@@ -547,7 +603,12 @@ class ProductSerializer(serializers.ModelSerializer):
             or re.fullmatch(r"SKU-\d{4,}", normalized_sku)
         ):
             raise serializers.ValidationError(
-                {"sku": "SKU must use the format AME - 0001."}
+                {
+                    "sku": (
+                        f"SKU '{normalized_sku}' is invalid. Use the format like "
+                        f"'{self._get_dimension_sku_code(tenant_id)} - 0001'."
+                    )
+                }
             )
 
         existing = Product.objects.filter(
@@ -559,10 +620,35 @@ class ProductSerializer(serializers.ModelSerializer):
             existing = existing.exclude(id=self.instance.id)
         if existing.exists():
             raise serializers.ValidationError(
-                {"sku": "Product with this SKU already exists."}
+                {
+                    "sku": (
+                        f"SKU '{normalized_sku}' already exists in dimension '{tenant_id}'."
+                    )
+                }
             )
 
         return normalized_sku
+
+    def validate_name(self, value):
+        name = str(value or "").strip()
+        if not name:
+            raise serializers.ValidationError("Name is required.")
+
+        tenant_id = getattr(self.instance, "tenant_id", None) or self.context[
+            "request"
+        ].user.tenant_id
+        existing = Product.objects.filter(
+            tenant_id=tenant_id,
+            name=name,
+            deleted_at__isnull=True,
+        )
+        if self.instance:
+            existing = existing.exclude(id=self.instance.id)
+        if existing.exists():
+            raise serializers.ValidationError(
+                f"A product named '{name}' already exists in dimension '{tenant_id}'."
+            )
+        return name
 
     def validate(self, data):
         tenant_id = getattr(self.instance, "tenant_id", None) or self.context["request"].user.tenant_id
@@ -615,73 +701,132 @@ class ProductSerializer(serializers.ModelSerializer):
                     {"confirmed_unit_cost": "Provide confirmed unit cost when calculated cost is disabled."}
                 )
         component_keys = []
-        for material in materials:
+        for index, material in enumerate(materials, start=1):
             uom = material.get("uom")
             if uom and (uom.tenant_id not in shared_tenant_ids or uom.deleted_at is not None):
                 raise serializers.ValidationError(
-                    {"uom_id": "Selected unit is not available for this tenant."}
+                    {
+                        "materials": (
+                            f"Line {index}: unit '{getattr(uom, 'name', uom)}' belongs to "
+                            f"dimension '{getattr(uom, 'tenant_id', '?')}' and is not available "
+                            f"for product dimension '{tenant_id}'."
+                        )
+                    }
                 )
 
             if material["component_type"] == "RAW_MATERIAL":
                 raw_material = material["raw_material"]
                 if raw_material.tenant_id != tenant_id:
                     raise serializers.ValidationError(
-                        "Raw materials must belong to the current tenant."
+                        {
+                            "materials": (
+                                f"Line {index}: raw material '{raw_material.name}' belongs to "
+                                f"dimension '{raw_material.tenant_id}', but this product is being "
+                                f"saved in '{tenant_id}'. Components must match the product dimension."
+                            )
+                        }
                     )
                 component_keys.append(f"RAW_MATERIAL:{raw_material.id}")
             elif material["component_type"] == "FINISHED_GOOD":
                 component_product = material["component_product"]
                 if component_product.tenant_id != tenant_id:
                     raise serializers.ValidationError(
-                        "Finished goods must belong to the current tenant."
+                        {
+                            "materials": (
+                                f"Line {index}: finished good '{component_product.name}' belongs to "
+                                f"dimension '{component_product.tenant_id}', but this product is being "
+                                f"saved in '{tenant_id}'. Components must match the product dimension."
+                            )
+                        }
                     )
                 if component_product.product_type not in {"FINISHED_GOOD", "READY_MADE"}:
                     raise serializers.ValidationError(
-                        "Only finished goods can be selected as finished good components."
+                        {
+                            "materials": (
+                                f"Line {index}: '{component_product.name}' is not a finished good "
+                                f"and cannot be used as a finished-good component."
+                            )
+                        }
                     )
                 if self.instance and component_product.id == self.instance.id:
                     raise serializers.ValidationError(
-                        "Assembly product cannot use itself as a component."
+                        {
+                            "materials": (
+                                f"Line {index}: assembly product cannot use itself as a component."
+                            )
+                        }
                     )
                 component_keys.append(f"FINISHED_GOOD:{component_product.id}")
             elif material["component_type"] == "ASSEMBLY_PRODUCT":
                 component_product = material["component_product"]
                 if component_product.tenant_id != tenant_id:
                     raise serializers.ValidationError(
-                        "Assembly products must belong to the current tenant."
+                        {
+                            "materials": (
+                                f"Line {index}: assembly product '{component_product.name}' belongs to "
+                                f"dimension '{component_product.tenant_id}', but this product is being "
+                                f"saved in '{tenant_id}'. Components must match the product dimension."
+                            )
+                        }
                     )
                 if component_product.product_type not in {"ASSEMBLY_PRODUCT", "MANUFACTURED"}:
                     raise serializers.ValidationError(
-                        "Only assembly products can be selected as assembly components."
+                        {
+                            "materials": (
+                                f"Line {index}: '{component_product.name}' is not an assembly product "
+                                f"and cannot be used as an assembly component."
+                            )
+                        }
                     )
                 if self.instance and component_product.id == self.instance.id:
                     raise serializers.ValidationError(
-                        "Assembly product cannot use itself as a component."
+                        {
+                            "materials": (
+                                f"Line {index}: assembly product cannot use itself as a component."
+                            )
+                        }
                     )
                 component_keys.append(f"ASSEMBLY_PRODUCT:{component_product.id}")
 
         if len(set(component_keys)) != len(component_keys):
-            raise serializers.ValidationError("Duplicate assembly components are not allowed")
+            raise serializers.ValidationError(
+                {"materials": "Duplicate assembly components are not allowed."}
+            )
 
         if brand and (
             brand.tenant_id not in shared_tenant_ids or brand.deleted_at is not None
         ):
             raise serializers.ValidationError(
-                {"brand": "Selected brand is not available for this tenant."}
+                {
+                    "brand": (
+                        f"Selected brand '{brand.name}' belongs to dimension '{brand.tenant_id}', "
+                        f"which is not available while saving in '{tenant_id}'."
+                    )
+                }
             )
 
         if category and (
             category.tenant_id not in shared_tenant_ids or category.deleted_at is not None
         ):
             raise serializers.ValidationError(
-                {"category": "Selected category is not available for this tenant."}
+                {
+                    "category": (
+                        f"Selected category '{category.name}' belongs to dimension "
+                        f"'{category.tenant_id}', which is not available while saving in '{tenant_id}'."
+                    )
+                }
             )
 
         if unit and (
             unit.tenant_id not in shared_tenant_ids or unit.deleted_at is not None
         ):
             raise serializers.ValidationError(
-                {"unit": "Selected unit is not available for this tenant."}
+                {
+                    "unit": (
+                        f"Selected unit '{unit.name}' belongs to dimension '{unit.tenant_id}', "
+                        f"which is not available while saving in '{tenant_id}'."
+                    )
+                }
             )
 
         data["tenant_id"] = tenant_id

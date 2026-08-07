@@ -54,6 +54,7 @@ const productService = {
       message: isMulti
         ? `Product created in ${targets.join(", ")}`
         : response.data?.message || "Product created successfully",
+      createdIn: targets,
     };
   },
   async update(id, payload, tenantId = "") {

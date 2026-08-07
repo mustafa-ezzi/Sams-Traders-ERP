@@ -23,6 +23,7 @@ import {
   mergeAccountsById,
   uniqueAccountsByCode,
 } from "../../utils/accounts";
+import { parseApiError } from "../../utils/apiErrors";
 
 const schema = z.object({
   name: z.string().trim().min(1, "Name is required"),
@@ -120,18 +121,24 @@ const mapProductMaterials = (product) =>
         emptyMaterialRow,
       ];
 
-const extractSubmitErrorMessage = (error) => {
-  const data = error?.response?.data;
-  if (!data) return error?.message || "Save failed";
-  if (typeof data === "string") return data;
-  if (data.message) return data.message;
-  if (data.detail) return data.detail;
-  const fieldEntry = Object.entries(data).find(
-    ([, value]) => typeof value === "string" || Array.isArray(value),
-  );
-  if (!fieldEntry) return "Save failed";
-  const [, value] = fieldEntry;
-  return Array.isArray(value) ? value.join(", ") : value;
+const FORM_ERROR_FIELDS = new Set([
+  "name",
+  "sku",
+  "brand",
+  "unit",
+  "inventory_account",
+  "cogs_account",
+  "revenue_account",
+  "direct_price",
+  "confirmed_unit_cost",
+  "product_type",
+]);
+
+const applyApiFieldErrors = (form, fieldErrors = {}) => {
+  Object.entries(fieldErrors).forEach(([key, message]) => {
+    if (!FORM_ERROR_FIELDS.has(key)) return;
+    form.setError(key, { type: "server", message });
+  });
 };
 
 const ProductFormPage = () => {
@@ -294,9 +301,8 @@ const ProductFormPage = () => {
           setMaterialRows(mapProductMaterials(product));
         }
       } catch (loadError) {
-        toast.error(
-          loadError?.response?.data?.message || "Failed to load product form",
-        );
+        const parsed = parseApiError(loadError);
+        toast.error(parsed.message || "Failed to load product form");
       } finally {
         setLoadingSetupOptions(false);
         setLoading(false);
@@ -408,7 +414,9 @@ const ProductFormPage = () => {
       }
       navigate("/products");
     } catch (submitError) {
-      toast.error(extractSubmitErrorMessage(submitError));
+      const parsed = parseApiError(submitError);
+      applyApiFieldErrors(form, parsed.fieldErrors);
+      toast.error(parsed.message || "Save failed");
     } finally {
       setSaving(false);
     }

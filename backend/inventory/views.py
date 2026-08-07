@@ -1,3 +1,5 @@
+from django.db import IntegrityError
+from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework.response import Response
 from rest_framework import viewsets, status
 from rest_framework.viewsets import ModelViewSet
@@ -383,6 +385,50 @@ class ProductViewSet(UnpaginatedOptionsMixin, viewsets.ModelViewSet):
             ),
         )
         return qs
+
+    def _map_product_integrity_error(self, exc):
+        message = str(exc).lower()
+        tenant_id = getattr(self.request.user, "tenant_id", "") or ""
+        if "unique_active_product_per_tenant" in message or (
+            "product" in message and "name" in message and "tenant" in message
+        ):
+            return DRFValidationError(
+                {
+                    "name": (
+                        f"A product with this name already exists in dimension '{tenant_id}'."
+                    )
+                }
+            )
+        if "unique_active_product_sku" in message or (
+            "sku" in message and "unique" in message
+        ):
+            return DRFValidationError(
+                {
+                    "sku": (
+                        f"A product with this SKU already exists in dimension '{tenant_id}'."
+                    )
+                }
+            )
+        return DRFValidationError(
+            {
+                "detail": (
+                    f"Could not save product in dimension '{tenant_id}' due to a data conflict. "
+                    f"Check name, SKU, and related masters for that dimension."
+                )
+            }
+        )
+
+    def create(self, request, *args, **kwargs):
+        try:
+            return super().create(request, *args, **kwargs)
+        except IntegrityError as exc:
+            raise self._map_product_integrity_error(exc) from exc
+
+    def update(self, request, *args, **kwargs):
+        try:
+            return super().update(request, *args, **kwargs)
+        except IntegrityError as exc:
+            raise self._map_product_integrity_error(exc) from exc
 
     def perform_create(self, serializer):
         serializer.save()
