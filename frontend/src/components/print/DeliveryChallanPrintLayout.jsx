@@ -8,7 +8,10 @@ export const CHALLAN_FOOTER = {
   email: "samsenterprise.pk@gmail.com",
 };
 
-const MIN_TABLE_ROWS = 8;
+/** Item rows that fit on one half-page slip (continuation / no totals). */
+const ROWS_PER_PAGE = 8;
+/** Leave room for Discount + Total rows on the last invoice page. */
+const ROWS_LAST_PAGE_WITH_AMOUNTS = 6;
 
 const urduCompanyName = (companyName = "", companyCode = "") => {
   const blob = `${companyName} ${companyCode}`.toUpperCase();
@@ -16,6 +19,50 @@ const urduCompanyName = (companyName = "", companyCode = "") => {
     return "سیمز انٹر پرائزز";
   }
   return "";
+};
+
+const chunkLinesForPages = (lines = [], showAmounts = true) => {
+  const items = Array.isArray(lines) ? [...lines] : [];
+  if (!items.length) {
+    return [
+      {
+        lines: [],
+        isLast: true,
+        pageIndex: 1,
+        pageCount: 1,
+        rowSlots: showAmounts ? ROWS_LAST_PAGE_WITH_AMOUNTS : ROWS_PER_PAGE,
+      },
+    ];
+  }
+
+  const pages = [];
+  let remaining = items;
+
+  while (remaining.length > 0) {
+    const lastPageCapacity = showAmounts
+      ? ROWS_LAST_PAGE_WITH_AMOUNTS
+      : ROWS_PER_PAGE;
+
+    if (remaining.length <= lastPageCapacity) {
+      pages.push(remaining);
+      break;
+    }
+
+    pages.push(remaining.slice(0, ROWS_PER_PAGE));
+    remaining = remaining.slice(ROWS_PER_PAGE);
+  }
+
+  const pageCount = pages.length;
+  return pages.map((pageLines, index) => {
+    const isLast = index === pageCount - 1;
+    return {
+      lines: pageLines,
+      isLast,
+      pageIndex: index + 1,
+      pageCount,
+      rowSlots: isLast && showAmounts ? ROWS_LAST_PAGE_WITH_AMOUNTS : ROWS_PER_PAGE,
+    };
+  });
 };
 
 /**
@@ -34,6 +81,10 @@ export const DeliveryChallanSlip = ({
   total = 0,
   remarks = "",
   showAmounts = true,
+  isLastPage = true,
+  pageIndex = 1,
+  pageCount = 1,
+  rowSlots = ROWS_PER_PAGE,
 }) => {
   const companyName = (company?.name || "SAMS ENTERPRISES").trim();
   const logoSrc = company?.logo || company?.logoUrl || "/logo.png";
@@ -41,7 +92,9 @@ export const DeliveryChallanSlip = ({
   const watermarkText = companyName.toUpperCase() || "SAMS ENTERPRISES";
   const invoiceDiscount = num(discount);
   const totalAmount = num(total);
-  const paddedRows = Math.max(MIN_TABLE_ROWS, (lines || []).length + 1);
+  const showTotals = showAmounts && isLastPage;
+  const pageLabel =
+    pageCount > 1 ? ` · Page ${pageIndex}/${pageCount}` : "";
 
   return (
     <section
@@ -67,6 +120,7 @@ export const DeliveryChallanSlip = ({
         <div className="flex items-center justify-between gap-2">
           <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-800">
             {documentTitle}
+            {pageLabel}
           </p>
           {copyLabel ? (
             <span className="rounded border border-slate-800 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide">
@@ -160,7 +214,7 @@ export const DeliveryChallanSlip = ({
               </tr>
             </thead>
             <tbody>
-              {Array.from({ length: paddedRows }).map((_, index) => {
+              {Array.from({ length: rowSlots }).map((_, index) => {
                 const line = lines[index];
                 const isEmpty = !line;
                 const name = line
@@ -174,7 +228,7 @@ export const DeliveryChallanSlip = ({
 
                 return (
                   <tr
-                    key={line?.id || `blank-${index}`}
+                    key={line?.id || `blank-${pageIndex}-${index}`}
                     className="border-b border-slate-700/70"
                     style={{ height: "22px" }}
                   >
@@ -202,7 +256,18 @@ export const DeliveryChallanSlip = ({
                 );
               })}
 
-              {showAmounts && invoiceDiscount > 0 ? (
+              {!isLastPage ? (
+                <tr className="bg-slate-50">
+                  <td
+                    colSpan={showAmounts ? 4 : 2}
+                    className="px-1.5 py-1 text-center text-[10px] font-semibold uppercase tracking-wide text-slate-500"
+                  >
+                    Continued on next page…
+                  </td>
+                </tr>
+              ) : null}
+
+              {showTotals && invoiceDiscount > 0 ? (
                 <tr className="border-b border-slate-800 bg-slate-50">
                   <td className="border-r border-slate-800 px-1.5 py-1.5" />
                   <td className="border-r border-slate-800 px-1.5 py-1.5 text-right font-bold uppercase">
@@ -215,7 +280,7 @@ export const DeliveryChallanSlip = ({
                 </tr>
               ) : null}
 
-              {showAmounts ? (
+              {showTotals ? (
                 <tr className="bg-slate-100">
                   <td className="border-r border-slate-800 px-1.5 py-1.5" />
                   <td className="border-r border-slate-800 px-1.5 py-1.5 text-right text-[12px] font-black uppercase tracking-wide">
@@ -231,7 +296,7 @@ export const DeliveryChallanSlip = ({
           </table>
         </div>
 
-        {remarks ? (
+        {remarks && isLastPage ? (
           <p className="mt-1.5 text-[11px] leading-snug text-slate-700">
             <span className="font-bold">Remarks: </span>
             {remarks}
@@ -258,27 +323,60 @@ export const DeliveryChallanSlip = ({
 };
 
 /**
- * Two identical slips stacked on one A4 page (customer + office).
+ * Dual slips (customer + office) per A4 page.
+ * Extra item lines continue on following pages with the same pattern.
  */
-export const DeliveryChallanDualPage = (props) => (
-  <article
-    className="inv-print-sheet si-challan-sheet mx-auto max-w-[210mm] bg-white text-slate-900 print:max-w-none"
-    style={{
-      fontFamily:
-        '"Times New Roman", Times, "Noto Nastaliq Urdu", "Segoe UI", serif',
-    }}
-  >
-    <DeliveryChallanSlip {...props} copyLabel="Customer Copy" />
-    <div
-      className="flex items-center gap-3 px-4 py-1 text-[9px] font-semibold uppercase tracking-[0.2em] text-slate-400"
-      aria-hidden
-    >
-      <div className="h-px flex-1 border-t border-dashed border-slate-400" />
-      <span>Cut / fold</span>
-      <div className="h-px flex-1 border-t border-dashed border-slate-400" />
+export const DeliveryChallanDualPage = (props) => {
+  const pages = chunkLinesForPages(props.lines, props.showAmounts !== false);
+
+  return (
+    <div className="inv-print-sheet si-challan-sheet mx-auto max-w-[210mm] bg-white text-slate-900 print:max-w-none">
+      {pages.map((page, index) => (
+        <article
+          key={`challan-page-${page.pageIndex}`}
+          className={`bg-white ${
+            index < pages.length - 1
+              ? "mb-6 border-b border-dashed border-slate-300 pb-6 print:mb-0 print:border-0 print:pb-0"
+              : ""
+          }`}
+          style={{
+            fontFamily:
+              '"Times New Roman", Times, "Noto Nastaliq Urdu", "Segoe UI", serif',
+            ...(index < pages.length - 1
+              ? { breakAfter: "page", pageBreakAfter: "always" }
+              : {}),
+          }}
+        >
+          <DeliveryChallanSlip
+            {...props}
+            lines={page.lines}
+            copyLabel="Customer Copy"
+            isLastPage={page.isLast}
+            pageIndex={page.pageIndex}
+            pageCount={page.pageCount}
+            rowSlots={page.rowSlots}
+          />
+          <div
+            className="flex items-center gap-3 px-4 py-1 text-[9px] font-semibold uppercase tracking-[0.2em] text-slate-400"
+            aria-hidden
+          >
+            <div className="h-px flex-1 border-t border-dashed border-slate-400" />
+            <span>Cut / fold</span>
+            <div className="h-px flex-1 border-t border-dashed border-slate-400" />
+          </div>
+          <DeliveryChallanSlip
+            {...props}
+            lines={page.lines}
+            copyLabel="Office Copy"
+            isLastPage={page.isLast}
+            pageIndex={page.pageIndex}
+            pageCount={page.pageCount}
+            rowSlots={page.rowSlots}
+          />
+        </article>
+      ))}
     </div>
-    <DeliveryChallanSlip {...props} copyLabel="Office Copy" />
-  </article>
-);
+  );
+};
 
 export default DeliveryChallanDualPage;
