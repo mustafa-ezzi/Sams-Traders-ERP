@@ -897,13 +897,11 @@ class ExpenseSerializer(serializers.ModelSerializer):
         return account
 
     def _validate_expense_account(self, expense_account_id, tenant_id, index):
-        try:
-            account = Account.objects.get(
-                id=expense_account_id,
-                tenant_id=tenant_id,
-                deleted_at__isnull=True,
-            )
-        except Account.DoesNotExist:
+        account = Account.objects.filter(
+            id=expense_account_id,
+            deleted_at__isnull=True,
+        ).first()
+        if account is None:
             raise serializers.ValidationError(
                 {
                     "lines": {
@@ -915,6 +913,33 @@ class ExpenseSerializer(serializers.ModelSerializer):
                     }
                 }
             )
+
+        # Allow picking an expense head from another dimension's COA; post against
+        # the same account code in the line's dimension when a copy exists.
+        if account.tenant_id != tenant_id:
+            remapped = Account.objects.filter(
+                tenant_id=tenant_id,
+                code=account.code,
+                deleted_at__isnull=True,
+                is_active=True,
+            ).first()
+            if remapped is None:
+                raise serializers.ValidationError(
+                    {
+                        "lines": {
+                            index: {
+                                "expense_account_id": (
+                                    f"Expense account '{account.code} — {account.name}' "
+                                    f"was selected from dimension '{account.tenant_id}', "
+                                    f"but no matching account code exists in '{tenant_id}'. "
+                                    f"Create that expense head in '{tenant_id}' (or choose "
+                                    f"one that already exists there)."
+                                )
+                            }
+                        }
+                    }
+                )
+            account = remapped
 
         if not account.is_active:
             raise serializers.ValidationError(
@@ -1010,13 +1035,15 @@ class ExpenseSerializer(serializers.ModelSerializer):
                 )
 
             self._validate_bank_account(bank_account_id, line_tenant_id, index)
-            self._validate_expense_account(expense_account_id, line_tenant_id, index)
+            expense_account = self._validate_expense_account(
+                expense_account_id, line_tenant_id, index
+            )
 
             prepared_lines.append(
                 {
                     "tenant_id": line_tenant_id,
                     "bank_account_id": bank_account_id,
-                    "expense_account_id": expense_account_id,
+                    "expense_account_id": expense_account.id,
                     "description": str(line.get("description") or "").strip()[:255],
                     "amount": amount,
                 }

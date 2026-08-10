@@ -10,6 +10,8 @@ import { formatDecimal } from "../../../utils/format";
 import {
   flattenAccountTree,
   formatAccountLabel,
+  mergeAccountsById,
+  uniqueAccountsByCode,
 } from "../../../utils/accounts";
 import { useToast } from "../../../context/ToastContext";
 import { useAuth } from "../../../context/AuthContext";
@@ -70,7 +72,7 @@ const CreateUpdateExpense = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
-  const { tenantId } = useAuth();
+  const { tenantId, allowedDimensions } = useAuth();
   const editingId = id || "";
 
   const [dimensions, setDimensions] = useState([]);
@@ -87,6 +89,14 @@ const CreateUpdateExpense = () => {
     [lines],
   );
 
+  const accountDimensionCodes = useMemo(() => {
+    const fromAuth = (allowedDimensions || [])
+      .map((dimension) => dimension?.code)
+      .filter(Boolean);
+    const fromList = (dimensions || []).map((dimension) => dimension.code).filter(Boolean);
+    return [...new Set([...fromAuth, ...fromList])];
+  }, [allowedDimensions, dimensions]);
+
   const loadAccountsForLine = async (index, dimensionCode) => {
     if (!dimensionCode) {
       setLines((current) =>
@@ -99,19 +109,41 @@ const CreateUpdateExpense = () => {
       return;
     }
     try {
-      const accountsResponse = await accountService.list(undefined, dimensionCode);
-      const flatAccounts = flattenAccountTree(
-        Array.isArray(accountsResponse)
-          ? accountsResponse
-          : accountsResponse.data || [],
+      const codes = accountDimensionCodes.length
+        ? accountDimensionCodes
+        : [dimensionCode];
+      const accountTrees = await Promise.all(
+        codes.map((code) =>
+          accountService.list(undefined, code).catch(() => []),
+        ),
       );
+      const flatByDimension = codes.map((code, codeIndex) => {
+        const response = accountTrees[codeIndex];
+        return {
+          code,
+          flat: flattenAccountTree(
+            Array.isArray(response) ? response : response?.data || [],
+          ),
+        };
+      });
+      const selectedFlat =
+        flatByDimension.find((item) => item.code === dimensionCode)?.flat ||
+        flatByDimension[0]?.flat ||
+        [];
+      const allFlat = mergeAccountsById(flatByDimension.map((item) => item.flat));
+
       setLines((current) =>
         current.map((line, i) =>
           i === index
             ? {
                 ...line,
-                bankAccounts: filterBankAccounts(flatAccounts),
-                expenseAccounts: filterExpenseAccounts(flatAccounts),
+                bankAccounts: filterBankAccounts(selectedFlat),
+                // Show expense heads from every dimension; prefer the selected
+                // dimension's copy of each account code when it exists.
+                expenseAccounts: uniqueAccountsByCode(
+                  filterExpenseAccounts(allFlat),
+                  dimensionCode,
+                ),
               }
             : line,
         ),
@@ -287,7 +319,8 @@ const CreateUpdateExpense = () => {
               {editingId ? "Edit Expense" : "Expense"}
             </h2>
             <p className="mt-1 text-sm text-slate-500">
-              Choose dimension, bank, and expense COA on each payment line.
+              Choose dimension and bank per line. Expense heads are listed from
+              all dimensions (matched by account code).
             </p>
           </div>
           <Button
@@ -339,17 +372,38 @@ const CreateUpdateExpense = () => {
               let expenseAccounts = [];
               if (nextTenant) {
                 try {
-                  const accountsResponse = await accountService.list(
-                    undefined,
+                  const codes = accountDimensionCodes.length
+                    ? accountDimensionCodes
+                    : [nextTenant];
+                  const accountTrees = await Promise.all(
+                    codes.map((code) =>
+                      accountService.list(undefined, code).catch(() => []),
+                    ),
+                  );
+                  const flatByDimension = codes.map((code, codeIndex) => {
+                    const response = accountTrees[codeIndex];
+                    return {
+                      code,
+                      flat: flattenAccountTree(
+                        Array.isArray(response)
+                          ? response
+                          : response?.data || [],
+                      ),
+                    };
+                  });
+                  const selectedFlat =
+                    flatByDimension.find((item) => item.code === nextTenant)
+                      ?.flat ||
+                    flatByDimension[0]?.flat ||
+                    [];
+                  const allFlat = mergeAccountsById(
+                    flatByDimension.map((item) => item.flat),
+                  );
+                  bankAccounts = filterBankAccounts(selectedFlat);
+                  expenseAccounts = uniqueAccountsByCode(
+                    filterExpenseAccounts(allFlat),
                     nextTenant,
                   );
-                  const flatAccounts = flattenAccountTree(
-                    Array.isArray(accountsResponse)
-                      ? accountsResponse
-                      : accountsResponse.data || [],
-                  );
-                  bankAccounts = filterBankAccounts(flatAccounts);
-                  expenseAccounts = filterExpenseAccounts(flatAccounts);
                 } catch {
                   bankAccounts = [];
                   expenseAccounts = [];
