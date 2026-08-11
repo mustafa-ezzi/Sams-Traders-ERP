@@ -26,10 +26,21 @@ const FIELD_LABELS = {
   message: "Error",
   tenant_id: "Dimension",
   dimension: "Dimension",
+  bank_account_id: "Bank",
+  expense_account_id: "Expense account",
+  amount: "Amount",
+  description: "Description",
+  remarks: "Remarks",
+  date: "Date",
+  lines: "Payment lines",
+  journal: "Journal",
 };
 
 const humanizeField = (key) => {
   if (FIELD_LABELS[key]) return FIELD_LABELS[key];
+  if (/^\d+$/.test(String(key))) {
+    return `Line ${Number(key) + 1}`;
+  }
   return String(key || "")
     .replace(/_/g, " ")
     .replace(/\b\w/g, (ch) => ch.toUpperCase());
@@ -56,7 +67,9 @@ const flattenMessages = (value, prefix = "") => {
         lines.push(prefix ? `${prefix}: ${item}` : item);
         return;
       }
-      const nestedPrefix = prefix ? `${prefix} [${index + 1}]` : `Item ${index + 1}`;
+      const nestedPrefix = prefix
+        ? `${prefix} → Line ${index + 1}`
+        : `Line ${index + 1}`;
       lines.push(...flattenMessages(item, nestedPrefix));
     });
     return lines;
@@ -64,9 +77,6 @@ const flattenMessages = (value, prefix = "") => {
 
   if (typeof value === "object") {
     Object.entries(value).forEach(([key, nested]) => {
-      if (key === "tenant_id" || key === "dimension" || key === "code") {
-        return;
-      }
       const label = humanizeField(key);
       const nextPrefix = prefix ? `${prefix} → ${label}` : label;
       lines.push(...flattenMessages(nested, nextPrefix));
@@ -77,11 +87,51 @@ const flattenMessages = (value, prefix = "") => {
   return lines;
 };
 
+/** Normalize DRF line errors keyed by index into { [index]: { field: message } }. */
+const extractLineErrors = (linesPayload) => {
+  const lineErrors = {};
+  if (!linesPayload || typeof linesPayload !== "object") return lineErrors;
+
+  const visit = (payload, fallbackIndex = null) => {
+    if (Array.isArray(payload)) {
+      payload.forEach((item, index) => visit(item, index));
+      return;
+    }
+    if (!payload || typeof payload !== "object") {
+      if (fallbackIndex != null && payload) {
+        lineErrors[fallbackIndex] = {
+          ...(lineErrors[fallbackIndex] || {}),
+          _error: String(payload),
+        };
+      }
+      return;
+    }
+
+    Object.entries(payload).forEach(([key, value]) => {
+      if (/^\d+$/.test(key)) {
+        visit(value, Number(key));
+        return;
+      }
+      if (fallbackIndex == null) return;
+      const text = flattenMessages(value).join(" ");
+      if (!text) return;
+      lineErrors[fallbackIndex] = {
+        ...(lineErrors[fallbackIndex] || {}),
+        [key]: text,
+      };
+    });
+  };
+
+  visit(linesPayload);
+  return lineErrors;
+};
+
 /**
  * @returns {{
  *   message: string,
  *   messages: string[],
  *   fieldErrors: Record<string, string>,
+ *   lineErrors: Record<number, Record<string, string>>,
  *   status: number | null,
  *   dimensionFailures: Array<{ tenantId: string, message: string }>,
  * }}
@@ -100,17 +150,18 @@ export const parseApiError = (error) => {
     const messages = dimensionFailures.map(
       (item) => `Dimension ${item.tenantId}: ${item.message}`,
     );
-    const partialNote = Array.isArray(error?.dimensionSuccesses) &&
-      error.dimensionSuccesses.length
-      ? `Created in ${error.dimensionSuccesses
-          .map((item) => item.tenantId)
-          .join(", ")}. Failed in others.`
-      : "";
+    const partialNote =
+      Array.isArray(error?.dimensionSuccesses) && error.dimensionSuccesses.length
+        ? `Created in ${error.dimensionSuccesses
+            .map((item) => item.tenantId)
+            .join(", ")}. Failed in others.`
+        : "";
     const allMessages = partialNote ? [partialNote, ...messages] : messages;
     return {
       message: allMessages.join("\n"),
       messages: allMessages,
       fieldErrors: {},
+      lineErrors: {},
       status,
       dimensionFailures,
     };
@@ -130,6 +181,7 @@ export const parseApiError = (error) => {
       message: fallback,
       messages: [fallback],
       fieldErrors: {},
+      lineErrors: {},
       status,
       dimensionFailures: [],
     };
@@ -140,6 +192,7 @@ export const parseApiError = (error) => {
       message: data,
       messages: [data],
       fieldErrors: {},
+      lineErrors: {},
       status,
       dimensionFailures: [],
     };
@@ -147,6 +200,7 @@ export const parseApiError = (error) => {
 
   const fieldErrors = {};
   const messages = [];
+  const lineErrors = extractLineErrors(data.lines);
 
   const pushField = (key, raw) => {
     const flat = flattenMessages(raw);
@@ -154,7 +208,12 @@ export const parseApiError = (error) => {
     const text = flat.join(" ");
     if (key && key !== "detail" && key !== "message" && key !== "non_field_errors") {
       fieldErrors[key] = text;
-      messages.push(`${humanizeField(key)}: ${text}`);
+      // Avoid "Payment lines: Payment lines → ..." duplication for pointed line messages.
+      if (key === "lines") {
+        messages.push(...flat);
+      } else {
+        messages.push(`${humanizeField(key)}: ${text}`);
+      }
     } else {
       messages.push(...flat);
     }
@@ -176,7 +235,7 @@ export const parseApiError = (error) => {
   if (!messages.length) {
     messages.push(
       status
-        ? `Save failed (HTTP ${status}). Check dimension and related master data.`
+        ? `Save failed (HTTP ${status}). Check dimension, bank, and expense account on each line.`
         : "Save failed",
     );
   }
@@ -185,6 +244,7 @@ export const parseApiError = (error) => {
     message: messages.join("\n"),
     messages,
     fieldErrors,
+    lineErrors,
     status,
     dimensionFailures: [],
   };

@@ -837,6 +837,7 @@ class ExpenseSerializer(serializers.ModelSerializer):
         return tenant_ids
 
     def _validate_bank_account(self, bank_account_id, tenant_id, index):
+        line_no = index + 1
         try:
             account = Account.objects.get(
                 id=bank_account_id,
@@ -844,12 +845,31 @@ class ExpenseSerializer(serializers.ModelSerializer):
                 deleted_at__isnull=True,
             )
         except Account.DoesNotExist:
+            other = Account.objects.filter(
+                id=bank_account_id,
+                deleted_at__isnull=True,
+            ).first()
+            if other is not None:
+                raise serializers.ValidationError(
+                    {
+                        "lines": {
+                            index: {
+                                "bank_account_id": (
+                                    f"Line {line_no}: bank '{other.code} — {other.name}' "
+                                    f"belongs to dimension '{other.tenant_id}', but this line "
+                                    f"is set to '{tenant_id}'. Choose a bank from '{tenant_id}'."
+                                )
+                            }
+                        }
+                    }
+                )
             raise serializers.ValidationError(
                 {
                     "lines": {
                         index: {
                             "bank_account_id": (
-                                "Bank account not found for the selected dimension."
+                                f"Line {line_no}: bank account not found in dimension "
+                                f"'{tenant_id}'."
                             )
                         }
                     }
@@ -858,14 +878,26 @@ class ExpenseSerializer(serializers.ModelSerializer):
 
         if not account.is_active:
             raise serializers.ValidationError(
-                {"lines": {index: {"bank_account_id": "Selected bank account is inactive"}}}
+                {
+                    "lines": {
+                        index: {
+                            "bank_account_id": (
+                                f"Line {line_no}: bank '{account.code} — {account.name}' "
+                                f"is inactive."
+                            )
+                        }
+                    }
+                }
             )
         if not account.is_postable:
             raise serializers.ValidationError(
                 {
                     "lines": {
                         index: {
-                            "bank_account_id": "Selected bank account must be postable"
+                            "bank_account_id": (
+                                f"Line {line_no}: bank '{account.code} — {account.name}' "
+                                f"must be a postable account."
+                            )
                         }
                     }
                 }
@@ -876,7 +908,8 @@ class ExpenseSerializer(serializers.ModelSerializer):
                     "lines": {
                         index: {
                             "bank_account_id": (
-                                "Selected bank account must belong to asset group"
+                                f"Line {line_no}: '{account.code} — {account.name}' must be "
+                                f"an ASSET bank account."
                             )
                         }
                     }
@@ -888,7 +921,8 @@ class ExpenseSerializer(serializers.ModelSerializer):
                     "lines": {
                         index: {
                             "bank_account_id": (
-                                "Selected account must have account type BANK"
+                                f"Line {line_no}: '{account.code} — {account.name}' must have "
+                                f"account type BANK."
                             )
                         }
                     }
@@ -901,6 +935,7 @@ class ExpenseSerializer(serializers.ModelSerializer):
         Expense COA is shared across dimensions. The selected account may live on
         any allowed dimension; it does not need a copy in the line's tenant.
         """
+        line_no = index + 1
         allowed_dimensions = self._allowed_dimension_codes()
         account = Account.objects.filter(
             id=expense_account_id,
@@ -911,7 +946,9 @@ class ExpenseSerializer(serializers.ModelSerializer):
                 {
                     "lines": {
                         index: {
-                            "expense_account_id": "Expense account not found."
+                            "expense_account_id": (
+                                f"Line {line_no}: expense account not found."
+                            )
                         }
                     }
                 }
@@ -924,9 +961,10 @@ class ExpenseSerializer(serializers.ModelSerializer):
                     "lines": {
                         index: {
                             "expense_account_id": (
-                                f"Expense account '{account.code} — {account.name}' "
-                                f"belongs to dimension '{account.tenant_id}', which is "
-                                f"outside your allowed dimensions ({allowed})."
+                                f"Line {line_no}: expense account "
+                                f"'{account.code} — {account.name}' belongs to dimension "
+                                f"'{account.tenant_id}', which is outside your allowed "
+                                f"dimensions ({allowed})."
                             )
                         }
                     }
@@ -938,7 +976,10 @@ class ExpenseSerializer(serializers.ModelSerializer):
                 {
                     "lines": {
                         index: {
-                            "expense_account_id": "Selected expense account is inactive"
+                            "expense_account_id": (
+                                f"Line {line_no}: expense account "
+                                f"'{account.code} — {account.name}' is inactive."
+                            )
                         }
                     }
                 }
@@ -949,7 +990,8 @@ class ExpenseSerializer(serializers.ModelSerializer):
                     "lines": {
                         index: {
                             "expense_account_id": (
-                                "Selected expense account must be postable"
+                                f"Line {line_no}: expense account "
+                                f"'{account.code} — {account.name}' must be postable."
                             )
                         }
                     }
@@ -961,7 +1003,8 @@ class ExpenseSerializer(serializers.ModelSerializer):
                     "lines": {
                         index: {
                             "expense_account_id": (
-                                "Selected expense account must belong to expense group"
+                                f"Line {line_no}: '{account.code} — {account.name}' must "
+                                f"belong to the EXPENSE group."
                             )
                         }
                     }
@@ -979,17 +1022,27 @@ class ExpenseSerializer(serializers.ModelSerializer):
             )
 
         for index, line in enumerate(lines_data):
+            line_no = index + 1
             line_tenant_id = str(line.get("tenant_id") or "").strip()
             if not line_tenant_id:
                 raise serializers.ValidationError(
-                    {"lines": {index: {"tenant_id": "Dimension is required."}}}
+                    {
+                        "lines": {
+                            index: {
+                                "tenant_id": f"Line {line_no}: dimension is required."
+                            }
+                        }
+                    }
                 )
             if line_tenant_id not in allowed_dimensions:
                 raise serializers.ValidationError(
                     {
                         "lines": {
                             index: {
-                                "tenant_id": "You do not have access to this dimension."
+                                "tenant_id": (
+                                    f"Line {line_no}: you do not have access to "
+                                    f"dimension '{line_tenant_id}'."
+                                )
                             }
                         }
                     }
@@ -1001,19 +1054,37 @@ class ExpenseSerializer(serializers.ModelSerializer):
 
             if not bank_account_id:
                 raise serializers.ValidationError(
-                    {"lines": {index: {"bank_account_id": "Bank account is required."}}}
+                    {
+                        "lines": {
+                            index: {
+                                "bank_account_id": (
+                                    f"Line {line_no}: bank account is required."
+                                )
+                            }
+                        }
+                    }
                 )
             if not expense_account_id:
                 raise serializers.ValidationError(
                     {
                         "lines": {
-                            index: {"expense_account_id": "Expense account is required."}
+                            index: {
+                                "expense_account_id": (
+                                    f"Line {line_no}: expense account is required."
+                                )
+                            }
                         }
                     }
                 )
             if amount is None:
                 raise serializers.ValidationError(
-                    {"lines": {index: {"amount": "Amount is required."}}}
+                    {
+                        "lines": {
+                            index: {
+                                "amount": f"Line {line_no}: amount is required."
+                            }
+                        }
+                    }
                 )
 
             amount = quantize_money(amount)
@@ -1021,7 +1092,11 @@ class ExpenseSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {
                         "lines": {
-                            index: {"amount": "Line amount must be greater than 0"}
+                            index: {
+                                "amount": (
+                                    f"Line {line_no}: amount must be greater than 0."
+                                )
+                            }
                         }
                     }
                 )

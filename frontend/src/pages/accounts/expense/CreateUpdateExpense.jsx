@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, Fragment } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Card from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
@@ -15,9 +15,22 @@ import {
 } from "../../../utils/accounts";
 import { useToast } from "../../../context/ToastContext";
 import { useAuth } from "../../../context/AuthContext";
+import { parseApiError } from "../../../utils/apiErrors";
 
 const selectClassName =
   "w-full min-w-[8rem] rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-800/90 dark:text-slate-100 dark:focus:ring-blue-900/40";
+
+const selectErrorClassName =
+  "w-full min-w-[8rem] rounded-xl border border-rose-400 bg-rose-50 px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-rose-500 focus:ring-2 focus:ring-rose-100 dark:border-rose-500 dark:bg-rose-950/40 dark:text-slate-100";
+
+const LINE_FIELD_LABELS = {
+  tenant_id: "Dimension",
+  bank_account_id: "Bank",
+  expense_account_id: "Expense account",
+  amount: "Amount",
+  description: "Description",
+  _error: "Error",
+};
 
 const createEmptyLine = (tenantId = "") => ({
   key: `${Date.now()}-${Math.random()}`,
@@ -52,21 +65,13 @@ const filterExpenseAccounts = (flatAccounts) =>
       account.account_group === "EXPENSE",
   );
 
-const extractErrorMessage = (error) => {
-  const data = error?.response?.data;
-  if (!data) return "Something went wrong";
-  if (typeof data === "string") return data;
-  if (data.message) return data.message;
-  if (typeof data.detail === "string") return data.detail;
-  const fieldEntry = Object.entries(data).find(
-    ([, value]) => typeof value === "string" || Array.isArray(value),
-  );
-  if (fieldEntry) {
-    const [, value] = fieldEntry;
-    return Array.isArray(value) ? value.join(", ") : value;
-  }
-  return "Something went wrong";
-};
+const formatLineErrorSummary = (lineError = {}) =>
+  Object.entries(lineError)
+    .map(([field, message]) => {
+      const label = LINE_FIELD_LABELS[field] || field;
+      return `${label}: ${message}`;
+    })
+    .join(" · ");
 
 const CreateUpdateExpense = () => {
   const { id } = useParams();
@@ -83,6 +88,8 @@ const CreateUpdateExpense = () => {
   const [lines, setLines] = useState([createEmptyLine()]);
   const [submitting, setSubmitting] = useState(false);
   const [loadingRecord, setLoadingRecord] = useState(Boolean(id));
+  const [submitErrors, setSubmitErrors] = useState([]);
+  const [lineErrors, setLineErrors] = useState({});
 
   const grandTotal = useMemo(
     () => lines.reduce((sum, line) => sum + toNumber(line.amount), 0),
@@ -211,9 +218,8 @@ const CreateUpdateExpense = () => {
         }
       } catch (editError) {
         if (!cancelled) {
-          toast.error(
-            extractErrorMessage(editError) || "Failed to load expense",
-          );
+          const parsed = parseApiError(editError);
+          toast.error(parsed.message || "Failed to load expense");
           navigate("/expenses", { replace: true });
         }
       } finally {
@@ -227,12 +233,21 @@ const CreateUpdateExpense = () => {
   }, [id, navigate, toast]);
 
   const updateLine = (index, patch) => {
+    setLineErrors((current) => {
+      if (!current[index]) return current;
+      const next = { ...current };
+      delete next[index];
+      return next;
+    });
+    setSubmitErrors([]);
     setLines((current) =>
       current.map((line, i) => (i === index ? { ...line, ...patch } : line)),
     );
   };
 
   const removeLine = (index) => {
+    setSubmitErrors([]);
+    setLineErrors({});
     setLines((current) =>
       current.length <= 1 ? current : current.filter((_, i) => i !== index),
     );
@@ -241,31 +256,45 @@ const CreateUpdateExpense = () => {
   const validateBeforeSubmit = () => {
     if (!form.date) {
       toast.error("Please select a date");
+      setSubmitErrors(["Date is required."]);
       return false;
     }
     if (!lines.length) {
       toast.error("Add at least one payment line");
+      setSubmitErrors(["Add at least one payment line."]);
       return false;
     }
+    const nextLineErrors = {};
+    const nextMessages = [];
     for (let index = 0; index < lines.length; index += 1) {
       const line = lines[index];
+      const lineNo = index + 1;
+      const fieldErrors = {};
       if (!line.tenantId) {
-        toast.error(`Line ${index + 1}: dimension is required`);
-        return false;
+        fieldErrors.tenant_id = `Line ${lineNo}: dimension is required.`;
       }
       if (!line.bankAccountId) {
-        toast.error(`Line ${index + 1}: bank is required`);
-        return false;
+        fieldErrors.bank_account_id = `Line ${lineNo}: bank is required.`;
       }
       if (!line.expenseAccountId) {
-        toast.error(`Line ${index + 1}: expense account is required`);
-        return false;
+        fieldErrors.expense_account_id = `Line ${lineNo}: expense account is required.`;
       }
       if (toNumber(line.amount) <= 0) {
-        toast.error(`Line ${index + 1}: net amount must be greater than zero`);
-        return false;
+        fieldErrors.amount = `Line ${lineNo}: net amount must be greater than zero.`;
+      }
+      if (Object.keys(fieldErrors).length) {
+        nextLineErrors[index] = fieldErrors;
+        nextMessages.push(...Object.values(fieldErrors));
       }
     }
+    if (nextMessages.length) {
+      setLineErrors(nextLineErrors);
+      setSubmitErrors(nextMessages);
+      toast.error(nextMessages.join("\n"));
+      return false;
+    }
+    setLineErrors({});
+    setSubmitErrors([]);
     return true;
   };
 
@@ -285,6 +314,8 @@ const CreateUpdateExpense = () => {
     event.preventDefault();
     if (!validateBeforeSubmit()) return;
     setSubmitting(true);
+    setSubmitErrors([]);
+    setLineErrors({});
     try {
       const payload = buildPayload();
       if (editingId) {
@@ -296,7 +327,10 @@ const CreateUpdateExpense = () => {
       }
       navigate("/expenses");
     } catch (submitError) {
-      toast.error(extractErrorMessage(submitError));
+      const parsed = parseApiError(submitError);
+      setSubmitErrors(parsed.messages?.length ? parsed.messages : [parsed.message]);
+      setLineErrors(parsed.lineErrors || {});
+      toast.error(parsed.message || "Save failed");
     } finally {
       setSubmitting(false);
     }
@@ -423,6 +457,20 @@ const CreateUpdateExpense = () => {
           </Button>
         </div>
 
+        {submitErrors.length ? (
+          <div
+            className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-200"
+            role="alert"
+          >
+            <p className="font-semibold">Could not save expense</p>
+            <ul className="mt-2 list-disc space-y-1 pl-5">
+              {submitErrors.map((message) => (
+                <li key={message}>{message}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
         <div className="overflow-x-auto rounded-[24px] border border-slate-200 dark:border-slate-700">
           <table className="min-w-[900px] w-full divide-y divide-slate-200 text-sm dark:divide-slate-700">
             <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-900/60">
@@ -436,97 +484,145 @@ const CreateUpdateExpense = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white dark:divide-slate-700 dark:bg-slate-800">
-              {lines.map((line, index) => (
-                <tr key={line.key}>
-                  <td className="px-3 py-3 min-w-[160px]">
-                    <select
-                      className={selectClassName}
-                      value={line.tenantId}
-                      onChange={(e) => {
-                        const nextTenant = e.target.value;
-                        updateLine(index, {
-                          tenantId: nextTenant,
-                          bankAccountId: "",
-                          expenseAccountId: "",
-                        });
-                        loadAccountsForLine(index, nextTenant);
-                      }}
-                    >
-                      <option value="">Select dimension</option>
-                      {dimensions.map((dimension) => (
-                        <option key={dimension.code} value={dimension.code}>
-                          {dimension.name}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td className="px-3 py-3 min-w-[200px]">
-                    <select
-                      className={selectClassName}
-                      value={line.bankAccountId}
-                      onChange={(e) =>
-                        updateLine(index, { bankAccountId: e.target.value })
+              {lines.map((line, index) => {
+                const errors = lineErrors[index] || {};
+                const hasError = Object.keys(errors).length > 0;
+                return (
+                  <Fragment key={line.key}>
+                    <tr
+                      className={
+                        hasError
+                          ? "bg-rose-50/70 dark:bg-rose-950/30"
+                          : undefined
                       }
                     >
-                      <option value="">Select bank</option>
-                      {(line.bankAccounts || []).map((account) => (
-                        <option key={account.id} value={account.id}>
-                          {formatAccountLabel(account)}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td className="px-3 py-3 min-w-[200px]">
-                    <select
-                      className={selectClassName}
-                      value={line.expenseAccountId}
-                      onChange={(e) =>
-                        updateLine(index, { expenseAccountId: e.target.value })
-                      }
-                    >
-                      <option value="">Select expense</option>
-                      {(line.expenseAccounts || []).map((account) => (
-                        <option key={account.id} value={account.id}>
-                          {formatAccountLabel(account)}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td className="px-3 py-3 min-w-[220px]">
-                    <input
-                      type="text"
-                      className={selectClassName}
-                      value={line.description}
-                      placeholder="What is this expense for?"
-                      onChange={(e) =>
-                        updateLine(index, { description: e.target.value })
-                      }
-                    />
-                  </td>
-                  <td className="px-3 py-3 min-w-[140px]">
-                    <input
-                      type="number"
-                      min="0.01"
-                      step="0.01"
-                      className={`${selectClassName} text-right`}
-                      value={line.amount}
-                      onChange={(e) =>
-                        updateLine(index, { amount: e.target.value })
-                      }
-                    />
-                  </td>
-                  <td className="px-3 py-3">
-                    <Button
-                      type="button"
-                      variant="danger"
-                      disabled={lines.length <= 1}
-                      onClick={() => removeLine(index)}
-                    >
-                      Remove
-                    </Button>
-                  </td>
-                </tr>
-              ))}
+                      <td className="px-3 py-3 min-w-[160px]">
+                        <select
+                          className={
+                            errors.tenant_id
+                              ? selectErrorClassName
+                              : selectClassName
+                          }
+                          value={line.tenantId}
+                          onChange={(e) => {
+                            const nextTenant = e.target.value;
+                            updateLine(index, {
+                              tenantId: nextTenant,
+                              bankAccountId: "",
+                              expenseAccountId: "",
+                            });
+                            loadAccountsForLine(index, nextTenant);
+                          }}
+                        >
+                          <option value="">Select dimension</option>
+                          {dimensions.map((dimension) => (
+                            <option key={dimension.code} value={dimension.code}>
+                              {dimension.name}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-3 py-3 min-w-[200px]">
+                        <select
+                          className={
+                            errors.bank_account_id
+                              ? selectErrorClassName
+                              : selectClassName
+                          }
+                          value={line.bankAccountId}
+                          onChange={(e) =>
+                            updateLine(index, {
+                              bankAccountId: e.target.value,
+                            })
+                          }
+                        >
+                          <option value="">Select bank</option>
+                          {(line.bankAccounts || []).map((account) => (
+                            <option key={account.id} value={account.id}>
+                              {formatAccountLabel(account)}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-3 py-3 min-w-[200px]">
+                        <select
+                          className={
+                            errors.expense_account_id
+                              ? selectErrorClassName
+                              : selectClassName
+                          }
+                          value={line.expenseAccountId}
+                          onChange={(e) =>
+                            updateLine(index, {
+                              expenseAccountId: e.target.value,
+                            })
+                          }
+                        >
+                          <option value="">Select expense</option>
+                          {(line.expenseAccounts || []).map((account) => (
+                            <option key={account.id} value={account.id}>
+                              {formatAccountLabel(account)}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-3 py-3 min-w-[220px]">
+                        <input
+                          type="text"
+                          className={
+                            errors.description
+                              ? selectErrorClassName
+                              : selectClassName
+                          }
+                          value={line.description}
+                          placeholder="What is this expense for?"
+                          onChange={(e) =>
+                            updateLine(index, {
+                              description: e.target.value,
+                            })
+                          }
+                        />
+                      </td>
+                      <td className="px-3 py-3 min-w-[140px]">
+                        <input
+                          type="number"
+                          min="0.01"
+                          step="0.01"
+                          className={`${
+                            errors.amount
+                              ? selectErrorClassName
+                              : selectClassName
+                          } text-right`}
+                          value={line.amount}
+                          onChange={(e) =>
+                            updateLine(index, { amount: e.target.value })
+                          }
+                        />
+                      </td>
+                      <td className="px-3 py-3">
+                        <Button
+                          type="button"
+                          variant="danger"
+                          disabled={lines.length <= 1}
+                          onClick={() => removeLine(index)}
+                        >
+                          Remove
+                        </Button>
+                      </td>
+                    </tr>
+                    {hasError ? (
+                      <tr className="bg-rose-50/70 dark:bg-rose-950/30">
+                        <td
+                          colSpan={6}
+                          className="px-3 pb-3 text-xs font-medium text-rose-700 dark:text-rose-300"
+                        >
+                          Line {index + 1}: {formatLineErrorSummary(errors)}
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
