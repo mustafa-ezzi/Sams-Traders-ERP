@@ -319,8 +319,8 @@ const CreateUpdateExpense = () => {
               {editingId ? "Edit Expense" : "Expense"}
             </h2>
             <p className="mt-1 text-sm text-slate-500">
-              Choose dimension and bank per line. Expense heads are listed from
-              all dimensions (matched by account code).
+              Choose dimension and bank per line. Expense heads are shared across
+              dimensions — pick any expense COA for any line.
             </p>
           </div>
           <Button

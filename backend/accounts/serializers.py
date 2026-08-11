@@ -897,6 +897,11 @@ class ExpenseSerializer(serializers.ModelSerializer):
         return account
 
     def _validate_expense_account(self, expense_account_id, tenant_id, index):
+        """
+        Expense COA is shared across dimensions. The selected account may live on
+        any allowed dimension; it does not need a copy in the line's tenant.
+        """
+        allowed_dimensions = self._allowed_dimension_codes()
         account = Account.objects.filter(
             id=expense_account_id,
             deleted_at__isnull=True,
@@ -906,40 +911,27 @@ class ExpenseSerializer(serializers.ModelSerializer):
                 {
                     "lines": {
                         index: {
-                            "expense_account_id": (
-                                "Expense account not found for the selected dimension."
-                            )
+                            "expense_account_id": "Expense account not found."
                         }
                     }
                 }
             )
 
-        # Allow picking an expense head from another dimension's COA; post against
-        # the same account code in the line's dimension when a copy exists.
-        if account.tenant_id != tenant_id:
-            remapped = Account.objects.filter(
-                tenant_id=tenant_id,
-                code=account.code,
-                deleted_at__isnull=True,
-                is_active=True,
-            ).first()
-            if remapped is None:
-                raise serializers.ValidationError(
-                    {
-                        "lines": {
-                            index: {
-                                "expense_account_id": (
-                                    f"Expense account '{account.code} — {account.name}' "
-                                    f"was selected from dimension '{account.tenant_id}', "
-                                    f"but no matching account code exists in '{tenant_id}'. "
-                                    f"Create that expense head in '{tenant_id}' (or choose "
-                                    f"one that already exists there)."
-                                )
-                            }
+        if account.tenant_id not in allowed_dimensions:
+            allowed = ", ".join(allowed_dimensions) if allowed_dimensions else "(none)"
+            raise serializers.ValidationError(
+                {
+                    "lines": {
+                        index: {
+                            "expense_account_id": (
+                                f"Expense account '{account.code} — {account.name}' "
+                                f"belongs to dimension '{account.tenant_id}', which is "
+                                f"outside your allowed dimensions ({allowed})."
+                            )
                         }
                     }
-                )
-            account = remapped
+                }
+            )
 
         if not account.is_active:
             raise serializers.ValidationError(
