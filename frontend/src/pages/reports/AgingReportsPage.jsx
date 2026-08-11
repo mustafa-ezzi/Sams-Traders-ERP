@@ -88,9 +88,10 @@ const PartyAgingTable = ({ report, showDimension, partnerType }) => {
     () =>
       (report?.party_rows || []).map((row) => ({
         ...row,
-        _rowClassName: row.is_combined
-          ? "bg-indigo-50/70 dark:bg-indigo-950/30"
-          : undefined,
+        _rowClassName:
+          row.is_highlighted || row.is_combined
+            ? "bg-amber-100/90 dark:bg-amber-900/40"
+            : undefined,
       })),
     [report],
   );
@@ -105,9 +106,20 @@ const PartyAgingTable = ({ report, showDimension, partnerType }) => {
         render: (row) => {
           if (row.is_combined) {
             return (
-              <span className="font-extrabold text-indigo-700 dark:text-indigo-300">
+              <span className="font-extrabold text-amber-900 dark:text-amber-200">
                 {row.party_name} (Combined)
               </span>
+            );
+          }
+          if (row.is_highlighted) {
+            return (
+              <ReportLink
+                to={REPORT_PATHS.partyLedger(partnerType, row.party_id)}
+                title="Open party ledger"
+                className="font-extrabold text-amber-900 dark:text-amber-200"
+              >
+                {row.party_name}
+              </ReportLink>
             );
           }
           return (
@@ -127,7 +139,7 @@ const PartyAgingTable = ({ report, showDimension, partnerType }) => {
         label: "Dimension",
         render: (row) =>
           row.is_combined ? (
-            <span className="font-semibold text-indigo-600 dark:text-indigo-400">
+            <span className="font-semibold text-amber-800 dark:text-amber-300">
               Combined
             </span>
           ) : (
@@ -145,7 +157,11 @@ const PartyAgingTable = ({ report, showDimension, partnerType }) => {
         key: `bucket_${bucket.key}`,
         label: bucket.label,
         align: "right",
-        getValue: (row) => row.buckets?.[bucket.key] || 0,
+        // Sort by the party group's combined bucket so AM/SAMS stay together.
+        getValue: (row) =>
+          Number(
+            row.group_buckets?.[bucket.key] ?? row.buckets?.[bucket.key] ?? 0,
+          ),
         render: (row) => formatDecimal(row.buckets?.[bucket.key] || 0),
       });
     });
@@ -153,11 +169,13 @@ const PartyAgingTable = ({ report, showDimension, partnerType }) => {
       key: "total",
       label: "Total",
       align: "right",
+      // Sort by combined party total so multi-dimension groups move as one block.
+      getValue: (row) => Number(row.group_total ?? row.total ?? 0),
       render: (row) => (
         <span
           className={`font-bold ${
-            row.is_combined
-              ? "text-indigo-800 dark:text-indigo-200"
+            row.is_highlighted || row.is_combined
+              ? "text-amber-950 dark:text-amber-100"
               : "text-indigo-600 dark:text-indigo-400"
           }`}
         >

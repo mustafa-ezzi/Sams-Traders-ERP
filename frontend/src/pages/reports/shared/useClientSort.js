@@ -33,7 +33,22 @@ export const useClientSort = (rows = [], initial = {}, getters = {}) => {
 
     return [...rows].sort((a, b) => {
       const result = compareSortValues(getter(a), getter(b));
-      return sortConfig.direction === "desc" ? -result : result;
+      if (result !== 0) {
+        return sortConfig.direction === "desc" ? -result : result;
+      }
+
+      // Keep aging party groups together (AM / SAMS / Combined) after ties.
+      const groupA = String(a?.group_key || a?.party_name || "");
+      const groupB = String(b?.group_key || b?.party_name || "");
+      const groupCmp = groupA.localeCompare(groupB, undefined, {
+        sensitivity: "base",
+      });
+      if (groupCmp !== 0) return groupCmp;
+
+      return (
+        Number(a?.within_group_index ?? a?.sort_index ?? 0) -
+        Number(b?.within_group_index ?? b?.sort_index ?? 0)
+      );
     });
   }, [rows, sortConfig, getters]);
 

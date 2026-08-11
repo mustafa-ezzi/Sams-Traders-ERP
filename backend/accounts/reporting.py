@@ -717,6 +717,9 @@ def _group_aging_party_rows(party_rows):
     """
     Keep same-named parties across dimensions adjacent, then append a Combined row.
     Sorted by party name, then dimension (not by outstanding amount).
+
+    Each row also carries group_total / group_buckets so client sorting by amount
+    can order whole party groups together.
     """
     if not party_rows:
         return []
@@ -742,33 +745,45 @@ def _group_aging_party_rows(party_rows):
             group.append(ordered[index])
             index += 1
 
+        group_buckets = _empty_aging_buckets()
+        group_total = Decimal("0.00")
         for row in group:
+            for key in AGING_BUCKET_KEYS:
+                group_buckets[key] = _money(
+                    group_buckets[key] + _money(row["buckets"][key])
+                )
+            group_total = _money(group_total + _money(row["total"]))
+
+        is_multi = len(group) > 1
+        for within_index, row in enumerate(group):
             row["is_combined"] = False
+            # Highlight multi-dimension Combined rows AND single-dimension parties.
+            row["is_highlighted"] = not is_multi
+            row["group_key"] = name_key
+            row["group_total"] = group_total
+            row["group_buckets"] = dict(group_buckets)
+            row["within_group_index"] = within_index
             row["sort_index"] = sort_index
             sort_index += 1
             grouped.append(row)
 
-        if len(group) > 1:
-            combined_buckets = _empty_aging_buckets()
-            combined_total = Decimal("0.00")
-            invoice_count = 0
-            for row in group:
-                for key in AGING_BUCKET_KEYS:
-                    combined_buckets[key] = _money(
-                        combined_buckets[key] + _money(row["buckets"][key])
-                    )
-                combined_total = _money(combined_total + _money(row["total"]))
-                invoice_count += int(row.get("invoice_count") or 0)
+        if is_multi:
+            invoice_count = sum(int(row.get("invoice_count") or 0) for row in group)
             grouped.append(
                 {
                     "party_id": f"combined:{name_key}",
                     "party_name": group[0].get("party_name") or "",
                     "tenant_id": "",
                     "dimension_name": "Combined",
-                    "buckets": combined_buckets,
-                    "total": combined_total,
+                    "buckets": dict(group_buckets),
+                    "total": group_total,
                     "invoice_count": invoice_count,
                     "is_combined": True,
+                    "is_highlighted": True,
+                    "group_key": name_key,
+                    "group_total": group_total,
+                    "group_buckets": dict(group_buckets),
+                    "within_group_index": len(group),
                     "sort_index": sort_index,
                 }
             )
@@ -1053,14 +1068,22 @@ def _build_invoice_aging_report(
 
     party_rows = _group_aging_party_rows(list(party_map.values()))
     for row in party_rows:
-        if isinstance(row["buckets"], dict) and row["buckets"]:
+        if isinstance(row.get("buckets"), dict) and row["buckets"]:
             sample = next(iter(row["buckets"].values()))
             if not isinstance(sample, str):
                 row["buckets"] = {
                     key: str(row["buckets"][key]) for key in AGING_BUCKET_KEYS
                 }
-        if not isinstance(row["total"], str):
+        if isinstance(row.get("group_buckets"), dict) and row["group_buckets"]:
+            sample = next(iter(row["group_buckets"].values()))
+            if not isinstance(sample, str):
+                row["group_buckets"] = {
+                    key: str(row["group_buckets"][key]) for key in AGING_BUCKET_KEYS
+                }
+        if not isinstance(row.get("total"), str):
             row["total"] = str(row["total"])
+        if row.get("group_total") is not None and not isinstance(row["group_total"], str):
+            row["group_total"] = str(row["group_total"])
 
     detail_rows.sort(
         key=lambda row: (
