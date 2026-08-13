@@ -215,6 +215,10 @@ class Account(BaseModel):
             )
             .filter(Q(bank_account=self) | Q(expense_account=self))
             .filter(expense__deleted_at__isnull=True),
+            JournalVoucherLine.objects.filter(
+                deleted_at__isnull=True,
+                account=self,
+            ).filter(voucher__deleted_at__isnull=True),
         ]
 
         if any(queryset.exists() for queryset in dependencies):
@@ -256,6 +260,7 @@ class JournalEntry(BaseModel):
         EXPENSE = "EXPENSE", "Expense"
         PARTY_OPENING_BALANCE = "PARTY_OPENING_BALANCE", "Party Opening Balance"
         BANK_TRANSFER = "BANK_TRANSFER", "Bank Transfer"
+        JOURNAL_VOUCHER = "JOURNAL_VOUCHER", "Journal Voucher"
 
     date = models.DateField()
     reference = models.CharField(max_length=50)
@@ -398,6 +403,48 @@ class BankTransfer(BaseModel):
 
     def __str__(self):
         return self.transfer_number
+
+
+class JournalVoucher(BaseModel):
+    voucher_number = models.CharField(max_length=50)
+    date = models.DateField()
+    amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    remarks = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["-date", "-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant_id", "voucher_number"],
+                condition=Q(deleted_at__isnull=True),
+                name="unique_active_journal_voucher_number_per_tenant",
+            )
+        ]
+
+    def __str__(self):
+        return self.voucher_number
+
+
+class JournalVoucherLine(BaseModel):
+    voucher = models.ForeignKey(
+        JournalVoucher,
+        on_delete=models.CASCADE,
+        related_name="lines",
+    )
+    account = models.ForeignKey(
+        Account,
+        on_delete=models.PROTECT,
+        related_name="journal_voucher_lines",
+    )
+    debit = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    credit = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    description = models.CharField(max_length=255, blank=True, default="")
+
+    class Meta:
+        ordering = ["created_at", "id"]
+
+    def __str__(self):
+        return f"{self.voucher.voucher_number} - {self.account.code}"
 
 
 class Inquiry(BaseModel):

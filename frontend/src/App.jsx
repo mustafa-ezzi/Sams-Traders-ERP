@@ -41,6 +41,8 @@ import AccountsPage from "./pages/accounts/AccountsPage";
 import AccountFormPage from "./pages/accounts/AccountFormPage";
 import ExpensePage from "./pages/accounts/expense/GetAllExpense";
 import CreateUpdateExpense from "./pages/accounts/expense/CreateUpdateExpense";
+import JournalVoucherPage from "./pages/accounts/journalVoucher/GetAllJournalVoucher";
+import CreateUpdateJournalVoucher from "./pages/accounts/journalVoucher/CreateUpdateJournalVoucher";
 import BankTransferPage from "./pages/accounts/bankTransfer/GetAllBankTransfer";
 import CreateUpdateBankTransfer from "./pages/accounts/bankTransfer/CreateUpdateBankTransfer";
 import ConfigurePage from "./pages/users/ConfigurePage";
@@ -160,6 +162,9 @@ const App = () => (
         <Route path="expenses" element={<ExpensePage />} />
         <Route path="expenses/create" element={<CreateUpdateExpense />} />
         <Route path="expenses/:id/edit" element={<CreateUpdateExpense />} />
+        <Route path="journal-vouchers" element={<JournalVoucherPage />} />
+        <Route path="journal-vouchers/create" element={<CreateUpdateJournalVoucher />} />
+        <Route path="journal-vouchers/:id/edit" element={<CreateUpdateJournalVoucher />} />
         <Route path="bank-transfers" element={<BankTransferPage />} />
         <Route path="bank-transfers/create" element={<CreateUpdateBankTransfer />} />
         <Route path="bank-transfers/:id/edit" element={<CreateUpdateBankTransfer />} />

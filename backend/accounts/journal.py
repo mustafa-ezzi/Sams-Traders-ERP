@@ -4,7 +4,7 @@ from django.db import transaction
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
-from accounts.models import Account, Expense, JournalEntry, JournalLine, BankTransfer
+from accounts.models import Account, Expense, JournalEntry, JournalLine, BankTransfer, JournalVoucher
 from inventory.models import PartyOpeningBalance
 from inventory.party_accounts import (
     resolve_default_payable_account,
@@ -1082,6 +1082,43 @@ def sync_expense_journal(expense):
     )
 
 
+def _build_journal_voucher_lines(voucher):
+    lines = []
+    for voucher_line in voucher.lines.filter(deleted_at__isnull=True).select_related(
+        "account"
+    ):
+        debit = quantize_money(voucher_line.debit)
+        credit = quantize_money(voucher_line.credit)
+        if debit <= 0 and credit <= 0:
+            continue
+        lines.append(
+            {
+                "account": voucher_line.account,
+                "tenant_id": voucher_line.tenant_id,
+                "debit": debit,
+                "credit": credit,
+                "line_description": (voucher_line.description or "").strip()
+                or "Journal Voucher",
+            }
+        )
+    return lines
+
+
+def sync_journal_voucher_journal(voucher):
+    return _upsert_journal_entry(
+        tenant_id=voucher.tenant_id,
+        source_type=JournalEntry.SourceType.JOURNAL_VOUCHER,
+        source_id=voucher.id,
+        date=voucher.date,
+        reference=voucher.voucher_number,
+        document_type="Journal Voucher",
+        description=voucher.remarks,
+        people_type="",
+        people_name="",
+        lines=_build_journal_voucher_lines(voucher),
+    )
+
+
 def _build_bank_transfer_lines_same_tenant(transfer):
     amount = quantize_money(transfer.amount)
     return [
@@ -1227,6 +1264,10 @@ def sync_all_journals():
         "lines__expense_account",
     ):
         sync_expense_journal(expense)
+    for voucher in JournalVoucher.objects.filter(deleted_at__isnull=True).prefetch_related(
+        "lines__account",
+    ):
+        sync_journal_voucher_journal(voucher)
     for transfer in BankTransfer.objects.filter(deleted_at__isnull=True).select_related(
         "from_bank_account",
         "to_bank_account",

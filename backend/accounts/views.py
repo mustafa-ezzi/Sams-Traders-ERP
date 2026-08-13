@@ -77,6 +77,7 @@ from .serializers import (
     BankTransferSerializer,
     DimensionSerializer,
     ExpenseSerializer,
+    JournalVoucherSerializer,
     LoginSerializer,
 )
 from .serializers import (
@@ -96,6 +97,8 @@ from .models import (
     Inquiry,
     JournalEntry,
     JournalLine,
+    JournalVoucher,
+    JournalVoucherLine,
     User,
 )
 from .audit import log_action
@@ -105,6 +108,7 @@ from .journal import (
     delete_journal_entry,
     sync_bank_transfer_journal,
     sync_expense_journal,
+    sync_journal_voucher_journal,
 )
 from inventory.pagination import StandardResultsSetPagination
 from accounts.authentication import AdminJWTAuthentication
@@ -2315,6 +2319,108 @@ class ExpenseViewSet(AuditedModelMixin, ModelViewSet):
         )
 
 
+class JournalVoucherViewSet(AuditedModelMixin, ModelViewSet):
+    audit_entity_type = "journal_voucher"
+    serializer_class = JournalVoucherSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    ordering_fields = [
+        "voucher_number",
+        "date",
+        "tenant_id",
+        "_line_tenant_id",
+        "_account_name",
+        "amount",
+        "remarks",
+        "created_at",
+        "id",
+    ]
+    ordering = ["-created_at", "-date", "-id"]
+    search_fields = [
+        "voucher_number",
+        "lines__account__name",
+        "lines__account__code",
+        "lines__description",
+        "remarks",
+    ]
+
+    def get_queryset(self):
+        tenant_ids = get_request_tenant_filter(self.request)["tenant_id__in"]
+        return (
+            JournalVoucher.objects.filter(deleted_at__isnull=True)
+            .filter(Q(tenant_id__in=tenant_ids) | Q(lines__tenant_id__in=tenant_ids))
+            .prefetch_related("lines__account")
+            .annotate(
+                _line_tenant_id=Min(
+                    "lines__tenant_id",
+                    filter=Q(lines__deleted_at__isnull=True),
+                ),
+                _account_name=Min(
+                    "lines__account__name",
+                    filter=Q(lines__deleted_at__isnull=True),
+                ),
+            )
+            .distinct()
+            .order_by("-date", "-created_at")
+        )
+
+    def _get_serializable_voucher(self, voucher_id):
+        return self.get_queryset().get(id=voucher_id)
+
+    def create(self, request, *args, **kwargs):
+        with transaction.atomic():
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            voucher = serializer.save()
+            sync_journal_voucher_journal(self._get_serializable_voucher(voucher.id))
+        response_serializer = self.get_serializer(
+            self._get_serializable_voucher(voucher.id)
+        )
+        return Response(
+            {
+                "data": response_serializer.data,
+                "message": "Journal voucher created successfully",
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop("partial", False)
+        instance = self.get_object()
+        with transaction.atomic():
+            serializer = self.get_serializer(
+                instance, data=request.data, partial=partial
+            )
+            serializer.is_valid(raise_exception=True)
+            voucher = serializer.save()
+            sync_journal_voucher_journal(self._get_serializable_voucher(voucher.id))
+        response_serializer = self.get_serializer(
+            self._get_serializable_voucher(voucher.id)
+        )
+        return Response(response_serializer.data)
+
+    def perform_destroy(self, instance):
+        stamp = now()
+        instance.deleted_at = stamp
+        instance.save(update_fields=["deleted_at", "updated_at"])
+        instance.lines.filter(deleted_at__isnull=True).update(deleted_at=stamp)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        with transaction.atomic():
+            self.perform_destroy(instance)
+            delete_journal_entry(
+                JournalEntry.SourceType.JOURNAL_VOUCHER,
+                instance.id,
+                instance.tenant_id,
+            )
+        return Response(
+            {"data": None, "message": "Journal voucher deleted successfully"},
+            status=status.HTTP_200_OK,
+        )
+
+
 class BankTransferViewSet(AuditedModelMixin, ModelViewSet):
     audit_entity_type = "bank_transfer"
     serializer_class = BankTransferSerializer
@@ -2483,6 +2589,8 @@ class DimensionViewSet(ModelViewSet):
             JournalLine.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
             Expense.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
             ExpenseLine.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
+            JournalVoucher.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
+            JournalVoucherLine.objects.filter(tenant_id=dimension_code, deleted_at__isnull=True),
         ]
         return any(queryset.exists() for queryset in dependency_checks)
 

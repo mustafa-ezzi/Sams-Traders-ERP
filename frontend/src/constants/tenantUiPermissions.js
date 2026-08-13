@@ -33,6 +33,7 @@ export const TENANT_UI_PERMISSION_GROUPS = [
       { id: "sales_bank_receipts", label: "Bank receipts (sales)" },
       { id: "salesman_commission_payments", label: "Salesman commission vouchers" },
       { id: "expenses", label: "Expenses" },
+      { id: "journal_vouchers", label: "Journal vouchers" },
       { id: "bank_transfers", label: "Bank transfers" },
     ],
   },

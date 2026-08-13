@@ -261,6 +261,12 @@ const navigation = [
         perm: "expenses",
       },
       {
+        to: "/journal-vouchers",
+        label: "Journal Vouchers",
+        icon: icons.accounts,
+        perm: "journal_vouchers",
+      },
+      {
         to: "/bank-transfers",
         label: "Bank Transfers",
         icon: icons.accounts,
@@ -621,6 +627,8 @@ const pageTitles = {
   "/purchase-bank-payments/create": { title: "Create Bank Payment", eyebrow: "Bank" },
   "/expenses": { title: "Expenses", eyebrow: "Accounting" },
   "/expenses/create": { title: "Create Expense", eyebrow: "Accounting" },
+  "/journal-vouchers": { title: "Journal Vouchers", eyebrow: "Accounting" },
+  "/journal-vouchers/create": { title: "Create Journal Voucher", eyebrow: "Accounting" },
   "/bank-transfers": { title: "Bank Transfers", eyebrow: "Bank" },
   "/bank-transfers/create": { title: "Create Bank Transfer", eyebrow: "Bank" },
   "/sales-invoices": { title: "Sales Invoices", eyebrow: "Sales" },
@@ -969,6 +977,9 @@ const Layout = () => {
     }
     if (pathname.startsWith("/expenses/") && pathname.endsWith("/edit")) {
       return { title: "Edit Expense", eyebrow: "Accounting" };
+    }
+    if (pathname.startsWith("/journal-vouchers/") && pathname.endsWith("/edit")) {
+      return { title: "Edit Journal Voucher", eyebrow: "Accounting" };
     }
     if (pathname.startsWith("/bank-transfers/") && pathname.endsWith("/edit")) {
       return { title: "Edit Bank Transfer", eyebrow: "Bank" };

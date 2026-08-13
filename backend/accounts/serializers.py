@@ -6,7 +6,7 @@ from django.utils.timezone import now
 
 from accounts.dimensions import build_dimension_code, get_user_active_dimension_codes
 from accounts.journal import quantize_money
-from accounts.models import Account, AuditLog, Dimension, Expense, ExpenseLine, Inquiry, User, BankTransfer
+from accounts.models import Account, AuditLog, Dimension, Expense, ExpenseLine, Inquiry, User, BankTransfer, JournalVoucher, JournalVoucherLine
 from common.tenancy import get_request_tenant_ids
 from inventory.models import Salesman
 
@@ -1147,6 +1147,358 @@ class ExpenseSerializer(serializers.ModelSerializer):
         )
         self._create_lines(expense, lines_data)
         return expense
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        lines_data = validated_data.pop("lines")
+        instance.tenant_id = lines_data[0]["tenant_id"]
+        instance.date = validated_data.get("date", instance.date)
+        instance.amount = validated_data.get("amount", instance.amount)
+        instance.remarks = validated_data.get("remarks", instance.remarks)
+        instance.save()
+        instance.lines.filter(deleted_at__isnull=True).update(deleted_at=now())
+        self._create_lines(instance, lines_data)
+        return instance
+
+
+class JournalVoucherLineSerializer(serializers.Serializer):
+    id = serializers.UUIDField(read_only=True, required=False)
+    tenant_id = serializers.CharField()
+    dimension_name = serializers.SerializerMethodField()
+    account = AccountMiniSerializer(read_only=True, required=False)
+    account_id = serializers.UUIDField(write_only=True)
+    debit = serializers.DecimalField(max_digits=12, decimal_places=2, default=0)
+    credit = serializers.DecimalField(max_digits=12, decimal_places=2, default=0)
+    description = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=255,
+        default="",
+    )
+
+    def get_dimension_name(self, obj):
+        dimension = Dimension.objects.filter(code=obj.tenant_id).first()
+        return dimension.name if dimension else obj.tenant_id
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data["account_id"] = str(instance.account_id)
+        data["tenant_id"] = instance.tenant_id
+        data["description"] = instance.description or ""
+        return data
+
+
+class JournalVoucherSerializer(serializers.ModelSerializer):
+    lines = JournalVoucherLineSerializer(many=True)
+    line_count = serializers.SerializerMethodField()
+    account_summary = serializers.SerializerMethodField()
+    dimension_summary = serializers.SerializerMethodField()
+    total_debit = serializers.SerializerMethodField()
+    total_credit = serializers.SerializerMethodField()
+
+    class Meta:
+        model = JournalVoucher
+        fields = [
+            "id",
+            "voucher_number",
+            "tenant_id",
+            "date",
+            "amount",
+            "remarks",
+            "lines",
+            "line_count",
+            "account_summary",
+            "dimension_summary",
+            "total_debit",
+            "total_credit",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "voucher_number",
+            "tenant_id",
+            "amount",
+            "line_count",
+            "account_summary",
+            "dimension_summary",
+            "total_debit",
+            "total_credit",
+            "created_at",
+            "updated_at",
+        ]
+
+    def get_line_count(self, obj):
+        if hasattr(obj, "_prefetched_objects_cache") and "lines" in obj._prefetched_objects_cache:
+            return len([line for line in obj.lines.all() if line.deleted_at is None])
+        return obj.lines.filter(deleted_at__isnull=True).count()
+
+    def get_account_summary(self, obj):
+        labels = []
+        seen = set()
+        for line in obj.lines.filter(deleted_at__isnull=True).select_related("account"):
+            if not line.account_id:
+                continue
+            label = f"{line.account.code} - {line.account.name}"
+            if label not in seen:
+                seen.add(label)
+                labels.append(label)
+        if not labels:
+            return ""
+        if len(labels) == 1:
+            return labels[0]
+        return f"{labels[0]} +{len(labels) - 1}"
+
+    def get_dimension_summary(self, obj):
+        codes = []
+        seen = set()
+        for line in obj.lines.filter(deleted_at__isnull=True):
+            if line.tenant_id and line.tenant_id not in seen:
+                seen.add(line.tenant_id)
+                codes.append(line.tenant_id)
+        if not codes:
+            return obj.tenant_id or ""
+        names = {
+            row.code: row.name
+            for row in Dimension.objects.filter(code__in=codes)
+        }
+        labels = [names.get(code, code) for code in codes]
+        if len(labels) == 1:
+            return labels[0]
+        return f"{labels[0]} +{len(labels) - 1}"
+
+    def get_total_debit(self, obj):
+        total = Decimal("0.00")
+        for line in obj.lines.filter(deleted_at__isnull=True):
+            total += quantize_money(line.debit)
+        return str(quantize_money(total))
+
+    def get_total_credit(self, obj):
+        total = Decimal("0.00")
+        for line in obj.lines.filter(deleted_at__isnull=True):
+            total += quantize_money(line.credit)
+        return str(quantize_money(total))
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data["lines"] = JournalVoucherLineSerializer(
+            instance.lines.filter(deleted_at__isnull=True).select_related("account"),
+            many=True,
+        ).data
+        return data
+
+    def _allowed_dimension_codes(self):
+        request = self.context["request"]
+        tenant_ids = get_user_active_dimension_codes(request.user)
+        current = getattr(request, "tenant_id", "") or request.user.tenant_id
+        if current and current not in tenant_ids:
+            tenant_ids.append(current)
+        return tenant_ids
+
+    def _validate_account(self, account_id, line_tenant_id, index):
+        line_no = index + 1
+        allowed_dimensions = self._allowed_dimension_codes()
+        account = Account.objects.filter(
+            id=account_id,
+            deleted_at__isnull=True,
+        ).first()
+        if account is None:
+            raise serializers.ValidationError(
+                {
+                    "lines": {
+                        index: {
+                            "account_id": f"Line {line_no}: account not found."
+                        }
+                    }
+                }
+            )
+        if account.tenant_id not in allowed_dimensions:
+            allowed = ", ".join(allowed_dimensions) if allowed_dimensions else "(none)"
+            raise serializers.ValidationError(
+                {
+                    "lines": {
+                        index: {
+                            "account_id": (
+                                f"Line {line_no}: account '{account.code} — {account.name}' "
+                                f"belongs to dimension '{account.tenant_id}', which is outside "
+                                f"your allowed dimensions ({allowed})."
+                            )
+                        }
+                    }
+                }
+            )
+        if not account.is_active:
+            raise serializers.ValidationError(
+                {
+                    "lines": {
+                        index: {
+                            "account_id": (
+                                f"Line {line_no}: account '{account.code} — {account.name}' "
+                                f"is inactive."
+                            )
+                        }
+                    }
+                }
+            )
+        if not account.is_postable:
+            raise serializers.ValidationError(
+                {
+                    "lines": {
+                        index: {
+                            "account_id": (
+                                f"Line {line_no}: account '{account.code} — {account.name}' "
+                                f"must be postable."
+                            )
+                        }
+                    }
+                }
+            )
+        return account
+
+    def _validate_lines(self, lines_data):
+        allowed_dimensions = self._allowed_dimension_codes()
+        prepared_lines = []
+
+        if not lines_data or len(lines_data) < 2:
+            raise serializers.ValidationError(
+                {"lines": "At least two journal lines are required."}
+            )
+
+        total_debit = Decimal("0.00")
+        total_credit = Decimal("0.00")
+
+        for index, line in enumerate(lines_data):
+            line_no = index + 1
+            line_tenant_id = str(line.get("tenant_id") or "").strip()
+            if not line_tenant_id:
+                raise serializers.ValidationError(
+                    {
+                        "lines": {
+                            index: {
+                                "tenant_id": f"Line {line_no}: dimension is required."
+                            }
+                        }
+                    }
+                )
+            if line_tenant_id not in allowed_dimensions:
+                raise serializers.ValidationError(
+                    {
+                        "lines": {
+                            index: {
+                                "tenant_id": (
+                                    f"Line {line_no}: you do not have access to "
+                                    f"dimension '{line_tenant_id}'."
+                                )
+                            }
+                        }
+                    }
+                )
+
+            account_id = line.get("account_id")
+            if not account_id:
+                raise serializers.ValidationError(
+                    {
+                        "lines": {
+                            index: {
+                                "account_id": f"Line {line_no}: account is required."
+                            }
+                        }
+                    }
+                )
+
+            debit = quantize_money(line.get("debit") or 0)
+            credit = quantize_money(line.get("credit") or 0)
+            if debit < 0 or credit < 0:
+                raise serializers.ValidationError(
+                    {
+                        "lines": {
+                            index: {
+                                "amount": (
+                                    f"Line {line_no}: debit and credit cannot be negative."
+                                )
+                            }
+                        }
+                    }
+                )
+            if debit > 0 and credit > 0:
+                raise serializers.ValidationError(
+                    {
+                        "lines": {
+                            index: {
+                                "amount": (
+                                    f"Line {line_no}: enter either debit or credit, not both."
+                                )
+                            }
+                        }
+                    }
+                )
+            if debit <= 0 and credit <= 0:
+                raise serializers.ValidationError(
+                    {
+                        "lines": {
+                            index: {
+                                "amount": (
+                                    f"Line {line_no}: enter a debit or credit amount."
+                                )
+                            }
+                        }
+                    }
+                )
+
+            account = self._validate_account(account_id, line_tenant_id, index)
+            total_debit += debit
+            total_credit += credit
+            prepared_lines.append(
+                {
+                    "tenant_id": line_tenant_id,
+                    "account_id": account.id,
+                    "debit": debit,
+                    "credit": credit,
+                    "description": str(line.get("description") or "").strip()[:255],
+                }
+            )
+
+        if quantize_money(total_debit) != quantize_money(total_credit):
+            raise serializers.ValidationError(
+                {
+                    "lines": (
+                        f"Journal voucher is unbalanced. "
+                        f"Total debit {quantize_money(total_debit)} must equal "
+                        f"total credit {quantize_money(total_credit)}."
+                    )
+                }
+            )
+
+        return prepared_lines, quantize_money(total_debit)
+
+    def validate(self, attrs):
+        lines_data = attrs.get("lines")
+        if lines_data is None and self.instance:
+            raise serializers.ValidationError({"lines": "Journal lines are required."})
+        prepared_lines, total_amount = self._validate_lines(lines_data or [])
+        attrs["lines"] = prepared_lines
+        attrs["amount"] = total_amount
+        return attrs
+
+    def _generate_voucher_number(self, tenant_id):
+        count = JournalVoucher.objects.filter(tenant_id=tenant_id).count() + 1
+        return f"JV-{count:05d}"
+
+    def _create_lines(self, voucher, lines_data):
+        for line_data in lines_data:
+            JournalVoucherLine.objects.create(voucher=voucher, **line_data)
+
+    @transaction.atomic
+    def create(self, validated_data):
+        lines_data = validated_data.pop("lines")
+        tenant_id = lines_data[0]["tenant_id"]
+        voucher = JournalVoucher.objects.create(
+            tenant_id=tenant_id,
+            voucher_number=self._generate_voucher_number(tenant_id),
+            **validated_data,
+        )
+        self._create_lines(voucher, lines_data)
+        return voucher
 
     @transaction.atomic
     def update(self, instance, validated_data):
