@@ -43,9 +43,9 @@ const CreateUpdateRawMaterial = () => {
   const navigate = useNavigate();
   const { id } = useParams();
   const isEdit = Boolean(id);
-  const { tenantId, createTenantIds } = useAuth();
+  const { tenantId } = useAuth();
   const [createDimensionIds, setCreateDimensionIds] = useState(() =>
-    createTenantIds?.length ? [...createTenantIds] : tenantId ? [tenantId] : [],
+    tenantId ? [tenantId] : [],
   );
   const [loadingOptions, setLoadingOptions] = useState(false);
   const [loadingRecord, setLoadingRecord] = useState(false);

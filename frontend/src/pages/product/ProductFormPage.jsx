@@ -147,10 +147,10 @@ const ProductFormPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const toast = useToast();
-  const { tenantId, createTenantIds, allowedDimensions } = useAuth();
+  const { tenantId, allowedDimensions } = useAuth();
   const routeTenantId = location.state?.tenantId || "";
   const [createDimensionIds, setCreateDimensionIds] = useState(() =>
-    createTenantIds?.length ? [...createTenantIds] : tenantId ? [tenantId] : [],
+    tenantId ? [tenantId] : [],
   );
   const [productTenantId, setProductTenantId] = useState(routeTenantId);
   const [loading, setLoading] = useState(false);

@@ -1,4 +1,5 @@
 import axios from "axios";
+import { getViewTenantIds } from "./viewTenants";
 
 const axiosInstance = axios.create({
   // baseURL: import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000/api",
@@ -9,13 +10,7 @@ const axiosInstance = axios.create({
 axiosInstance.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
   const tenantId = localStorage.getItem("tenantId");
-  let selectedTenantIds = [];
-  try {
-    const parsed = JSON.parse(localStorage.getItem("createTenantIds") || "[]");
-    selectedTenantIds = Array.isArray(parsed) ? parsed.filter(Boolean) : [];
-  } catch {
-    selectedTenantIds = [];
-  }
+  const selectedTenantIds = getViewTenantIds();
 
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;

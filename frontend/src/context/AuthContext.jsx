@@ -1,5 +1,6 @@
 import { createContext, useContext, useMemo, useReducer } from "react";
 import authService from "../api/services/authService";
+import { codesFromDimensions } from "../api/viewTenants";
 
 const AuthContext = createContext(null);
 
@@ -46,17 +47,10 @@ const storedAllowedDimensions = (() => {
     return [];
   }
 })();
-const storedCreateTenantIds = (() => {
-  try {
-    const parsed = JSON.parse(localStorage.getItem("createTenantIds") || "null");
-    if (Array.isArray(parsed) && parsed.length) {
-      return [...new Set(parsed.filter(Boolean))];
-    }
-  } catch {
-    // ignore malformed local storage and fall back to active tenant
-  }
-  return storedTenantId ? [storedTenantId] : [];
-})();
+const storedCreateTenantIds = codesFromDimensions(
+  storedAllowedDimensions,
+  storedTenantId,
+);
 
 const storedIsTenantChild = localStorage.getItem("isTenantChild") === "true";
 const storedUiPermissions = (() => {
@@ -87,7 +81,6 @@ const reducer = (state, action) => {
         token,
         tenantId,
         allowedDimensions = [],
-        createTenantIds = [],
         isTenantChild = false,
         uiPermissions = [],
         tenantRole = "",
@@ -95,30 +88,17 @@ const reducer = (state, action) => {
       localStorage.setItem("token", token);
       localStorage.setItem("tenantId", tenantId);
       localStorage.setItem("allowedDimensions", JSON.stringify(allowedDimensions || []));
-      localStorage.setItem(
-        "createTenantIds",
-        JSON.stringify(
-          createTenantIds?.length
-            ? [...new Set(createTenantIds.filter(Boolean))]
-            : tenantId
-              ? [tenantId]
-              : []
-        )
-      );
+      const viewTenantIds = codesFromDimensions(allowedDimensions, tenantId);
       localStorage.setItem("isTenantChild", isTenantChild ? "true" : "false");
       localStorage.setItem("uiPermissions", JSON.stringify(uiPermissions || []));
       localStorage.setItem("tenantRole", tenantRole || "");
+      localStorage.setItem("createTenantIds", JSON.stringify(viewTenantIds));
       return {
         ...state,
         token,
         tenantId: tenantId || "",
         allowedDimensions: allowedDimensions || [],
-        createTenantIds:
-          createTenantIds?.length
-            ? [...new Set(createTenantIds.filter(Boolean))]
-            : tenantId
-              ? [tenantId]
-              : [],
+        createTenantIds: viewTenantIds,
         isTenantChild: Boolean(isTenantChild),
         uiPermissions: uiPermissions || [],
         tenantRole: tenantRole || "",
@@ -145,20 +125,25 @@ const reducer = (state, action) => {
       };
     case "SET_TENANT":
       localStorage.setItem("tenantId", action.payload);
+      return {
+        ...state,
+        tenantId: action.payload,
+      };
+    case "SET_ALLOWED_DIMENSIONS":
       {
-        const nextCreateTenantIds = [
-          ...new Set([action.payload, ...state.createTenantIds].filter(Boolean)),
-        ];
+        const nextDimensions = action.payload || [];
+        const nextCreateTenantIds = codesFromDimensions(
+          nextDimensions,
+          state.tenantId,
+        );
+        localStorage.setItem("allowedDimensions", JSON.stringify(nextDimensions));
         localStorage.setItem("createTenantIds", JSON.stringify(nextCreateTenantIds));
         return {
           ...state,
-          tenantId: action.payload,
+          allowedDimensions: nextDimensions,
           createTenantIds: nextCreateTenantIds,
         };
       }
-    case "SET_ALLOWED_DIMENSIONS":
-      localStorage.setItem("allowedDimensions", JSON.stringify(action.payload || []));
-      return { ...state, allowedDimensions: action.payload || [] };
     case "SET_CREATE_TENANTS":
       {
         const nextCreateTenantIds = [...new Set((action.payload || []).filter(Boolean))];
@@ -194,7 +179,6 @@ export const AuthProvider = ({ children }) => {
         token,
         tenantId,
         allowedDimensions = [],
-        createTenantIds = [],
         isTenantChild,
         uiPermissions,
         tenantRole,
@@ -219,12 +203,6 @@ export const AuthProvider = ({ children }) => {
             token,
             tenantId: tenantId || "",
             allowedDimensions,
-            createTenantIds:
-              createTenantIds?.length
-                ? [...new Set(createTenantIds.filter(Boolean))]
-                : tenantId
-                  ? [tenantId]
-                  : [],
             isTenantChild: resolvedChild,
             uiPermissions: Array.isArray(resolvedPerms) ? resolvedPerms : [],
             tenantRole: resolvedRole || "",

@@ -142,9 +142,9 @@ const CreateUpdateProduct = () => {
   const isEditing = Boolean(id);
   const navigate = useNavigate();
   const toast = useToast();
-  const { tenantId, createTenantIds, allowedDimensions } = useAuth();
+  const { tenantId, allowedDimensions } = useAuth();
   const [createDimensionIds, setCreateDimensionIds] = useState(() =>
-    createTenantIds?.length ? [...createTenantIds] : tenantId ? [tenantId] : [],
+    tenantId ? [tenantId] : [],
   );
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);

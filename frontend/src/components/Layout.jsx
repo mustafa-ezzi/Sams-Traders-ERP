@@ -140,19 +140,6 @@ const icons = {
       <path d="M13.73 21a2 2 0 0 1-3.46 0" />
     </Icon>
   ),
-  check: (
-    <svg
-      className="h-2.5 w-2.5"
-      viewBox="0 0 12 12"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M2 6l3 3 5-5" />
-    </svg>
-  ),
 };
 
 /* ─────────────────────────────────────────────────────────────────
@@ -829,56 +816,6 @@ const NavSection = ({ section, onNavigate }) => {
 };
 
 /* ─────────────────────────────────────────────────────────────────
-   CHECKBOX PILL (Create-in control)
-───────────────────────────────────────────────────────────────── */
-const CheckPill = ({
-  label,
-  checked,
-  onChange,
-  disabled,
-  isCurrent,
-  isAll,
-}) => (
-  <label
-    className={`inline-flex select-none items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold tracking-wide transition-all duration-150 ${
-      disabled ? "cursor-default" : "cursor-pointer"
-    } ${
-      isAll && checked
-        ? "border-emerald-200 bg-emerald-50 text-emerald-700 shadow-sm dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
-        : checked
-          ? "border-blue-200 bg-blue-50 text-blue-700 shadow-sm dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300"
-          : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400 dark:hover:border-slate-500 dark:hover:bg-slate-700 dark:hover:text-slate-200"
-    }`}
-    title={`Show data for ${label}`}
-  >
-    <span
-      className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border transition-all duration-150 ${
-        isAll && checked
-          ? "border-emerald-500 bg-emerald-500"
-          : checked
-            ? "border-blue-500 bg-blue-500"
-            : "border-slate-300 bg-white dark:border-slate-600 dark:bg-slate-800"
-      }`}
-    >
-      {checked && icons.check}
-    </span>
-    <input
-      type="checkbox"
-      className="sr-only"
-      checked={checked}
-      disabled={disabled}
-      onChange={onChange}
-    />
-    {label}
-    {isCurrent && (
-      <span className="ml-0.5 text-[9px] font-bold uppercase tracking-widest text-blue-400">
-        •
-      </span>
-    )}
-  </label>
-);
-
-/* ─────────────────────────────────────────────────────────────────
    MAIN LAYOUT
 ───────────────────────────────────────────────────────────────── */
 const Layout = () => {
@@ -1010,69 +947,32 @@ const Layout = () => {
 
   useEffect(() => {
     if (isOnboardingOnly) return;
-    const availableCodes = (
+    const nextSelected = (
       dimensions.length ? dimensions : allowedDimensions || []
-    ).map((i) => i.code);
-    if (!availableCodes.length) return;
-    const nextSelected = [
-      ...new Set(
-        (createTenantIds.length ? createTenantIds : [tenantId]).filter((c) =>
-          availableCodes.includes(c),
-        ),
-      ),
-    ];
-    if (!nextSelected.length) nextSelected.push(availableCodes[0]);
-    if (
-      nextSelected.length > 1 &&
-      !availableCodes.every((code) => nextSelected.includes(code))
-    ) {
-      nextSelected.splice(1);
-    }
-    if (nextSelected.join("|") !== createTenantIds.join("|"))
+    )
+      .map((item) => item.code)
+      .filter(Boolean);
+    if (!nextSelected.length) return;
+    if (nextSelected.join("|") !== createTenantIds.join("|")) {
       setCreateTenants(nextSelected);
+    }
   }, [
     allowedDimensions,
     createTenantIds,
     dimensions,
     isOnboardingOnly,
     setCreateTenants,
-    tenantId,
   ]);
 
-  const activeDimension = dimensions.find((i) => i.code === tenantId);
-  const creationDimensions = dimensions.length
+  const workspaceDimensions = dimensions.length
     ? dimensions
     : allowedDimensions || [];
-  const creationCodes = creationDimensions.map((d) => d.code);
-  const selectedCreateTenantIds = [
-    ...new Set(
-      (createTenantIds.length ? createTenantIds : [tenantId]).filter((c) =>
-        creationCodes.includes(c),
-      ),
-    ),
-  ];
-  if (!selectedCreateTenantIds.length && creationCodes.length) {
-    selectedCreateTenantIds.push(creationCodes[0]);
-  }
-  const allSelected =
-    creationCodes.length > 0 &&
-    creationCodes.every((c) => selectedCreateTenantIds.includes(c));
-  const selectedDimensionNames = creationDimensions
-    .filter((dimension) => selectedCreateTenantIds.includes(dimension.code))
-    .map((dimension) => dimension.name || dimension.code);
   const selectionLabel =
-    selectedDimensionNames.length === creationDimensions.length &&
-    creationDimensions.length > 1
-      ? "All Dimensions"
-      : selectedDimensionNames.join(", ") || activeDimension?.name || tenantId;
-  const outletKey = selectedCreateTenantIds.join("|") || tenantId;
-
-  const setCreateDimensionChecked = (code) => {
-    if (!creationCodes.includes(code)) return;
-    setCreateTenants([code]);
-  };
-  const setAllCreateDimensions = (checked) =>
-    setCreateTenants(checked ? creationCodes : [selectedCreateTenantIds[0] || tenantId]);
+    workspaceDimensions.length > 1
+      ? "All companies"
+      : workspaceDimensions[0]?.name ||
+        workspaceDimensions[0]?.code ||
+        tenantId;
 
   /* ── Sidebar inner content ── */
   const SidebarContent = () => (
@@ -1298,46 +1198,12 @@ const Layout = () => {
               </div>
             </div>
           </div>
-
-          {/* ── View filter row (secondary) ── */}
-          {!isOnboardingOnly && creationDimensions.length > 0 && (
-            <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-1.5 dark:border-slate-700 dark:bg-slate-900/50 lg:px-6">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400 dark:text-slate-500">
-                  View data for
-                </span>
-
-                {creationDimensions.length > 1 && (
-                  <CheckPill
-                    label="All"
-                    checked={allSelected}
-                    onChange={(e) => setAllCreateDimensions(e.target.checked)}
-                    isAll
-                  />
-                )}
-
-                {creationDimensions.map((dimension) => {
-                  const checked = selectedCreateTenantIds.includes(
-                    dimension.code,
-                  );
-                  return (
-                    <CheckPill
-                      key={dimension.code}
-                      label={dimension.name || dimension.code}
-                      checked={checked}
-                      onChange={() => setCreateDimensionChecked(dimension.code)}
-                    />
-                  );
-                })}
-              </div>
-            </div>
-          )}
         </header>
 
         {/* ── Page content ── */}
         <main className="px-3 py-5 sm:px-5 lg:px-7 lg:py-6">
           <div className="mx-auto max-w-[1600px]">
-            <Outlet key={outletKey} />
+            <Outlet />
           </div>
         </main>
 

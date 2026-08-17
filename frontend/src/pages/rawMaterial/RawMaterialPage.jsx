@@ -48,9 +48,9 @@ const selectClassName =
   "w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100";
 
 const RawMaterialPage = () => {
-  const { tenantId, createTenantIds } = useAuth();
+  const { tenantId } = useAuth();
   const [createDimensionIds, setCreateDimensionIds] = useState(() =>
-    createTenantIds?.length ? [...createTenantIds] : tenantId ? [tenantId] : [],
+    tenantId ? [tenantId] : [],
   );
   const [records, setRecords] = useState([]);
   const [editingId, setEditingId] = useState("");

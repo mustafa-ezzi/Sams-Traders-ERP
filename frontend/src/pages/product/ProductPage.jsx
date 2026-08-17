@@ -12,6 +12,7 @@ import IconButton from "../../components/ui/IconButton";
 import PageSizeSelect from "../../components/ui/PageSizeSelect";
 import SortableHeader from "../../components/ui/SortableHeader";
 import { useToast } from "../../context/ToastContext";
+import CompanyFilter from "../../components/ui/CompanyFilter";
 import {
   flattenAccountTree,
   getPostableInventoryAccounts,
@@ -69,6 +70,7 @@ const ProductPage = () => {
   const [revenueAccounts, setRevenueAccounts] = useState([]);
   const [deleteId, setDeleteId] = useState("");
   const [limit, setLimit] = useState(10);
+  const [companyFilter, setCompanyFilter] = useState("");
   const [sortConfig, setSortConfig] = useState({
     key: "sku",
     direction: "asc",
@@ -81,16 +83,20 @@ const ProductPage = () => {
     nextSearch = search,
     nextLimit = limit,
     nextSortConfig = sortConfig,
+    nextCompany = companyFilter,
   ) => {
     setLoading(true);
     setError("");
     try {
-      const response = await productService.list({
-        page: nextPage,
-        limit: nextLimit,
-        search: nextSearch,
-        ordering: getOrdering(nextSortConfig),
-      });
+      const response = await productService.list(
+        {
+          page: nextPage,
+          limit: nextLimit,
+          search: nextSearch,
+          ordering: getOrdering(nextSortConfig),
+        },
+        nextCompany || "",
+      );
       setRecords(response.data || []);
       setTotal(response.total || 0);
       setPage(response.page || nextPage);
@@ -136,7 +142,7 @@ const ProductPage = () => {
   const handlePageSizeChange = (value) => {
     setLimit(value);
     setPage(1);
-    load(1, search, value, sortConfig);
+    load(1, search, value, sortConfig, companyFilter);
   };
   const handleSort = (key) => {
     const nextSortConfig = {
@@ -148,7 +154,12 @@ const ProductPage = () => {
     };
     setSortConfig(nextSortConfig);
     setPage(1);
-    load(1, search, limit, nextSortConfig);
+    load(1, search, limit, nextSortConfig, companyFilter);
+  };
+  const handleCompanyChange = (value) => {
+    setCompanyFilter(value);
+    setPage(1);
+    load(1, search, limit, sortConfig, value);
   };
 
   return (
@@ -173,6 +184,11 @@ const ProductPage = () => {
             </h2>
           </div>
           <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
+            <CompanyFilter
+              className="sm:w-48"
+              value={companyFilter}
+              onChange={handleCompanyChange}
+            />
             <input
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-100 sm:w-64"
               placeholder="Search products"
