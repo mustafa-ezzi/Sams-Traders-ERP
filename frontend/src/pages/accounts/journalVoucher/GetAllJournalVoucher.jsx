@@ -12,6 +12,7 @@ import { buildListOrdering } from "../../../utils/listOrdering";
 import { usePersistedListState } from "../../../hooks/usePersistedListState";
 import { parseApiError } from "../../../utils/apiErrors";
 import { useToast } from "../../../context/ToastContext";
+import { useAuth } from "../../../context/AuthContext";
 
 const orderingFields = {
   voucher: "voucher_number",
@@ -25,6 +26,10 @@ const orderingFields = {
 const GetAllJournalVoucher = () => {
   const navigate = useNavigate();
   const toast = useToast();
+  const { createTenantIds } = useAuth();
+  const viewScope = Array.isArray(createTenantIds)
+    ? createTenantIds.join("|")
+    : "";
   const {
     search,
     page,
@@ -65,9 +70,9 @@ const GetAllJournalVoucher = () => {
   };
 
   useEffect(() => {
-    loadVouchers(page, search, sortConfig);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- restore once on mount
-  }, []);
+    loadVouchers(1, search, sortConfig);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewScope]);
 
   const handleSort = (key) => {
     const nextSortConfig = {

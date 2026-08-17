@@ -1,4 +1,5 @@
 from decimal import Decimal
+from datetime import date
 
 from django.core.exceptions import ValidationError
 from django.test import TestCase
@@ -14,6 +15,7 @@ from accounts.journal import (
 )
 from accounts.models import JournalEntry
 from accounts.models import Account, Dimension, Expense, ExpenseLine, JournalLine, User
+from accounts.reporting import build_profit_and_loss_report
 from accounts.views import AccountViewSet, DimensionViewSet, ExpenseViewSet
 from inventory.models import (
     Brand,
@@ -2528,6 +2530,161 @@ class ExpenseTests(TestCase):
         self.assertEqual(lines[0].debit, Decimal("1500.00"))
         self.assertEqual(lines[1].account_id, self.bank.id)
         self.assertEqual(lines[1].credit, Decimal("1500.00"))
+
+
+class MixedDimensionExpenseTests(TestCase):
+    def setUp(self):
+        self.am = "AM_TRADERS"
+        self.sams = "SAMS_TRADERS"
+        self.user = User.objects.create_user(
+            username="mixed-expense-user",
+            password="secret",
+            tenant_id=self.am,
+        )
+        self.factory = APIRequestFactory()
+        self.am_bank, self.am_expense = self._seed_dimension(self.am, "AM Bank", "AM Cartage")
+        self.sams_bank, self.sams_expense = self._seed_dimension(
+            self.sams, "SAMS Bank", "SAMS Cartage"
+        )
+
+    def _seed_dimension(self, tenant_id, bank_name, expense_name):
+        assets = Account.objects.create(
+            tenant_id=tenant_id,
+            code="1000",
+            name="Assets",
+            account_group=Account.AccountGroup.ASSET,
+            account_nature=Account.AccountNature.DEBIT,
+            level=1,
+            is_postable=False,
+            is_active=True,
+            sort_order=0,
+        )
+        bank = Account.objects.create(
+            tenant_id=tenant_id,
+            code="11131",
+            name=bank_name,
+            parent=assets,
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.BANK,
+            account_nature=Account.AccountNature.DEBIT,
+            level=2,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+        expense_root = Account.objects.create(
+            tenant_id=tenant_id,
+            code="6000",
+            name="Expenses",
+            account_group=Account.AccountGroup.EXPENSE,
+            account_nature=Account.AccountNature.DEBIT,
+            level=1,
+            is_postable=False,
+            is_active=True,
+            sort_order=0,
+        )
+        expense_account = Account.objects.create(
+            tenant_id=tenant_id,
+            code="6230",
+            name=expense_name,
+            parent=expense_root,
+            account_group=Account.AccountGroup.EXPENSE,
+            account_nature=Account.AccountNature.DEBIT,
+            level=2,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+        return bank, expense_account
+
+    def _create_mixed_expense(self, use_am_expense_head_for_sams=True):
+        expense = Expense.objects.create(
+            tenant_id=self.am,
+            expense_number="EXP-MIX-00001",
+            date="2026-03-31",
+            amount=Decimal("4100.00"),
+            remarks="March mixed expenses",
+        )
+        ExpenseLine.objects.create(
+            tenant_id=self.am,
+            expense=expense,
+            bank_account=self.am_bank,
+            expense_account=self.am_expense,
+            amount=Decimal("3400.00"),
+            description="AM cartage",
+        )
+        ExpenseLine.objects.create(
+            tenant_id=self.sams,
+            expense=expense,
+            bank_account=self.sams_bank,
+            expense_account=(
+                self.am_expense if use_am_expense_head_for_sams else self.sams_expense
+            ),
+            amount=Decimal("700.00"),
+            description="SAMS cartage",
+        )
+        return expense
+
+    def test_pnl_attributes_shared_expense_head_to_line_dimension(self):
+        expense = self._create_mixed_expense(use_am_expense_head_for_sams=True)
+        sync_expense_journal(expense)
+
+        am_report = build_profit_and_loss_report(
+            [self.am], date(2026, 1, 1), date(2026, 8, 17)
+        )
+        sams_report = build_profit_and_loss_report(
+            [self.sams], date(2026, 1, 1), date(2026, 8, 17)
+        )
+
+        self.assertEqual(am_report["summary"]["total_expense"], "3400.00")
+        self.assertEqual(sams_report["summary"]["total_expense"], "700.00")
+
+    def test_pnl_includes_foreign_expense_head_when_no_clone(self):
+        self.sams_expense.delete()
+        expense = self._create_mixed_expense(use_am_expense_head_for_sams=True)
+        sync_expense_journal(expense)
+
+        sams_report = build_profit_and_loss_report(
+            [self.sams], date(2026, 1, 1), date(2026, 8, 17)
+        )
+        am_report = build_profit_and_loss_report(
+            [self.am], date(2026, 1, 1), date(2026, 8, 17)
+        )
+
+        self.assertEqual(sams_report["summary"]["total_expense"], "700.00")
+        self.assertEqual(am_report["summary"]["total_expense"], "3400.00")
+
+    def test_expense_journal_remaps_shared_head_to_line_dimension_clone(self):
+        expense = self._create_mixed_expense(use_am_expense_head_for_sams=True)
+        sync_expense_journal(expense)
+
+        entry = JournalEntry.objects.get(
+            source_type=JournalEntry.SourceType.EXPENSE,
+            source_id=expense.id,
+            deleted_at__isnull=True,
+        )
+        sams_expense_lines = list(
+            entry.lines.filter(
+                deleted_at__isnull=True,
+                tenant_id=self.sams,
+                debit__gt=0,
+            )
+        )
+        self.assertEqual(len(sams_expense_lines), 1)
+        self.assertEqual(sams_expense_lines[0].account_id, self.sams_expense.id)
+        self.assertEqual(sams_expense_lines[0].debit, Decimal("700.00"))
+
+    def test_expense_list_includes_mixed_vouchers_for_sams_view(self):
+        expense = self._create_mixed_expense()
+        request = self.factory.get("/api/accounts/expenses/")
+        request.tenant_id = self.sams
+        request.tenant_ids = [self.sams]
+        force_authenticate(request, user=self.user)
+        response = ExpenseViewSet.as_view({"get": "list"})(request)
+
+        self.assertEqual(response.status_code, 200)
+        ids = [str(row["id"]) for row in response.data["data"]]
+        self.assertIn(str(expense.id), ids)
 
 
 class SaasIsolationTests(TestCase):

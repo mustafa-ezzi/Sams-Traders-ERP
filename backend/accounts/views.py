@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
-from django.db.models import Count, Min, Prefetch, Q, Sum
+from django.db.models import Count, Exists, Min, OuterRef, Prefetch, Q, Sum
 from django.db.models.functions import Coalesce, TruncMonth
 from django.utils.timezone import now
 from rest_framework import filters, status
@@ -2240,9 +2240,16 @@ class ExpenseViewSet(AuditedModelMixin, ModelViewSet):
 
     def get_queryset(self):
         tenant_ids = get_request_tenant_filter(self.request)["tenant_id__in"]
+        matching_lines = ExpenseLine.objects.filter(
+            expense_id=OuterRef("pk"),
+            deleted_at__isnull=True,
+        ).filter(
+            Q(tenant_id__in=tenant_ids)
+            | Q(bank_account__tenant_id__in=tenant_ids)
+        )
         return (
             Expense.objects.filter(deleted_at__isnull=True)
-            .filter(Q(tenant_id__in=tenant_ids) | Q(lines__tenant_id__in=tenant_ids))
+            .filter(Q(tenant_id__in=tenant_ids) | Exists(matching_lines))
             .prefetch_related(
                 "lines__bank_account",
                 "lines__expense_account",
@@ -2347,9 +2354,14 @@ class JournalVoucherViewSet(AuditedModelMixin, ModelViewSet):
 
     def get_queryset(self):
         tenant_ids = get_request_tenant_filter(self.request)["tenant_id__in"]
+        matching_lines = JournalVoucherLine.objects.filter(
+            voucher_id=OuterRef("pk"),
+            deleted_at__isnull=True,
+            tenant_id__in=tenant_ids,
+        )
         return (
             JournalVoucher.objects.filter(deleted_at__isnull=True)
-            .filter(Q(tenant_id__in=tenant_ids) | Q(lines__tenant_id__in=tenant_ids))
+            .filter(Q(tenant_id__in=tenant_ids) | Exists(matching_lines))
             .prefetch_related("lines__account")
             .annotate(
                 _line_tenant_id=Min(

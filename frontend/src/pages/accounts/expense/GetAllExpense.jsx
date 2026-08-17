@@ -11,6 +11,7 @@ import { formatDecimal } from "../../../utils/format";
 import { buildListOrdering } from "../../../utils/listOrdering";
 import { usePersistedListState } from "../../../hooks/usePersistedListState";
 import { useToast } from "../../../context/ToastContext";
+import { useAuth } from "../../../context/AuthContext";
 
 const orderingFields = {
   expense: "expense_number",
@@ -42,6 +43,10 @@ const extractErrorMessage = (error) => {
 const GetAllExpense = () => {
   const navigate = useNavigate();
   const toast = useToast();
+  const { createTenantIds } = useAuth();
+  const viewScope = Array.isArray(createTenantIds)
+    ? createTenantIds.join("|")
+    : "";
   const {
     search,
     page,
@@ -82,9 +87,10 @@ const GetAllExpense = () => {
   };
 
   useEffect(() => {
-    loadExpenses(page, search, sortConfig);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- restore once on mount
-  }, []);
+    loadExpenses(1, search, sortConfig);
+    // Reload when header "View Data For" changes; page remounts via outlet key too.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewScope]);
 
   const handleSort = (key) => {
     const nextSortConfig = {

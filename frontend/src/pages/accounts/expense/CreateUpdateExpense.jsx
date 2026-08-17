@@ -48,13 +48,14 @@ const toNumber = (value) => {
   return Number.isFinite(parsedValue) ? parsedValue : 0;
 };
 
-const filterBankAccounts = (flatAccounts) =>
+const filterBankAccounts = (flatAccounts, dimensionCode = "") =>
   flatAccounts.filter(
     (account) =>
       account.is_postable &&
       account.is_active &&
       account.account_group === "ASSET" &&
-      account.account_type === "BANK",
+      account.account_type === "BANK" &&
+      (!dimensionCode || !account.tenant_id || account.tenant_id === dimensionCode),
   );
 
 const filterExpenseAccounts = (flatAccounts) =>
@@ -144,7 +145,7 @@ const CreateUpdateExpense = () => {
           i === index
             ? {
                 ...line,
-                bankAccounts: filterBankAccounts(selectedFlat),
+                bankAccounts: filterBankAccounts(selectedFlat, dimensionCode),
                 // Show expense heads from every dimension; prefer the selected
                 // dimension's copy of each account code when it exists.
                 expenseAccounts: uniqueAccountsByCode(
@@ -433,7 +434,7 @@ const CreateUpdateExpense = () => {
                   const allFlat = mergeAccountsById(
                     flatByDimension.map((item) => item.flat),
                   );
-                  bankAccounts = filterBankAccounts(selectedFlat);
+                  bankAccounts = filterBankAccounts(selectedFlat, nextTenant);
                   expenseAccounts = uniqueAccountsByCode(
                     filterExpenseAccounts(allFlat),
                     nextTenant,

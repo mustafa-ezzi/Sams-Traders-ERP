@@ -280,6 +280,7 @@ class AccountSerializer(serializers.ModelSerializer):
             "id",
             "code",
             "name",
+            "tenant_id",
             "parent",
             "account_group",
             "account_type",

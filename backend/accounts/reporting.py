@@ -452,28 +452,91 @@ def _build_balance_section(accounts, balance_map, group):
     }
 
 
+_PNL_ACCOUNT_GROUPS = [
+    Account.AccountGroup.REVENUE,
+    Account.AccountGroup.COGS,
+    Account.AccountGroup.EXPENSE,
+    Account.AccountGroup.TAX,
+    Account.AccountGroup.PURCHASE,
+]
+
+
+def _accounts_for_profit_and_loss_reports(tenant_ids, from_date, to_date):
+    """P&L COA for the selected dimensions, plus foreign heads used by those lines.
+
+    Mixed expense vouchers often debit another dimension's shared expense head
+    while JournalLine.tenant_id is the company that incurred the cost. The
+    native COA of the selected tenants would miss those amounts.
+    """
+    native = Account.objects.filter(
+        tenant_id__in=tenant_ids,
+        deleted_at__isnull=True,
+        account_group__in=_PNL_ACCOUNT_GROUPS,
+    )
+    active_ids = set(native.filter(is_active=True).values_list("id", flat=True))
+    activity_ids = set(
+        JournalLine.objects.filter(
+            deleted_at__isnull=True,
+            journal_entry__deleted_at__isnull=True,
+            tenant_id__in=tenant_ids,
+            account__deleted_at__isnull=True,
+            account__account_group__in=_PNL_ACCOUNT_GROUPS,
+            journal_entry__date__gte=from_date,
+            journal_entry__date__lte=to_date,
+        ).values_list("account_id", flat=True)
+    )
+    return list(
+        Account.objects.filter(
+            id__in=(active_ids | activity_ids),
+            deleted_at__isnull=True,
+        )
+        .select_related("parent")
+        .order_by("code")
+    )
+
+
+def _journal_line_totals_for_profit_and_loss(
+    tenant_ids, account_ids, *, from_date=None, to_date=None
+):
+    """Sum income-statement activity by journal line dimension, not COA tenant."""
+    if not account_ids:
+        return {}
+
+    queryset = JournalLine.objects.filter(
+        deleted_at__isnull=True,
+        journal_entry__deleted_at__isnull=True,
+        account_id__in=account_ids,
+        tenant_id__in=tenant_ids,
+    )
+    if from_date is not None:
+        queryset = queryset.filter(journal_entry__date__gte=from_date)
+    if to_date is not None:
+        queryset = queryset.filter(journal_entry__date__lte=to_date)
+
+    return {
+        row["account_id"]: {
+            "debit": _money(row["debit"]),
+            "credit": _money(row["credit"]),
+        }
+        for row in queryset.values("account_id").annotate(
+            debit=Coalesce(Sum("debit"), Decimal("0.00")),
+            credit=Coalesce(Sum("credit"), Decimal("0.00")),
+        )
+    }
+
+
 def build_profit_and_loss_report(tenant_ids, from_date, to_date):
     """Profit & Loss (income statement) for a date range.
 
     Net Profit = Revenue - COGS - Expenses - Tax - Purchases, which keeps the
     figure consistent with the Balance Sheet's "unclosed profit/loss" line.
+
+    Operating amounts follow JournalLine.tenant_id so mixed AM/SAMS expense
+    receipts are reported for the company that incurred each line.
     """
-    pl_groups = [
-        Account.AccountGroup.REVENUE,
-        Account.AccountGroup.COGS,
-        Account.AccountGroup.EXPENSE,
-        Account.AccountGroup.TAX,
-        Account.AccountGroup.PURCHASE,
-    ]
-
-    accounts = [
-        account
-        for account in _accounts_for_balance_reports(tenant_ids, to_date)
-        if account.account_group in pl_groups
-    ]
-
+    accounts = _accounts_for_profit_and_loss_reports(tenant_ids, from_date, to_date)
     account_ids = [account.id for account in accounts]
-    line_totals = _journal_line_totals_for_accounts(
+    line_totals = _journal_line_totals_for_profit_and_loss(
         tenant_ids,
         account_ids,
         from_date=from_date,
@@ -2617,7 +2680,13 @@ def build_expense_analysis_report(tenant_ids, from_date, to_date):
             expense__date__gte=from_date,
             expense__date__lte=to_date,
         )
-        .filter(Q(tenant_id__in=tenant_ids) | Q(expense__tenant_id__in=tenant_ids))
+        .filter(
+            Q(tenant_id__in=tenant_ids)
+            | (
+                Q(tenant_id="")
+                & Q(bank_account__tenant_id__in=tenant_ids)
+            )
+        )
         .select_related("expense", "expense_account", "bank_account")
         .order_by("expense__date", "expense__expense_number", "created_at")
     )

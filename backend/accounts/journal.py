@@ -36,17 +36,23 @@ def _party_control_account_for_dimension(party, field_label, tenant_id):
     return _resolve_party_account(party, field_label)
 
 
-def _account_for_dimension(account, tenant_id):
+def _matching_account_in_dimension(account, tenant_id):
+    if not account:
+        return None
     if account.tenant_id == tenant_id:
         return account
 
-    matching_account = Account.objects.filter(
+    return Account.objects.filter(
         tenant_id=tenant_id,
         code=account.code,
         deleted_at__isnull=True,
         is_active=True,
         is_postable=True,
     ).first()
+
+
+def _account_for_dimension(account, tenant_id):
+    matching_account = _matching_account_in_dimension(account, tenant_id)
     if matching_account:
         return matching_account
 
@@ -58,6 +64,10 @@ def _account_for_dimension(account, tenant_id):
             )
         }
     )
+
+
+def _account_for_dimension_optional(account, tenant_id):
+    return _matching_account_in_dimension(account, tenant_id) or account
 
 
 def _resolve_product_account(product, field_name, error_label):
@@ -764,6 +774,10 @@ def _build_expense_lines(expense):
         bank_account = expense_line.bank_account
         bank_tenant_id = bank_account.tenant_id
         line_tenant_id = expense_line.tenant_id or bank_tenant_id
+        expense_account = _account_for_dimension_optional(
+            expense_line.expense_account,
+            line_tenant_id,
+        )
         amount = quantize_money(expense_line.amount)
         description = (expense_line.description or "").strip()
         expense_label = description or "Expense"
@@ -773,7 +787,7 @@ def _build_expense_lines(expense):
         lines.extend(
             [
                 {
-                    "account": expense_line.expense_account,
+                    "account": expense_account,
                     "tenant_id": line_tenant_id,
                     "debit": amount,
                     "credit": Decimal("0.00"),

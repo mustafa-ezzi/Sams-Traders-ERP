@@ -476,7 +476,14 @@ def search_app(request, query, limit=5):
             )
             .filter(
                 Q(tenant_id__in=view_tenant_ids)
-                | Q(lines__tenant_id__in=view_tenant_ids)
+                | Q(
+                    lines__deleted_at__isnull=True,
+                    lines__tenant_id__in=view_tenant_ids,
+                )
+                | Q(
+                    lines__deleted_at__isnull=True,
+                    lines__bank_account__tenant_id__in=view_tenant_ids,
+                )
             )
             .filter(
                 Q(expense_number__icontains=query)
