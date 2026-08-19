@@ -20,6 +20,7 @@ import Button from "../components/ui/Button";
 import accountService from "../api/services/accountService";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
+import dimensionService from "../api/services/dimensionService";
 
 /* ─── formatters ─────────────────────────────────────────────── */
 const money = (value) =>
@@ -474,7 +475,16 @@ const KpiTile = ({ label, value, tone, sub = "all time", index = 0 }) => {
 };
 
 /* ─── Welcome Banner ────────────────────────────────────────── */
-const WelcomeBanner = ({ tenantName, name, today, period, onPeriodChange }) => {
+const WelcomeBanner = ({
+  tenantName,
+  name,
+  today,
+  period,
+  onPeriodChange,
+  dimensions,
+  companyScope,
+  onCompanyScopeChange,
+}) => {
   const [visible, setVisible] = useState(false);
   useEffect(() => {
     const t = setTimeout(() => setVisible(true), 80);
@@ -490,6 +500,9 @@ const WelcomeBanner = ({ tenantName, name, today, period, onPeriodChange }) => {
       day: "numeric",
     });
 
+  const selectClass =
+    "rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200";
+
   return (
     <div
       style={{
@@ -503,7 +516,7 @@ const WelcomeBanner = ({ tenantName, name, today, period, onPeriodChange }) => {
         <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">
           CoreLedger · Overview
         </p>
-        <h1 className="mt-1 text-2xl font-extrabold text-slate-900 tracking-tight">
+        <h1 className="mt-1 text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
           Welcome to {tenantName}
         </h1>
         <p className="mt-0.5 text-sm text-slate-500">
@@ -511,9 +524,30 @@ const WelcomeBanner = ({ tenantName, name, today, period, onPeriodChange }) => {
           {dateStr}
         </p>
       </div>
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex flex-wrap items-center gap-2 shrink-0">
+        {/* Company scope selector — only shown when user has multiple companies */}
+        {dimensions.length > 1 && (
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500 hidden sm:inline">
+              View
+            </span>
+            <select
+              className={selectClass}
+              value={companyScope}
+              onChange={(e) => onCompanyScopeChange(e.target.value)}
+              aria-label="Select company"
+            >
+              <option value="BOTH">All companies</option>
+              {dimensions.map((d) => (
+                <option key={d.code} value={d.code}>
+                  {d.name || d.code}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <select
-          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+          className={selectClass}
           value={period}
           onChange={(event) => onPeriodChange(event.target.value)}
         >
@@ -534,28 +568,100 @@ const WelcomeBanner = ({ tenantName, name, today, period, onPeriodChange }) => {
   );
 };
 
+/* ─── helpers for merging two dimension dashboards ─────────── */
+const addNum = (a, b) => (Number(a || 0) + Number(b || 0)).toFixed(2);
+
+const mergeKpis = (a, b) => {
+  if (!b) return a;
+  const out = {};
+  for (const key of Object.keys(a)) {
+    out[key] = addNum(a[key], b[key]);
+  }
+  return out;
+};
+
+const mergeMonthlyTrends = (a = [], b = []) => {
+  const map = {};
+  for (const row of a) map[row.month] = { ...row };
+  for (const row of b) {
+    if (map[row.month]) {
+      map[row.month] = {
+        ...map[row.month],
+        sales: addNum(map[row.month].sales, row.sales),
+        purchases: addNum(map[row.month].purchases, row.purchases),
+        profit: addNum(map[row.month].profit, row.profit),
+        receipts: addNum(map[row.month].receipts, row.receipts),
+      };
+    } else {
+      map[row.month] = { ...row };
+    }
+  }
+  return Object.values(map).sort((x, y) => (x.month > y.month ? 1 : -1));
+};
+
+const mergeStockMix = (a, b) => {
+  if (!b) return a;
+  return {
+    total: addNum(a?.total, b?.total),
+    raw_materials: addNum(a?.raw_materials, b?.raw_materials),
+    products: addNum(a?.products, b?.products),
+  };
+};
+
+const mergeJournalHealth = (a, b) => {
+  if (!b) return a;
+  return {
+    lines_posted: Number(a?.lines_posted || 0) + Number(b?.lines_posted || 0),
+    debit_total: addNum(a?.debit_total, b?.debit_total),
+    credit_total: addNum(a?.credit_total, b?.credit_total),
+  };
+};
+
+const mergeDashboards = (d1, d2) => ({
+  ...d1,
+  kpis: mergeKpis(d1.kpis || {}, d2?.kpis),
+  monthly_trends: mergeMonthlyTrends(d1.monthly_trends, d2?.monthly_trends),
+  stock_mix: mergeStockMix(d1.stock_mix, d2?.stock_mix),
+  journal_health: mergeJournalHealth(d1.journal_health, d2?.journal_health),
+});
+
 /* ─── Main page ─────────────────────────────────────────────── */
 const DashboardPage = () => {
-  const { tenantId, createTenantIds, user } = useAuth();
+  const { tenantId, allowedDimensions, user } = useAuth();
   const toast = useToast();
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [period, setPeriod] = useState("all");
+  const [dimensions, setDimensions] = useState([]);
+  const [companyScope, setCompanyScope] = useState("BOTH");
 
-  const activeViewTenant =
-    (Array.isArray(createTenantIds) && createTenantIds.length
-      ? createTenantIds[0]
-      : "") || tenantId;
+  useEffect(() => {
+    dimensionService
+      .list()
+      .then((items) => setDimensions(items || []))
+      .catch(() => setDimensions(allowedDimensions || []));
+  }, [allowedDimensions]);
 
-  const loadDashboard = async () => {
+  const loadDashboard = async (scope = companyScope, currentPeriod = period) => {
     setLoading(true);
     setError("");
     try {
-      const response = await accountService.getDashboardOverview(
-        activeViewTenant,
-        period,
-      );
+      let response;
+      if (scope === "BOTH") {
+        const allCodes = (dimensions.length ? dimensions : allowedDimensions || []).map(
+          (d) => d.code,
+        );
+        const targets = allCodes.length ? allCodes : [tenantId];
+        const results = await Promise.all(
+          targets.map((code) =>
+            accountService.getDashboardOverview(code, currentPeriod),
+          ),
+        );
+        response = results.reduce((acc, cur) => mergeDashboards(acc, cur));
+      } else {
+        response = await accountService.getDashboardOverview(scope, currentPeriod);
+      }
       setDashboard(response);
     } catch (loadError) {
       const message = extractErrorMessage(loadError);
@@ -567,8 +673,15 @@ const DashboardPage = () => {
   };
 
   useEffect(() => {
-    loadDashboard();
-  }, [activeViewTenant, period]);
+    if (dimensions.length > 0 || allowedDimensions?.length > 0) {
+      loadDashboard(companyScope, period);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyScope, period, dimensions]);
+
+  const handleCompanyScopeChange = (value) => {
+    setCompanyScope(value);
+  };
 
   const headlineCards = useMemo(() => {
     if (!dashboard) return [];
@@ -623,13 +736,17 @@ const DashboardPage = () => {
     ];
   }, [dashboard]);
 
-  /* Adjust field name to match your actual auth user shape */
   const displayName = user?.name || user?.full_name || user?.username || "";
-  const tenantName = (activeViewTenant || "ERP Workspace")
-    .toString()
-    .replaceAll("_", " ")
-    .toLowerCase()
-    .replace(/\b\w/g, (char) => char.toUpperCase());
+  const tenantName =
+    companyScope === "BOTH"
+      ? "All Companies"
+      : (
+          (dimensions.find((d) => d.code === companyScope)?.name || companyScope || tenantId || "ERP Workspace")
+            .toString()
+            .replaceAll("_", " ")
+            .toLowerCase()
+            .replace(/\b\w/g, (char) => char.toUpperCase())
+        );
 
   return (
     <section className="space-y-5">
@@ -648,6 +765,9 @@ const DashboardPage = () => {
               today={dashboard.today}
               period={period}
               onPeriodChange={setPeriod}
+              dimensions={dimensions.length ? dimensions : allowedDimensions || []}
+              companyScope={companyScope}
+              onCompanyScopeChange={handleCompanyScopeChange}
             />
 
             {/* ── Row 1: KPI tiles ── */}
@@ -715,7 +835,7 @@ const DashboardPage = () => {
                     <Button
                       variant="secondary"
                       size="sm"
-                      onClick={loadDashboard}
+                      onClick={() => loadDashboard()}
                     >
                       Refresh
                     </Button>
