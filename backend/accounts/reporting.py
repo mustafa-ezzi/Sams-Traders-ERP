@@ -913,7 +913,21 @@ def _add_aging_balance(
     return balance
 
 
-def _append_opening_balances_to_aging(
+def _party_oversettlement_group_key(party):
+    """
+    Group credits by trading-partner name (not Customer/Supplier row id).
+
+    Opening balances and invoices for the same business often live on
+    per-dimension party rows; party ledger already nets them by name.
+    """
+    name = getattr(party, "business_name", None) or getattr(party, "name", None) or ""
+    normalized = _normalize_aging_party_name(name)
+    if normalized:
+        return normalized
+    return f"id:{party.id}"
+
+
+def _opening_balance_pending_rows(
     *,
     tenant_ids,
     as_of_date,
@@ -921,12 +935,8 @@ def _append_opening_balances_to_aging(
     party_attr,
     financials_fn,
     settled_key,
-    dimension_names,
-    party_map,
-    bucket_totals,
-    detail_rows,
 ):
-    """Include unpaid party opening balances in AR/AP aging (same as party ledger)."""
+    """Build pending aging rows for party openings (raw_balance may be negative)."""
     from inventory.models import PartyOpeningBalance
 
     openings = (
@@ -940,58 +950,56 @@ def _append_opening_balances_to_aging(
         .order_by("date", "created_at")
     )
 
-    added = Decimal("0.00")
+    pending = []
     for opening in openings:
         party = getattr(opening, party_attr, None)
         if party is None:
             continue
 
         financials = financials_fn(opening, as_of_date=as_of_date)
-        balance = _money(financials.get("balance_amount", 0))
-        if balance <= 0:
-            continue
-
         net_amount = _money(
             financials.get("opening_amount", financials.get("net_amount", 0))
         )
         settled_amount = _money(financials.get(settled_key, 0))
-        added = _money(
-            added
-            + _add_aging_balance(
-                party_map=party_map,
-                bucket_totals=bucket_totals,
-                detail_rows=detail_rows,
-                party=party,
-                tenant_id=opening.tenant_id,
-                dimension_names=dimension_names,
-                document_id=opening.id,
-                document_number=_party_opening_document_number(opening),
-                document_date=opening.date,
-                due_date=None,
-                basis_date=opening.date,
-                as_of_date=as_of_date,
-                net_amount=net_amount,
-                settled_amount=settled_amount,
-                balance=balance,
-                document_kind="opening",
-            )
+        if "raw_balance" in financials:
+            raw_balance = _money(financials["raw_balance"])
+        else:
+            raw_balance = _money(net_amount - settled_amount)
+
+        pending.append(
+            {
+                "party": party,
+                "tenant_id": opening.tenant_id,
+                "document_id": opening.id,
+                "document_number": _party_opening_document_number(opening),
+                "document_date": opening.date,
+                "due_date": None,
+                "basis_date": opening.date,
+                "net_amount": net_amount,
+                "settled_amount": settled_amount,
+                "raw_balance": raw_balance,
+                "document_kind": "opening",
+            }
         )
-    return added
+    return pending
 
 
 def _apply_party_oversettlement_credits(pending_rows):
     """
-    When returns/receipts on an invoice exceed its net, the leftover credit still
-    reduces the party control account (ledger) but would be lost if we clamp each
-    invoice at zero. Reassign that excess to the party's other open invoices
-    (oldest first) so aging matches the party ledger.
+    When receipts/returns/payments on one document exceed its net, the leftover
+    credit still reduces the party control account (ledger) but would be lost if
+    we clamp each document at zero. Reassign that excess to the same trading
+    partner's other open documents (oldest first) so aging matches the ledger.
+
+    Grouping is by normalized business name so AM/SAMS party clones of the same
+    customer/supplier share surplus. Parties with no surplus are unchanged.
     """
     if not pending_rows:
         return []
 
     by_party = defaultdict(list)
     for row in pending_rows:
-        by_party[str(row["party"].id)].append(row)
+        by_party[_party_oversettlement_group_key(row["party"])].append(row)
 
     adjusted = []
     for rows in by_party.values():
@@ -1003,7 +1011,13 @@ def _apply_party_oversettlement_credits(pending_rows):
                 item["tenant_id"],
             ),
         )
-        excess = sum((_money(max(-item["raw_balance"], Decimal("0.00"))) for item in rows), Decimal("0.00"))
+        excess = sum(
+            (
+                _money(max(-item["raw_balance"], Decimal("0.00")))
+                for item in rows
+            ),
+            Decimal("0.00"),
+        )
         for item in rows:
             balance = _money(max(item["raw_balance"], Decimal("0.00")))
             if excess > 0 and balance > 0:
@@ -1039,7 +1053,9 @@ def _build_invoice_aging_report(
     Invoice aging uses due_date when set, otherwise invoice date.
     Opening balances age from their opening date.
     Balances are computed as of as_of_date (later receipts/returns/payments ignored).
-    Over-settlement on one invoice is reassigned to other open invoices of the same party.
+    Over-settlement on one document (invoice or opening) is reassigned to other open
+    documents of the same trading partner (by business name, oldest first) so aging
+    matches the party ledger. Parties with no surplus are left unchanged.
     """
     dimension_names = _dimension_name_map(tenant_ids)
     bucket_totals = _empty_aging_buckets()
@@ -1082,8 +1098,26 @@ def _build_invoice_aging_report(
                     "net_amount": net_amount,
                     "settled_amount": settled_amount,
                     "raw_balance": raw_balance,
+                    "document_kind": "invoice",
                 }
             )
+
+    if (
+        include_openings
+        and opening_party_type
+        and opening_financials_fn
+        and opening_settled_key
+    ):
+        pending_rows.extend(
+            _opening_balance_pending_rows(
+                tenant_ids=tenant_ids,
+                as_of_date=as_of_date,
+                party_type=opening_party_type,
+                party_attr=party_attr,
+                financials_fn=opening_financials_fn,
+                settled_key=opening_settled_key,
+            )
+        )
 
     for item in _apply_party_oversettlement_credits(pending_rows):
         total_outstanding = _money(
@@ -1104,28 +1138,7 @@ def _build_invoice_aging_report(
                 net_amount=item["net_amount"],
                 settled_amount=item["settled_amount"],
                 balance=item["balance"],
-            )
-        )
-
-    if (
-        include_openings
-        and opening_party_type
-        and opening_financials_fn
-        and opening_settled_key
-    ):
-        total_outstanding = _money(
-            total_outstanding
-            + _append_opening_balances_to_aging(
-                tenant_ids=tenant_ids,
-                as_of_date=as_of_date,
-                party_type=opening_party_type,
-                party_attr=party_attr,
-                financials_fn=opening_financials_fn,
-                settled_key=opening_settled_key,
-                dimension_names=dimension_names,
-                party_map=party_map,
-                bucket_totals=bucket_totals,
-                detail_rows=detail_rows,
+                document_kind=item.get("document_kind", "invoice"),
             )
         )
 

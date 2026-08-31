@@ -15,13 +15,14 @@ from accounts.journal import (
 )
 from accounts.models import JournalEntry
 from accounts.models import Account, Dimension, Expense, ExpenseLine, JournalLine, User
-from accounts.reporting import build_profit_and_loss_report
+from accounts.reporting import build_profit_and_loss_report, build_receivable_aging_report
 from accounts.views import AccountViewSet, DimensionViewSet, ExpenseViewSet
 from inventory.models import (
     Brand,
     Category,
     Customer,
     OpeningStock,
+    PartyOpeningBalance,
     Product,
     ProductStock,
     RawMaterial,
@@ -2811,6 +2812,55 @@ class SalesmanPerformanceReportTests(TestCase):
         self.assertEqual(scoped_report["invoice_rows"][0]["sales_commission_amount"], "10.00")
         self.assertEqual(header_only_report["summary"]["invoice_count"], 0)
 
+    def test_sales_report_accepts_salesman_registered_in_other_dimension(self):
+        from datetime import date
+
+        user = User.objects.create_user(
+            username="sales-report-scope-user",
+            password="secret",
+            tenant_id=self.sams_tenant,
+        )
+        for code in (self.sams_tenant, self.other_tenant):
+            user.allowed_dimensions.add(Dimension.objects.get(code=code))
+
+        invoice = SalesInvoice.objects.create(
+            tenant_id=self.other_tenant,
+            invoice_number="SI-SCOPE-01",
+            date=date(2026, 4, 22),
+            customer=self.customer,
+            warehouse=self.warehouse,
+            salesman=self.salesman,
+            gross_amount=Decimal("250.00"),
+            net_amount=Decimal("250.00"),
+        )
+        SalesInvoiceLine.objects.create(
+            tenant_id=self.other_tenant,
+            invoice=invoice,
+            product_id=self._create_product().id,
+            quantity=Decimal("1.00"),
+            rate=Decimal("250.00"),
+            amount=Decimal("250.00"),
+            discount=Decimal("0.00"),
+            total_amount=Decimal("250.00"),
+        )
+
+        factory = APIRequestFactory()
+        request = factory.get(
+            "/api/accounts/accounts/sales-report/",
+            {
+                "tenant_scope": self.other_tenant,
+                "from_date": "2026-01-01",
+                "to_date": "2026-12-31",
+                "salesman_id": str(self.salesman.id),
+            },
+        )
+        force_authenticate(request, user=user)
+        response = AccountViewSet.as_view({"get": "sales_report"})(request)
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.data["data"]
+        self.assertEqual(payload["summary"]["invoice_count"], 1)
+
     def _create_product(self):
         inventory_account = Account.objects.create(
             tenant_id=self.sams_tenant,
@@ -3040,3 +3090,287 @@ class IntercompanyCashReportTests(TestCase):
         self.assertEqual(len(report["expense_rows"]), 1)
         self.assertEqual(len(report["transfer_rows"]), 1)
         self.assertTrue(report["transfer_rows"][0]["is_cross_dimension"])
+
+
+class ReceivableAgingOpeningSurplusTests(TestCase):
+    """Opening over-receipts must reduce the same party's open invoices in aging."""
+
+    def setUp(self):
+        self.tenant_id = "AGING_AM"
+        Dimension.objects.get_or_create(
+            code=self.tenant_id,
+            defaults={"name": "Aging AM", "is_active": True},
+        )
+        self.warehouse = Warehouse.objects.create(
+            tenant_id=self.tenant_id,
+            name="Main",
+            location="Karachi",
+        )
+        assets = Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="1000",
+            name="Assets",
+            account_group=Account.AccountGroup.ASSET,
+            account_nature=Account.AccountNature.DEBIT,
+            level=1,
+            is_postable=False,
+            is_active=True,
+            sort_order=0,
+        )
+        self.bank = Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="11131",
+            name="Cash",
+            parent=assets,
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.BANK,
+            account_nature=Account.AccountNature.DEBIT,
+            level=2,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+        self.receivable = Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="1120",
+            name="Receivables",
+            parent=assets,
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.RECEIVABLE,
+            account_nature=Account.AccountNature.DEBIT,
+            level=2,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+        inventory = Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="1150",
+            name="Inventory",
+            parent=assets,
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.INVENTORY,
+            account_nature=Account.AccountNature.DEBIT,
+            level=2,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+        revenue_root = Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="4000",
+            name="Revenue",
+            account_group=Account.AccountGroup.REVENUE,
+            account_nature=Account.AccountNature.CREDIT,
+            level=1,
+            is_postable=False,
+            is_active=True,
+            sort_order=0,
+        )
+        revenue = Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="4100",
+            name="Sales",
+            parent=revenue_root,
+            account_group=Account.AccountGroup.REVENUE,
+            account_type=Account.AccountType.REVENUE,
+            account_nature=Account.AccountNature.CREDIT,
+            level=2,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+        cogs_root = Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="5000",
+            name="COGS",
+            account_group=Account.AccountGroup.COGS,
+            account_nature=Account.AccountNature.DEBIT,
+            level=1,
+            is_postable=False,
+            is_active=True,
+            sort_order=0,
+        )
+        cogs = Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="5100",
+            name="COGS Main",
+            parent=cogs_root,
+            account_group=Account.AccountGroup.COGS,
+            account_type=Account.AccountType.COGS,
+            account_nature=Account.AccountNature.DEBIT,
+            level=2,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+        category = Category.objects.create(
+            tenant_id=self.tenant_id,
+            name="Cat",
+            inventory_account=inventory,
+            cogs_account=cogs,
+            revenue_account=revenue,
+        )
+        self.product = Product.objects.create(
+            tenant_id=self.tenant_id,
+            name="Item",
+            product_type="READY_MADE",
+            packaging_cost=Decimal("0.00"),
+            net_amount=Decimal("50.00"),
+            category=category,
+            inventory_account=inventory,
+            cogs_account=cogs,
+            revenue_account=revenue,
+        )
+        self.burhan = Customer.objects.create(
+            tenant_id=self.tenant_id,
+            name="Al Burhan",
+            business_name="THS- AL BURHAN HOUSE HOLD",
+            phone_number="1",
+            address="A",
+            account=self.receivable,
+        )
+        self.other = Customer.objects.create(
+            tenant_id=self.tenant_id,
+            name="Other Party",
+            business_name="THS- OTHER STORE",
+            phone_number="2",
+            address="B",
+            account=self.receivable,
+        )
+
+    def _invoice(self, customer, number, day, amount):
+        invoice = SalesInvoice.objects.create(
+            tenant_id=self.tenant_id,
+            invoice_number=number,
+            date=day,
+            customer=customer,
+            warehouse=self.warehouse,
+            gross_amount=amount,
+            net_amount=amount,
+        )
+        SalesInvoiceLine.objects.create(
+            tenant_id=self.tenant_id,
+            invoice=invoice,
+            product=self.product,
+            quantity=Decimal("1.00"),
+            rate=amount,
+            amount=amount,
+            discount=Decimal("0.00"),
+            total_amount=amount,
+        )
+        return invoice
+
+    def _receipt_against_opening(self, customer, opening, day, number, amount):
+        receipt = SalesBankReceipt.objects.create(
+            tenant_id=self.tenant_id,
+            receipt_number=number,
+            date=day,
+            amount=amount,
+        )
+        SalesBankReceiptLine.objects.create(
+            tenant_id=self.tenant_id,
+            receipt=receipt,
+            customer=customer,
+            receipt_against=SalesBankReceiptLine.ReceiptAgainst.OPENING_BALANCE,
+            party_opening_balance=opening,
+            bank_account=self.bank,
+            amount=amount,
+        )
+        return receipt
+
+    def test_opening_surplus_reduces_same_party_invoice_only(self):
+        as_of = date(2026, 4, 30)
+        opening = PartyOpeningBalance.objects.create(
+            tenant_id=self.tenant_id,
+            party_type=PartyOpeningBalance.PartyType.CUSTOMER,
+            customer=self.burhan,
+            date=date(2026, 1, 1),
+            amount=Decimal("5860.00"),
+        )
+        # 7860 against 5860 opening → 2000 surplus (Al Burhan case).
+        self._receipt_against_opening(
+            self.burhan, opening, date(2026, 1, 2), "SBR-OB-1", Decimal("2000.00")
+        )
+        self._receipt_against_opening(
+            self.burhan, opening, date(2026, 1, 16), "SBR-OB-2", Decimal("2000.00")
+        )
+        self._receipt_against_opening(
+            self.burhan, opening, date(2026, 4, 23), "SBR-OB-3", Decimal("2240.00")
+        )
+        self._receipt_against_opening(
+            self.burhan, opening, date(2026, 4, 28), "SBR-OB-4", Decimal("1620.00")
+        )
+
+        burhan_invoice = self._invoice(
+            self.burhan, "SI-0004", date(2026, 1, 6), Decimal("6600.00")
+        )
+        other_invoice = self._invoice(
+            self.other, "SI-OTHER", date(2026, 1, 10), Decimal("5000.00")
+        )
+
+        report = build_receivable_aging_report(
+            tenant_ids=[self.tenant_id],
+            as_of_date=as_of,
+        )
+
+        by_party = {
+            row["party_name"]: row
+            for row in report["party_rows"]
+            if not row.get("is_combined")
+        }
+
+        # Ledger-style outstanding: (5860+6600) - 7860 = 4600.
+        self.assertEqual(by_party[self.burhan.business_name]["total"], "4600.00")
+        # Other customer unchanged: full invoice still open.
+        self.assertEqual(by_party[self.other.business_name]["total"], "5000.00")
+        self.assertEqual(report["summary"]["total_outstanding"], "9600.00")
+
+        burhan_docs = {
+            row["document_number"]: row["balance_amount"]
+            for row in report["detail_rows"]
+            if row["party_name"] == self.burhan.business_name
+        }
+        self.assertEqual(burhan_docs[burhan_invoice.invoice_number], "4600.00")
+        self.assertFalse(
+            any(
+                row["document_kind"] == "opening"
+                and row["party_name"] == self.burhan.business_name
+                for row in report["detail_rows"]
+            )
+        )
+        self.assertEqual(
+            {
+                row["document_number"]: row["balance_amount"]
+                for row in report["detail_rows"]
+                if row["party_name"] == self.other.business_name
+            }[other_invoice.invoice_number],
+            "5000.00",
+        )
+
+    def test_party_without_opening_surplus_unchanged(self):
+        as_of = date(2026, 4, 30)
+        opening = PartyOpeningBalance.objects.create(
+            tenant_id=self.tenant_id,
+            party_type=PartyOpeningBalance.PartyType.CUSTOMER,
+            customer=self.other,
+            date=date(2026, 1, 1),
+            amount=Decimal("1000.00"),
+        )
+        self._receipt_against_opening(
+            self.other, opening, date(2026, 1, 5), "SBR-OK", Decimal("400.00")
+        )
+        self._invoice(self.other, "SI-OK", date(2026, 2, 1), Decimal("2500.00"))
+
+        report = build_receivable_aging_report(
+            tenant_ids=[self.tenant_id],
+            as_of_date=as_of,
+        )
+        other_row = next(
+            row
+            for row in report["party_rows"]
+            if row["party_name"] == self.other.business_name and not row.get("is_combined")
+        )
+        # Opening 600 + invoice 2500 = 3100; no surplus redistribution.
+        self.assertEqual(other_row["total"], "3100.00")
+        self.assertEqual(other_row["invoice_count"], 2)

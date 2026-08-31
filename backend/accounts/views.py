@@ -70,7 +70,12 @@ from sales.models import (
 )
 from sales.services import get_sales_invoice_financials
 
-from common.tenancy import get_request_tenant_filter, get_request_tenant_ids, get_shared_tenant_ids
+from common.tenancy import (
+    get_request_tenant_filter,
+    get_request_tenant_ids,
+    get_shared_tenant_ids,
+    shared_master_exists,
+)
 from .serializers import (
     AccountSerializer,
     AuditLogSerializer,
@@ -1676,11 +1681,8 @@ class AccountViewSet(ModelViewSet):
         ).exists():
             raise ValidationError({"warehouse_id": "Warehouse not found."})
         if salesman_id:
-            if not Salesman.objects.filter(
-                id=salesman_id,
-                tenant_id__in=tenant_ids,
-                deleted_at__isnull=True,
-            ).exists():
+            # Salesmen are company-wide masters; report scope only filters invoice lines.
+            if not shared_master_exists(Salesman, request, salesman_id):
                 raise ValidationError({"salesman_id": "Salesman not found."})
             if not user_can_access_salesman(request.user, salesman_id):
                 raise ValidationError({"salesman_id": "You do not have access to this salesman."})

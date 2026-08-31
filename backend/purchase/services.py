@@ -151,10 +151,12 @@ def get_supplier_opening_balance_financials(
         or Decimal("0.00")
     )
     paid_amount = quantize_money(paid_amount)
-    balance_amount = quantize_money(opening_amount - paid_amount)
+    raw_balance = quantize_money(opening_amount - paid_amount)
+    balance_amount = raw_balance
 
     return {
         "opening_amount": opening_amount,
         "paid_amount": paid_amount,
         "balance_amount": balance_amount,
+        "raw_balance": raw_balance,
     }
