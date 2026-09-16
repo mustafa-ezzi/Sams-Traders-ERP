@@ -71,12 +71,51 @@ const ProductPage = () => {
   const [deleteId, setDeleteId] = useState("");
   const [limit, setLimit] = useState(10);
   const [companyFilter, setCompanyFilter] = useState("");
+  const [exporting, setExporting] = useState(false);
   const [sortConfig, setSortConfig] = useState({
     key: "sku",
     direction: "asc",
   });
   const getTotalMaterialCost = (row) =>
     row.materials?.reduce((sum, m) => sum + (Number(m.amount) || 0), 0) || 0;
+
+  const downloadProductsXlsx = async () => {
+    setExporting(true);
+    try {
+      const response = await productService.exportXlsx(
+        {
+          search: search || undefined,
+          ordering: getOrdering(sortConfig),
+        },
+        companyFilter || "",
+      );
+      const blob = new Blob([response.data], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const disposition = response.headers?.["content-disposition"] || "";
+      const match = disposition.match(/filename="?([^"]+)"?/i);
+      const filename =
+        match?.[1] ||
+        `products_${companyFilter || "all"}.xlsx`.toLowerCase().replace(/\s+/g, "_");
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success("Products downloaded");
+    } catch (exportError) {
+      toast.error(
+        exportError?.response?.data?.message ||
+          exportError?.message ||
+          "Failed to download products",
+      );
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const load = async (
     nextPage = page,
@@ -203,6 +242,14 @@ const ProductPage = () => {
             />
             <Button variant="secondary" onClick={() => load(1, search)}>
               Search
+            </Button>
+            <Button
+              variant="secondary"
+              type="button"
+              disabled={exporting}
+              onClick={downloadProductsXlsx}
+            >
+              {exporting ? "Downloading..." : "Download XLSX"}
             </Button>
             <Button onClick={() => navigate("/products/create")}>
               Create Product

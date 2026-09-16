@@ -1,4 +1,7 @@
+from io import BytesIO
+
 from django.db import IntegrityError
+from django.http import HttpResponse
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework.response import Response
 from rest_framework import viewsets, status
@@ -8,11 +11,12 @@ from django.utils.timezone import now
 from decimal import Decimal
 from django.db.models import Count, DecimalField, IntegerField, OuterRef, Prefetch, Q, Subquery, Sum, Value
 from django.db.models.functions import Coalesce
+from openpyxl import Workbook
 from rest_framework.decorators import action
 from accounts.journal import delete_journal_entry
 from accounts.access_control import filter_queryset_by_allowed_salesmen
 from accounts.audit_mixin import AuditedModelMixin
-from accounts.models import JournalEntry
+from accounts.models import Dimension, JournalEntry
 from .models import (
     Brand,
     Category,
@@ -385,6 +389,81 @@ class ProductViewSet(UnpaginatedOptionsMixin, viewsets.ModelViewSet):
             ),
         )
         return qs
+
+    @action(detail=False, methods=["get"], url_path="export-xlsx")
+    def export_xlsx(self, request):
+        """Download products as XLSX for the active company filter (and search)."""
+        queryset = self.filter_queryset(self.get_queryset()).order_by(
+            "tenant_id", "sku", "name"
+        )
+        dimension_names = {
+            row["code"]: row["name"]
+            for row in Dimension.objects.filter(
+                code__in=queryset.values_list("tenant_id", flat=True).distinct()
+            ).values("code", "name")
+        }
+
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "Products"
+        headers = [
+            "SKU",
+            "Company",
+            "Name",
+            "Type",
+            "Unit",
+            "Qty",
+            "Brand",
+            "Packaging",
+            "Net Amount",
+            "Avg Cost",
+            "Stock Value",
+        ]
+        sheet.append(headers)
+
+        type_labels = {
+            "ASSEMBLY_PRODUCT": "Assembly Product",
+            "MANUFACTURED": "Assembly Product",
+            "FINISHED_GOOD": "Finished Good",
+            "READY_MADE": "Finished Good",
+        }
+
+        for product in queryset.select_related("unit"):
+            sheet.append(
+                [
+                    product.sku or "",
+                    dimension_names.get(product.tenant_id, product.tenant_id or ""),
+                    product.name or "",
+                    type_labels.get(product.product_type, product.product_type or ""),
+                    product.unit.name if product.unit_id else "",
+                    float(getattr(product, "quantity", 0) or 0),
+                    "wype",
+                    float(product.packaging_cost or 0),
+                    float(product.net_amount or 0),
+                    float(getattr(product, "_average_cost", 0) or 0),
+                    float(getattr(product, "_stock_value", 0) or 0),
+                ]
+            )
+
+        buffer = BytesIO()
+        workbook.save(buffer)
+        buffer.seek(0)
+
+        tenant_ids = get_request_tenant_ids(request)
+        scope = (
+            "all"
+            if len(tenant_ids) != 1
+            else (tenant_ids[0] or "products").lower().replace(" ", "_")
+        )
+        filename = f"products_{scope}.xlsx"
+        response = HttpResponse(
+            buffer.getvalue(),
+            content_type=(
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            ),
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
 
     def _map_product_integrity_error(self, exc):
         message = str(exc).lower()

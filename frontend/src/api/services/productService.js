@@ -69,6 +69,14 @@ const productService = {
     const response = await axiosInstance.delete(`/inventory/products/${id}/`);
     return response.data;
   },
+  async exportXlsx(params = {}, tenantId = "") {
+    const response = await axiosInstance.get("/inventory/products/export-xlsx/", {
+      params,
+      headers: tenantHeader(tenantId),
+      responseType: "blob",
+    });
+    return response;
+  },
 };
 
 export default productService;
