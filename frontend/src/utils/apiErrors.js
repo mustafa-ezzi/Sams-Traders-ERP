@@ -188,9 +188,33 @@ export const parseApiError = (error) => {
   }
 
   if (typeof data === "string") {
+    const trimmed = data.trim();
+    let message = data;
+    if (trimmed.startsWith("<!") || trimmed.toLowerCase().includes("<html")) {
+      const exceptionMatch = trimmed.match(
+        /Exception\s+Value:\s*<\/th>\s*<td[^>]*>\s*<pre[^>]*>([\s\S]*?)<\/pre>/i,
+      );
+      const raw = (exceptionMatch?.[1] || "")
+        .replace(/&quot;/g, '"')
+        .replace(/&#x27;/g, "'")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&amp;/g, "&")
+        .replace(/<[^>]+>/g, "")
+        .trim();
+      const dictMatch = raw.match(/\['([^']+)'\]/);
+      const quoted = raw.match(/"([^"]+)"/);
+      const titleMatch = trimmed.match(/<title>([^<]+)<\/title>/i);
+      message =
+        dictMatch?.[1] ||
+        quoted?.[1] ||
+        (raw && raw.length < 300 ? raw : "") ||
+        titleMatch?.[1]?.replace(/\s+at\s+\/api\/.*$/i, "").trim() ||
+        "Something went wrong. Please try again.";
+    }
     return {
-      message: data,
-      messages: [data],
+      message,
+      messages: [message],
       fieldErrors: {},
       lineErrors: {},
       status,

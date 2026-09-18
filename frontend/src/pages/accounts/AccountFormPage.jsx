@@ -90,17 +90,59 @@ const flattenApiErrorValue = (value) => {
   return [String(value)];
 };
 
+/** Pull a human message out of Django's HTML debug / ValidationError page. */
+const extractMessageFromHtmlError = (html) => {
+  if (typeof html !== "string") return "";
+  const trimmed = html.trim();
+  if (!trimmed.startsWith("<!") && !trimmed.toLowerCase().includes("<html")) {
+    return "";
+  }
+
+  const exceptionMatch = trimmed.match(
+    /Exception\s+Value:\s*<\/th>\s*<td[^>]*>\s*<pre[^>]*>([\s\S]*?)<\/pre>/i,
+  );
+  if (exceptionMatch?.[1]) {
+    const raw = exceptionMatch[1]
+      .replace(/&quot;/g, '"')
+      .replace(/&#x27;/g, "'")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&")
+      .replace(/<[^>]+>/g, "")
+      .trim();
+    const dictMatch = raw.match(/\['([^']+)'\]/);
+    if (dictMatch?.[1]) return dictMatch[1];
+    const quoted = raw.match(/"([^"]+)"/);
+    if (quoted?.[1]) return quoted[1];
+    if (raw && raw.length < 300) return raw;
+  }
+
+  const titleMatch = trimmed.match(/<title>([^<]+)<\/title>/i);
+  if (titleMatch?.[1]) {
+    return titleMatch[1].replace(/\s+at\s+\/api\/.*$/i, "").trim();
+  }
+  return "Something went wrong while saving. Please check the parent account and try again.";
+};
+
 const extractApiErrorMessages = (error, fallback = "Something went wrong") => {
   const data = error?.response?.data;
   if (!data) return [error?.message || fallback];
-  if (typeof data === "string") return [data];
+  if (typeof data === "string") {
+    const fromHtml = extractMessageFromHtmlError(data);
+    return [fromHtml || data];
+  }
 
   const preferredMessages = [
     ...flattenApiErrorValue(data.detail),
     ...flattenApiErrorValue(data.message),
+    ...flattenApiErrorValue(data.__all__),
+    ...flattenApiErrorValue(data.non_field_errors),
   ];
   const fieldMessages = Object.entries(data)
-    .filter(([key]) => key !== "detail" && key !== "message")
+    .filter(
+      ([key]) =>
+        !["detail", "message", "__all__", "non_field_errors"].includes(key),
+    )
     .flatMap(([key, value]) => {
       const label = apiFieldLabels[key] || key.replaceAll("_", " ");
       return flattenApiErrorValue(value).map((message) => `${label}: ${message}`);

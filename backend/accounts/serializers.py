@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from decimal import Decimal
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.utils.timezone import now
 
@@ -9,6 +10,18 @@ from accounts.journal import quantize_money
 from accounts.models import Account, AuditLog, Dimension, Expense, ExpenseLine, Inquiry, User, BankTransfer, JournalVoucher, JournalVoucherLine
 from common.tenancy import get_request_tenant_ids
 from inventory.models import Salesman
+
+
+def _drf_validation_error_from_django(exc):
+    """Convert model/Django ValidationError into a DRF JSON-friendly error."""
+    if hasattr(exc, "message_dict") and exc.message_dict:
+        return serializers.ValidationError(exc.message_dict)
+    if hasattr(exc, "messages"):
+        messages = list(exc.messages)
+        if len(messages) == 1:
+            return serializers.ValidationError(messages[0])
+        return serializers.ValidationError(messages)
+    return serializers.ValidationError(str(exc))
 
 
 class LoginSerializer(serializers.Serializer):
@@ -425,9 +438,30 @@ class AccountSerializer(serializers.ModelSerializer):
         return self._generate_overflow_child_code(parent.code, tenant_codes)
 
     def _ensure_parent_is_header(self, parent):
-        if parent and parent.is_postable:
-            parent.is_postable = False
-            parent.save(update_fields=["is_postable", "updated_at"])
+        """Postable accounts are leaves — demote the parent (all dimension clones)."""
+        if not parent:
+            return
+
+        request = self.context.get("request")
+        tenant_ids = []
+        if request:
+            tenant_ids = list(
+                get_user_active_dimension_codes(request.user)
+                or [getattr(request, "tenant_id", None) or request.user.tenant_id]
+            )
+        if parent.tenant_id and parent.tenant_id not in tenant_ids:
+            tenant_ids.append(parent.tenant_id)
+        if not tenant_ids:
+            tenant_ids = [parent.tenant_id]
+
+        # Bulk update skips model.full_clean so demotion itself cannot 500 as HTML.
+        Account.objects.filter(
+            code=parent.code,
+            tenant_id__in=tenant_ids,
+            deleted_at__isnull=True,
+            is_postable=True,
+        ).update(is_postable=False)
+        parent.is_postable = False
 
     def _get_display_tenant_ids(self):
         request = self.context.get("request")
@@ -600,7 +634,10 @@ class AccountSerializer(serializers.ModelSerializer):
             dim_parent = self._resolve_parent_for_dimension(parent, request.tenant_id) or parent
             validated_data["parent"] = dim_parent
             validated_data["tenant_id"] = dim_parent.tenant_id
-            return super().create(validated_data)
+            try:
+                return super().create(validated_data)
+            except DjangoValidationError as exc:
+                raise _drf_validation_error_from_django(exc) from exc
 
         if parent:
             validated_data.setdefault(
@@ -633,7 +670,10 @@ class AccountSerializer(serializers.ModelSerializer):
             payload = dict(validated_data)
             payload["tenant_id"] = dim_tenant
             payload["parent"] = dim_parent
-            instance = Account.objects.create(**payload)
+            try:
+                instance = Account.objects.create(**payload)
+            except DjangoValidationError as exc:
+                raise _drf_validation_error_from_django(exc) from exc
             if primary is None:
                 primary = instance
 
@@ -655,7 +695,10 @@ class AccountSerializer(serializers.ModelSerializer):
             instance.parent,
             instance.is_postable,
         ):
-            return super().update(instance, validated_data)
+            try:
+                return super().update(instance, validated_data)
+            except DjangoValidationError as exc:
+                raise _drf_validation_error_from_django(exc) from exc
 
         tenant_ids = get_user_active_dimension_codes(request.user) or [instance.tenant_id]
         siblings = Account.objects.filter(
@@ -680,7 +723,10 @@ class AccountSerializer(serializers.ModelSerializer):
                 )
                 if dim_parent:
                     sibling.parent = dim_parent
-            sibling.save()
+            try:
+                sibling.save()
+            except DjangoValidationError as exc:
+                raise _drf_validation_error_from_django(exc) from exc
 
         instance.refresh_from_db()
         return instance
