@@ -217,6 +217,32 @@ def build_ledger_report(tenant_ids, ledger_type, ledger_key, from_date, to_date,
     }
 
 
+def _party_ledger_document_key(entry):
+    """Group multi-dimension journal lines of one voucher into a single statement row."""
+    if entry.source_type and entry.source_id:
+        return (
+            "source",
+            entry.source_type,
+            str(entry.source_id),
+            entry.date.isoformat() if hasattr(entry.date, "isoformat") else str(entry.date),
+        )
+    return (
+        "ref",
+        entry.date.isoformat() if hasattr(entry.date, "isoformat") else str(entry.date),
+        entry.reference or "",
+        entry.document_type or "Journal Voucher",
+    )
+
+
+def _merge_party_ledger_remarks(existing, incoming):
+    parts = []
+    for value in (existing, incoming):
+        text = str(value or "").strip()
+        if text and text not in parts:
+            parts.append(text)
+    return " / ".join(parts) if parts else ""
+
+
 def build_party_ledger_report(
     tenant_ids,
     partner_type,
@@ -229,6 +255,9 @@ def build_party_ledger_report(
 
     Includes Opening Balance journals and a brought-forward opening row when
     from_date excludes earlier activity (including party opening accounts).
+
+    Mixed-dimension invoices/receipts post one AR line per company; those lines
+    are combined into a single statement row per voucher.
     """
     people_type = "Customer" if partner_type == "customer" else "Supplier"
     if partner_type == "customer":
@@ -287,6 +316,8 @@ def build_party_ledger_report(
                 )
             )
 
+    merged_rows = {}
+    merged_order = []
     for line in queryset.order_by(
         "journal_entry__date", "journal_entry__reference", "created_at"
     ):
@@ -295,18 +326,28 @@ def build_party_ledger_report(
         # so we invert the control-account journal direction.
         display_debit = _money(line.credit)
         display_credit = _money(line.debit)
-        _accumulate_row(
-            {
+        key = _party_ledger_document_key(entry)
+        remarks = line.line_description or entry.description or ""
+        if key not in merged_rows:
+            merged_rows[key] = {
                 "id": entry.reference,
                 "document_type": entry.document_type or "Journal Voucher",
                 "date": entry.date.isoformat(),
-                "remarks": line.line_description or entry.description or "",
+                "remarks": remarks,
                 "debit": str(display_debit),
                 "credit": str(display_credit),
                 "source_type": entry.source_type or "",
                 "source_id": str(entry.source_id) if entry.source_id else "",
             }
-        )
+            merged_order.append(key)
+        else:
+            current = merged_rows[key]
+            current["debit"] = str(_money(Decimal(current["debit"]) + display_debit))
+            current["credit"] = str(_money(Decimal(current["credit"]) + display_credit))
+            current["remarks"] = _merge_party_ledger_remarks(current["remarks"], remarks)
+
+    for key in merged_order:
+        _accumulate_row(merged_rows[key])
 
     # Net outstanding from party-statement columns:
     # customer invoices/credits increase credit; receipts/advances increase debit.

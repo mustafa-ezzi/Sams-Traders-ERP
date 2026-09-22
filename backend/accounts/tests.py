@@ -569,6 +569,50 @@ class LedgerReportTests(TestCase):
         self.assertEqual(totals["Bank Receipt"], "700.00")
         self.assertEqual(payload["summary"]["grand_total"], "1000.00")
 
+    def test_customer_party_ledger_merges_mixed_dimension_invoice_lines(self):
+        sales_entry = JournalEntry.objects.create(
+            tenant_id=self.tenant_id,
+            date="2026-08-18",
+            reference="SI - 0305",
+            source_type=JournalEntry.SourceType.SALES_INVOICE,
+            source_id="66666666-6666-6666-6666-666666666666",
+            document_type="Sales Invoice",
+            description="Mixed invoice",
+            people_type="Customer",
+            people_name=self.customer.business_name,
+        )
+        for amount in (Decimal("42670.00"), Decimal("21600.00"), Decimal("22400.00")):
+            JournalLine.objects.create(
+                tenant_id=self.tenant_id,
+                journal_entry=sales_entry,
+                account=self.customer_account,
+                debit=amount,
+                credit=Decimal("0.00"),
+                people_type="Customer",
+                people_name=self.customer.business_name,
+                line_description="Customer Receivable",
+            )
+
+        request = self.factory.get(
+            "/api/accounts/accounts/party-ledger-report/",
+            {
+                "partner_type": "customer",
+                "partner_id": str(self.customer.id),
+            },
+        )
+        force_authenticate(request, user=self.user)
+        response = AccountViewSet.as_view({"get": "party_ledger_report"})(request)
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.data["data"]
+        invoice_rows = [
+            row for row in payload["rows"] if row["id"] == "SI - 0305"
+        ]
+        self.assertEqual(len(invoice_rows), 1)
+        self.assertEqual(invoice_rows[0]["credit"], "86670.00")
+        self.assertEqual(invoice_rows[0]["debit"], "0.00")
+        self.assertEqual(payload["summary"]["grand_total"], "86670.00")
+
     def test_customer_party_ledger_includes_opening_balance_in_range(self):
         opening_entry = JournalEntry.objects.create(
             tenant_id=self.tenant_id,
