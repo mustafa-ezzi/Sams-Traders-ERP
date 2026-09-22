@@ -13,6 +13,7 @@ import PageSizeSelect from "../../components/ui/PageSizeSelect";
 import SortableHeader from "../../components/ui/SortableHeader";
 import { useToast } from "../../context/ToastContext";
 import CompanyFilter from "../../components/ui/CompanyFilter";
+import { selectClassName } from "../../utils/themeClasses";
 import {
   flattenAccountTree,
   getPostableInventoryAccounts,
@@ -71,6 +72,7 @@ const ProductPage = () => {
   const [deleteId, setDeleteId] = useState("");
   const [limit, setLimit] = useState(10);
   const [companyFilter, setCompanyFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
   const [exporting, setExporting] = useState(false);
   const [sortConfig, setSortConfig] = useState({
     key: "sku",
@@ -86,6 +88,7 @@ const ProductPage = () => {
         {
           search: search || undefined,
           ordering: getOrdering(sortConfig),
+          ...(typeFilter ? { product_type: typeFilter } : {}),
         },
         companyFilter || "",
       );
@@ -123,6 +126,7 @@ const ProductPage = () => {
     nextLimit = limit,
     nextSortConfig = sortConfig,
     nextCompany = companyFilter,
+    nextType = typeFilter,
   ) => {
     setLoading(true);
     setError("");
@@ -133,6 +137,7 @@ const ProductPage = () => {
           limit: nextLimit,
           search: nextSearch,
           ordering: getOrdering(nextSortConfig),
+          ...(nextType ? { product_type: nextType } : {}),
         },
         nextCompany || "",
       );
@@ -181,7 +186,7 @@ const ProductPage = () => {
   const handlePageSizeChange = (value) => {
     setLimit(value);
     setPage(1);
-    load(1, search, value, sortConfig, companyFilter);
+    load(1, search, value, sortConfig, companyFilter, typeFilter);
   };
   const handleSort = (key) => {
     const nextSortConfig = {
@@ -193,12 +198,17 @@ const ProductPage = () => {
     };
     setSortConfig(nextSortConfig);
     setPage(1);
-    load(1, search, limit, nextSortConfig, companyFilter);
+    load(1, search, limit, nextSortConfig, companyFilter, typeFilter);
   };
   const handleCompanyChange = (value) => {
     setCompanyFilter(value);
     setPage(1);
-    load(1, search, limit, sortConfig, value);
+    load(1, search, limit, sortConfig, value, typeFilter);
+  };
+  const handleTypeChange = (value) => {
+    setTypeFilter(value);
+    setPage(1);
+    load(1, search, limit, sortConfig, companyFilter, value);
   };
 
   return (
@@ -228,6 +238,16 @@ const ProductPage = () => {
               value={companyFilter}
               onChange={handleCompanyChange}
             />
+            <select
+              className={`${selectClassName} sm:w-48`}
+              value={typeFilter}
+              onChange={(event) => handleTypeChange(event.target.value)}
+              aria-label="Product type"
+            >
+              <option value="">All types</option>
+              <option value="FINISHED_GOOD">Finished Good</option>
+              <option value="ASSEMBLY_PRODUCT">Assembly Product</option>
+            </select>
             <input
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-100 sm:w-64"
               placeholder="Search products"

@@ -7,8 +7,38 @@ export const PAYMENT_AGAINST = {
 export const getAgainstField = (option) =>
   option?.receipt_against || option?.payment_against || PAYMENT_AGAINST.INVOICE;
 
-// Invoices are NOT dimension-based in the UI, so we ignore tenant_id for INVOICE.
-// Opening balances ARE dimension-based, so we filter by tenant_id when against is OPENING_BALANCE.
+export const balanceForDimension = (option, tenantId = "") => {
+  if (!option) return 0;
+  const balances = option.dimension_balances;
+  if (
+    tenantId &&
+    balances &&
+    typeof balances === "object" &&
+    Object.prototype.hasOwnProperty.call(balances, tenantId)
+  ) {
+    const parsed = Number(balances[tenantId]);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  const parsed = Number(option.balance_amount);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const optionHasDimensionShare = (option, tenantId) => {
+  if (!tenantId || !option) return true;
+  const ids = option.dimension_ids;
+  if (Array.isArray(ids) && ids.length) {
+    return ids.includes(tenantId);
+  }
+  const balances = option.dimension_balances;
+  if (balances && typeof balances === "object" && Object.keys(balances).length) {
+    return Object.prototype.hasOwnProperty.call(balances, tenantId);
+  }
+  // Legacy options without dimension breakdown stay visible.
+  return true;
+};
+
+// Opening balances ARE dimension-based.
+// Invoices with dimension_balances are filtered to the selected company's share.
 export const filterOptionsByDimension = (options, tenantId, against) => {
   const list = options || [];
   if (!against) return list;
@@ -18,6 +48,12 @@ export const filterOptionsByDimension = (options, tenantId, against) => {
   if (against === PAYMENT_AGAINST.OPENING_BALANCE && tenantId) {
     filtered = filtered.filter(
       (option) => !option.tenant_id || option.tenant_id === tenantId,
+    );
+  }
+
+  if (against === PAYMENT_AGAINST.INVOICE && tenantId) {
+    filtered = filtered.filter((option) =>
+      optionHasDimensionShare(option, tenantId),
     );
   }
   return filtered;
@@ -45,8 +81,8 @@ export const pickDefaultPaymentReference = ({
 }) => {
   if (against === PAYMENT_AGAINST.INVOICE) {
     const invoices = sortOptionsOldestFirst(
-      filterOptionsByDimension(options, "", PAYMENT_AGAINST.INVOICE),
-    );
+      filterOptionsByDimension(options, tenantId, PAYMENT_AGAINST.INVOICE),
+    ).filter((option) => balanceForDimension(option, tenantId) > 0);
     return invoices.length
       ? { against: PAYMENT_AGAINST.INVOICE, option: invoices[0] }
       : null;
@@ -64,10 +100,10 @@ export const pickDefaultPaymentReference = ({
       return { against: PAYMENT_AGAINST.OPENING_BALANCE, option: openings[0] };
     }
 
-    // Fallback: if no opening exists for this dimension, pick oldest invoice (cross-dimension).
+    // Fallback: if no opening exists for this dimension, pick oldest invoice share.
     const invoices = sortOptionsOldestFirst(
-      filterOptionsByDimension(options, "", PAYMENT_AGAINST.INVOICE),
-    );
+      filterOptionsByDimension(options, tenantId, PAYMENT_AGAINST.INVOICE),
+    ).filter((option) => balanceForDimension(option, tenantId) > 0);
     return invoices.length
       ? { against: PAYMENT_AGAINST.INVOICE, option: invoices[0] }
       : null;
@@ -76,7 +112,7 @@ export const pickDefaultPaymentReference = ({
   return null;
 };
 
-export const referenceSelectionFromOption = (against, option) => {
+export const referenceSelectionFromOption = (against, option, tenantId = "") => {
   if (!option) {
     return {
       receiptAgainst: against,
@@ -97,7 +133,11 @@ export const referenceSelectionFromOption = (against, option) => {
     purchaseInvoiceId: isOpening ? "" : option.id,
     partyOpeningBalanceId: isOpening ? option.id : "",
     salesmanId: option.salesman?.id || "",
-    amount: String(option.balance_amount ?? "0"),
+    amount: String(
+      isOpening
+        ? option.balance_amount ?? "0"
+        : balanceForDimension(option, tenantId),
+    ),
   };
 };
 
@@ -107,7 +147,6 @@ export const buildDefaultReferencePatch = ({
   against = PAYMENT_AGAINST.OPENING_BALANCE,
 }) => {
   const picked = pickDefaultPaymentReference({ options, tenantId, against });
-  if (!picked) return referenceSelectionFromOption(against, null);
-  return referenceSelectionFromOption(picked.against, picked.option);
+  if (!picked) return referenceSelectionFromOption(against, null, tenantId);
+  return referenceSelectionFromOption(picked.against, picked.option, tenantId);
 };
-

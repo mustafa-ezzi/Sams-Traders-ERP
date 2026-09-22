@@ -90,7 +90,41 @@ def get_sales_return_line_metrics(
     }
 
 
-def get_sales_invoice_financials(sales_invoice, excluded_receipt_ids=None, as_of_date=None):
+def get_sales_invoice_line_totals_by_tenant(sales_invoice):
+    """Gross line totals grouped by product/line dimension."""
+    return {
+        row["tenant_id"]: quantize_money(row["total"] or Decimal("0.00"))
+        for row in sales_invoice.lines.filter(deleted_at__isnull=True)
+        .values("tenant_id")
+        .annotate(total=Sum("total_amount"))
+        if row["tenant_id"]
+    }
+
+
+def allocate_invoice_amount_to_line_share(invoice, amount, scoped_line_total):
+    """Allocate header net/return/receipt amounts to one dimension by line share."""
+    gross = quantize_money(invoice.gross_amount or Decimal("0.00"))
+    if gross <= 0:
+        return Decimal("0.00")
+    return quantize_money(
+        (quantize_money(amount or Decimal("0.00")) * quantize_money(scoped_line_total))
+        / gross
+    )
+
+
+def get_sales_invoice_financials(
+    sales_invoice,
+    excluded_receipt_ids=None,
+    as_of_date=None,
+    tenant_id=None,
+):
+    """
+    Outstanding balance for a sales invoice.
+
+    When tenant_id is set, amounts are limited to that dimension's share of a
+    mixed AM/SAMS invoice (line totals, receipts posted to that dimension, and
+    returns against that dimension's invoice lines).
+    """
     excluded_receipt_ids = excluded_receipt_ids or []
 
     returns_qs = SalesReturn.objects.filter(
@@ -100,22 +134,6 @@ def get_sales_invoice_financials(sales_invoice, excluded_receipt_ids=None, as_of
     if as_of_date is not None:
         returns_qs = returns_qs.filter(date__lte=as_of_date)
 
-    # Prefer line amounts; fall back to header gross (legacy / header-only rows).
-    line_returned = (
-        SalesReturnLine.objects.filter(
-            sales_return__in=returns_qs,
-            deleted_at__isnull=True,
-        ).aggregate(total=Sum("amount"))["total"]
-        or Decimal("0.00")
-    )
-    if line_returned:
-        returned_amount = line_returned
-    else:
-        returned_amount = (
-            returns_qs.aggregate(total=Sum("gross_amount"))["total"]
-            or Decimal("0.00")
-        )
-
     receipts_qs = SalesBankReceiptLine.objects.filter(
         sales_invoice=sales_invoice,
         deleted_at__isnull=True,
@@ -124,18 +142,68 @@ def get_sales_invoice_financials(sales_invoice, excluded_receipt_ids=None, as_of
     if as_of_date is not None:
         receipts_qs = receipts_qs.filter(receipt__date__lte=as_of_date)
 
-    received_amount = (
-        receipts_qs.aggregate(total=Sum("amount"))["total"]
-        or Decimal("0.00")
-    )
+    if tenant_id:
+        line_totals = get_sales_invoice_line_totals_by_tenant(sales_invoice)
+        scoped_line_total = line_totals.get(tenant_id, Decimal("0.00"))
+        net_amount = allocate_invoice_amount_to_line_share(
+            sales_invoice,
+            sales_invoice.net_amount or Decimal("0.00"),
+            scoped_line_total,
+        )
 
-    net_amount = quantize_money(sales_invoice.net_amount or Decimal("0.00"))
+        returned_amount = (
+            SalesReturnLine.objects.filter(
+                sales_return__in=returns_qs,
+                deleted_at__isnull=True,
+                sales_invoice_line__tenant_id=tenant_id,
+            ).aggregate(total=Sum("amount"))["total"]
+            or Decimal("0.00")
+        )
+        # Legacy header-only returns: allocate by line share.
+        if not returned_amount and returns_qs.exists():
+            header_returned = (
+                returns_qs.aggregate(total=Sum("gross_amount"))["total"]
+                or Decimal("0.00")
+            )
+            returned_amount = allocate_invoice_amount_to_line_share(
+                sales_invoice,
+                header_returned,
+                scoped_line_total,
+            )
+
+        received_amount = (
+            receipts_qs.filter(tenant_id=tenant_id).aggregate(total=Sum("amount"))[
+                "total"
+            ]
+            or Decimal("0.00")
+        )
+    else:
+        # Prefer line amounts; fall back to header gross (legacy / header-only rows).
+        line_returned = (
+            SalesReturnLine.objects.filter(
+                sales_return__in=returns_qs,
+                deleted_at__isnull=True,
+            ).aggregate(total=Sum("amount"))["total"]
+            or Decimal("0.00")
+        )
+        if line_returned:
+            returned_amount = line_returned
+        else:
+            returned_amount = (
+                returns_qs.aggregate(total=Sum("gross_amount"))["total"]
+                or Decimal("0.00")
+            )
+
+        received_amount = (
+            receipts_qs.aggregate(total=Sum("amount"))["total"]
+            or Decimal("0.00")
+        )
+        net_amount = quantize_money(sales_invoice.net_amount or Decimal("0.00"))
+
     returned_amount = quantize_money(returned_amount)
     received_amount = quantize_money(received_amount)
-    balance_amount = max(
-        quantize_money(net_amount - returned_amount - received_amount),
-        Decimal("0.00"),
-    )
+    raw_balance = quantize_money(net_amount - returned_amount - received_amount)
+    balance_amount = max(raw_balance, Decimal("0.00"))
 
     return {
         "net_amount": net_amount,
@@ -143,7 +211,7 @@ def get_sales_invoice_financials(sales_invoice, excluded_receipt_ids=None, as_of
         "received_amount": received_amount,
         "balance_amount": balance_amount,
         # Raw (can be negative) so aging can reassign over-settlement credits.
-        "raw_balance": quantize_money(net_amount - returned_amount - received_amount),
+        "raw_balance": raw_balance,
     }
 
 

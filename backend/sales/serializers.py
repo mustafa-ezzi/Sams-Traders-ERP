@@ -1525,25 +1525,43 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
                             }
                         }
                     )
+                has_dimension_share = sales_invoice.lines.filter(
+                    tenant_id=line_tenant_id,
+                    deleted_at__isnull=True,
+                ).exists()
+                if not has_dimension_share:
+                    raise serializers.ValidationError(
+                        {
+                            "lines": {
+                                index: {
+                                    "tenant_id": (
+                                        "Selected dimension has no product share on this invoice."
+                                    )
+                                }
+                            }
+                        }
+                    )
                 financials = get_sales_invoice_financials(
                     sales_invoice,
                     excluded_receipt_ids=excluded_receipt_ids,
+                    tenant_id=line_tenant_id,
                 )
-                already = invoice_allocated.get(str(sales_invoice.id), Decimal("0.00"))
+                allocation_key = f"{sales_invoice.id}:{line_tenant_id}"
+                already = invoice_allocated.get(allocation_key, Decimal("0.00"))
                 if amount + already > financials["balance_amount"]:
                     raise serializers.ValidationError(
                         {
                             "lines": {
                                 index: {
                                     "amount": (
-                                        "Receipt amount cannot exceed invoice balance "
-                                        f"({financials['balance_amount']})."
+                                        "Receipt amount cannot exceed this dimension's "
+                                        f"invoice balance ({financials['balance_amount']})."
                                     )
                                 }
                             }
                         }
                     )
-                invoice_allocated[str(sales_invoice.id)] = already + amount
+                invoice_allocated[allocation_key] = already + amount
                 if not salesman_id:
                     salesman_id = sales_invoice.salesman_id
                 party_opening_balance_id = None

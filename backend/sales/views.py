@@ -51,6 +51,7 @@ from sales.serializers import (
 from sales.services import (
     get_customer_opening_balance_financials,
     get_sales_invoice_financials,
+    get_sales_invoice_line_totals_by_tenant,
     get_salesman_commission_financials,
     get_sales_return_line_metrics,
     quantize_money,
@@ -900,7 +901,24 @@ class SalesBankReceiptViewSet(AuditedModelMixin, viewsets.ModelViewSet):
                 excluded_receipt_ids=excluded_receipt_ids,
             )
             include_current_invoice = invoice.id in current_invoice_ids
-            if financials["balance_amount"] <= Decimal("0.00") and not include_current_invoice:
+
+            line_totals = get_sales_invoice_line_totals_by_tenant(invoice)
+            dimension_balances = {}
+            for dimension_code in line_totals:
+                scoped = get_sales_invoice_financials(
+                    invoice,
+                    excluded_receipt_ids=excluded_receipt_ids,
+                    tenant_id=dimension_code,
+                )
+                if scoped["balance_amount"] > Decimal("0.00") or include_current_invoice:
+                    dimension_balances[dimension_code] = str(scoped["balance_amount"])
+
+            # Mixed invoices stay visible when any dimension still owes money.
+            if (
+                financials["balance_amount"] <= Decimal("0.00")
+                and not dimension_balances
+                and not include_current_invoice
+            ):
                 continue
 
             payload.append(
@@ -914,6 +932,8 @@ class SalesBankReceiptViewSet(AuditedModelMixin, viewsets.ModelViewSet):
                     "returned_amount": str(financials["returned_amount"]),
                     "received_amount": str(financials["received_amount"]),
                     "balance_amount": str(financials["balance_amount"]),
+                    "dimension_balances": dimension_balances,
+                    "dimension_ids": list(line_totals.keys()),
                     "salesman": (
                         {
                             "id": str(invoice.salesman.id),

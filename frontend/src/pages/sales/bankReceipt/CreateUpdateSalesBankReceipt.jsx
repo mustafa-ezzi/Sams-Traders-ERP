@@ -18,6 +18,7 @@ import { useToast } from "../../../context/ToastContext";
 import { useAuth } from "../../../context/AuthContext";
 import {
   PAYMENT_AGAINST,
+  balanceForDimension,
   buildDefaultReferencePatch,
   filterOptionsByDimension,
 } from "../../../utils/bankPaymentLineDefaults";
@@ -449,7 +450,9 @@ const CreateUpdateSalesBankReceipt = () => {
                     : option.id === line.salesInvoiceId,
                 );
                 const actualPayment = selectedOption
-                  ? toNumber(selectedOption.balance_amount)
+                  ? line.receiptAgainst === "OPENING_BALANCE"
+                    ? toNumber(selectedOption.balance_amount)
+                    : balanceForDimension(selectedOption, line.tenantId)
                   : null;
                 const remainingPayment =
                   actualPayment == null
@@ -514,6 +517,12 @@ const CreateUpdateSalesBankReceipt = () => {
                           const option = filteredOptions.find(
                             (item) => item.id === optionId,
                           );
+                          const nextAmount =
+                            line.receiptAgainst === "OPENING_BALANCE"
+                              ? String(option?.balance_amount ?? "0")
+                              : String(
+                                  balanceForDimension(option, line.tenantId),
+                                );
                           updateLine(index, {
                             salesInvoiceId:
                               line.receiptAgainst === "INVOICE" ? optionId : "",
@@ -522,7 +531,7 @@ const CreateUpdateSalesBankReceipt = () => {
                                 ? optionId
                                 : "",
                             salesmanId: option?.salesman?.id || "",
-                            amount: String(option?.balance_amount ?? "0"),
+                            amount: nextAmount,
                           });
                         }}
                         getOptionLabel={(option) => option.invoice_number}
@@ -551,8 +560,8 @@ const CreateUpdateSalesBankReceipt = () => {
                           const currentAgainst =
                             line.receiptAgainst || PAYMENT_AGAINST.INVOICE;
 
-                          // Dimension change should update opening-balance + banks.
-                          // Invoices must NOT be re-selected based on dimension.
+                          // Dimension change updates opening-balance defaults and
+                          // re-scopes invoice balance to that company's share.
                           if (currentAgainst === PAYMENT_AGAINST.OPENING_BALANCE) {
                             const referencePatch = buildDefaultReferencePatch({
                               options: line.invoiceOptions,
@@ -565,9 +574,29 @@ const CreateUpdateSalesBankReceipt = () => {
                               ...referencePatch,
                             });
                           } else {
+                            const nextOptions = filterOptionsByDimension(
+                              line.invoiceOptions,
+                              nextTenantId,
+                              PAYMENT_AGAINST.INVOICE,
+                            );
+                            const stillValid = nextOptions.find(
+                              (option) => option.id === line.salesInvoiceId,
+                            );
                             updateLine(index, {
                               tenantId: nextTenantId,
                               bankAccountId: "",
+                              salesInvoiceId: stillValid ? line.salesInvoiceId : "",
+                              salesmanId: stillValid
+                                ? stillValid.salesman?.id || line.salesmanId
+                                : "",
+                              amount: stillValid
+                                ? String(
+                                    balanceForDimension(
+                                      stillValid,
+                                      nextTenantId,
+                                    ),
+                                  )
+                                : "0",
                             });
                           }
                           loadBanksForLine(index, nextTenantId);

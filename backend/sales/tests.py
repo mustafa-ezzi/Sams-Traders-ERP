@@ -427,3 +427,131 @@ class SalesInvoiceSerializerTests(TestCase):
         )
         self.assertEqual(stock.quantity, Decimal("-5.00"))
         self.assertEqual(invoice.lines.count(), 1)
+
+
+class MixedDimensionSalesInvoiceReceiptTests(TestCase):
+    """Bank receipts must settle each company's share of a mixed invoice separately."""
+
+    def setUp(self):
+        self.am = "AM_TRADERS"
+        self.sams = "SAMS_TRADERS"
+        self.user = User.objects.create_user(
+            username="mixed-receipt-user",
+            password="secret",
+            tenant_id=self.am,
+        )
+        self.receivable = Account.objects.create(
+            tenant_id=self.am,
+            code="1120",
+            name="Receivables",
+            account_group=Account.AccountGroup.ASSET,
+            account_nature=Account.AccountNature.DEBIT,
+            level=1,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+        self.customer = Customer.objects.create(
+            tenant_id=self.am,
+            name="Mixed Customer",
+            business_name="Mixed Customer",
+            phone_number="1",
+            address="A",
+            account=self.receivable,
+        )
+        self.warehouse = Warehouse.objects.create(
+            tenant_id=self.am,
+            name="Main",
+            location="Karachi",
+        )
+        self.am_product = Product.objects.create(
+            tenant_id=self.am,
+            name="AM Item",
+            product_type="FINISHED_GOOD",
+            packaging_cost=Decimal("0.00"),
+            net_amount=Decimal("0.00"),
+        )
+        self.sams_product = Product.objects.create(
+            tenant_id=self.sams,
+            name="SAMS Item",
+            product_type="FINISHED_GOOD",
+            packaging_cost=Decimal("0.00"),
+            net_amount=Decimal("0.00"),
+        )
+        self.invoice = SalesInvoice.objects.create(
+            tenant_id=self.am,
+            invoice_number="SI-MIX-001",
+            date="2026-04-20",
+            customer=self.customer,
+            warehouse=self.warehouse,
+            gross_amount=Decimal("10000.00"),
+            net_amount=Decimal("10000.00"),
+        )
+        from sales.models import SalesInvoiceLine
+
+        SalesInvoiceLine.objects.create(
+            tenant_id=self.am,
+            invoice=self.invoice,
+            product=self.am_product,
+            quantity=Decimal("1.00"),
+            rate=Decimal("4000.00"),
+            amount=Decimal("4000.00"),
+            discount=Decimal("0.00"),
+            total_amount=Decimal("4000.00"),
+        )
+        SalesInvoiceLine.objects.create(
+            tenant_id=self.sams,
+            invoice=self.invoice,
+            product=self.sams_product,
+            quantity=Decimal("1.00"),
+            rate=Decimal("6000.00"),
+            amount=Decimal("6000.00"),
+            discount=Decimal("0.00"),
+            total_amount=Decimal("6000.00"),
+        )
+
+    def test_dimension_scoped_balance_splits_mixed_invoice(self):
+        full = get_sales_invoice_financials(self.invoice)
+        am = get_sales_invoice_financials(self.invoice, tenant_id=self.am)
+        sams = get_sales_invoice_financials(self.invoice, tenant_id=self.sams)
+
+        self.assertEqual(full["balance_amount"], Decimal("10000.00"))
+        self.assertEqual(am["balance_amount"], Decimal("4000.00"))
+        self.assertEqual(sams["balance_amount"], Decimal("6000.00"))
+
+    def test_receipt_against_am_reduces_only_am_share(self):
+        bank = Account.objects.create(
+            tenant_id=self.am,
+            code="11131",
+            name="AM Cash",
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.BANK,
+            account_nature=Account.AccountNature.DEBIT,
+            level=1,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+        receipt = SalesBankReceipt.objects.create(
+            tenant_id=self.am,
+            receipt_number="SBR-MIX-001",
+            date="2026-04-21",
+            amount=Decimal("4000.00"),
+        )
+        SalesBankReceiptLine.objects.create(
+            tenant_id=self.am,
+            receipt=receipt,
+            customer=self.customer,
+            receipt_against=SalesBankReceiptLine.ReceiptAgainst.INVOICE,
+            sales_invoice=self.invoice,
+            bank_account=bank,
+            amount=Decimal("4000.00"),
+        )
+
+        am = get_sales_invoice_financials(self.invoice, tenant_id=self.am)
+        sams = get_sales_invoice_financials(self.invoice, tenant_id=self.sams)
+        full = get_sales_invoice_financials(self.invoice)
+
+        self.assertEqual(am["balance_amount"], Decimal("0.00"))
+        self.assertEqual(sams["balance_amount"], Decimal("6000.00"))
+        self.assertEqual(full["balance_amount"], Decimal("6000.00"))
