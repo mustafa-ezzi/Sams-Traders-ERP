@@ -1,4 +1,7 @@
+import csv
+import re
 from decimal import Decimal
+from pathlib import Path
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
@@ -19,7 +22,8 @@ from sales.services import (
 class Command(BaseCommand):
     help = (
         "Report (and optionally repair) bank receipts that booked a mixed "
-        "AM/SAMS invoice's full amount into one dimension."
+        "AM/SAMS invoice's full amount into one dimension. Writes a CSV with "
+        "invoice numbers and the SBR vouchers to edit."
     )
 
     def add_arguments(self, parser):
@@ -40,13 +44,22 @@ class Command(BaseCommand):
             "--limit",
             type=int,
             default=100,
-            help="Max mismatched invoices to print.",
+            help="Max mismatched invoices to print to the console.",
+        )
+        parser.add_argument(
+            "--output",
+            default="mixed_invoice_receipt_mismatches.csv",
+            help=(
+                "CSV path for the full mismatch report (invoice, SBR numbers, "
+                "over/under by dimension). Default: mixed_invoice_receipt_mismatches.csv"
+            ),
         )
 
     def handle(self, *args, **options):
         apply_fix = bool(options.get("apply"))
         invoice_number = (options.get("invoice") or "").strip()
         print_limit = options.get("limit") or 100
+        output_path = Path(options.get("output") or "mixed_invoice_receipt_mismatches.csv")
 
         invoices = (
             SalesInvoice.objects.filter(deleted_at__isnull=True)
@@ -58,6 +71,7 @@ class Command(BaseCommand):
                 )
             )
             .filter(dim_count__gt=1)
+            .select_related("customer")
             .prefetch_related(
                 Prefetch(
                     "lines",
@@ -75,7 +89,15 @@ class Command(BaseCommand):
             .order_by("date", "invoice_number")
         )
         if invoice_number:
-            invoices = invoices.filter(invoice_number=invoice_number)
+            invoices = self._filter_by_invoice_number(invoices, invoice_number)
+            if not invoices.exists():
+                self.stdout.write(
+                    self.style.ERROR(
+                        f"No invoice matched --invoice {invoice_number!r}. "
+                        "Try the exact number from the CSV (e.g. \"SI - 0020\")."
+                    )
+                )
+                return
 
         mismatches = []
         for invoice in invoices.iterator(chunk_size=50):
@@ -84,29 +106,44 @@ class Command(BaseCommand):
                 mismatches.append(report)
 
         if not mismatches:
-            self.stdout.write(self.style.SUCCESS("No mixed-invoice receipt mismatches found."))
+            if invoice_number:
+                matched = list(
+                    invoices.values_list("invoice_number", flat=True)[:5]
+                )
+                self.stdout.write(
+                    self.style.SUCCESS(
+                        "No mixed-invoice receipt mismatches found for "
+                        f"{matched or invoice_number}."
+                    )
+                )
+            else:
+                self.stdout.write(
+                    self.style.SUCCESS("No mixed-invoice receipt mismatches found.")
+                )
             return
 
+        written = self._write_csv_report(mismatches, output_path)
         self.stdout.write(
             self.style.WARNING(
                 f"Found {len(mismatches)} mixed invoice(s) with receipt dimension mismatches."
             )
         )
+        self.stdout.write(self.style.SUCCESS(f"Wrote report: {written}"))
         for report in mismatches[:print_limit]:
             self._print_report(report)
 
         if len(mismatches) > print_limit:
-            self.stdout.write(f"... and {len(mismatches) - print_limit} more.")
+            self.stdout.write(f"... and {len(mismatches) - print_limit} more (see CSV).")
 
         if not apply_fix:
             self.stdout.write("")
             self.stdout.write(
-                "Report only. Re-run with --apply to split over-allocated "
-                "receipt amounts onto the other company's share and re-sync journals."
+                "Report only. Open the CSV for invoice + SBR numbers to edit, "
+                "or re-run with --apply to auto-split over-allocated amounts."
             )
             self.stdout.write(
-                "Tip: preview one voucher first with "
-                "--invoice SI-0004  then  --invoice SI-0004 --apply"
+                'Tip: preview one voucher first with '
+                '--invoice "SI - 0020"  then  --invoice "SI - 0020" --apply'
             )
             return
 
@@ -136,6 +173,31 @@ class Command(BaseCommand):
             )
         )
 
+    @staticmethod
+    def _normalize_invoice_number(value):
+        """SI-0020, SI - 0020, si–0020 → SI-0020."""
+        text = str(value or "").strip().upper()
+        text = text.replace("–", "-").replace("—", "-")
+        text = re.sub(r"\s*-\s*", "-", text)
+        text = re.sub(r"\s+", " ", text)
+        return text
+
+    def _filter_by_invoice_number(self, queryset, invoice_number):
+        normalized = self._normalize_invoice_number(invoice_number)
+        # Exact match first (CSV / UI may already use spaced form).
+        exact = queryset.filter(invoice_number=invoice_number)
+        if exact.exists():
+            return exact
+        spaced = queryset.filter(invoice_number=normalized.replace("-", " - "))
+        if spaced.exists():
+            return spaced
+        # Fallback: compare normalized forms in Python for odd spacing.
+        matched_ids = []
+        for inv_id, inv_no in queryset.values_list("id", "invoice_number"):
+            if self._normalize_invoice_number(inv_no) == normalized:
+                matched_ids.append(inv_id)
+        return queryset.filter(id__in=matched_ids)
+
     def _analyze_invoice(self, invoice):
         line_totals = get_sales_invoice_line_totals_by_tenant(invoice)
         targets = {
@@ -147,12 +209,26 @@ class Command(BaseCommand):
 
         received = {dim: Decimal("0.00") for dim in targets}
         receipt_lines = list(invoice.bank_receipt_lines.all())
+        sbr_details = []
         for line in receipt_lines:
             dim = line.tenant_id or ""
             if not dim:
                 continue
-            received[dim] = received.get(dim, Decimal("0.00")) + quantize_money(
-                line.amount or 0
+            amount = quantize_money(line.amount or 0)
+            received[dim] = received.get(dim, Decimal("0.00")) + amount
+            receipt = line.receipt
+            sbr_details.append(
+                {
+                    "receipt_number": getattr(receipt, "receipt_number", "") or "",
+                    "receipt_date": (
+                        receipt.date.isoformat()
+                        if getattr(receipt, "date", None)
+                        else ""
+                    ),
+                    "receipt_tenant_id": getattr(receipt, "tenant_id", "") or "",
+                    "line_amount": amount,
+                    "line_dimension": dim,
+                }
             )
 
         over = {}
@@ -164,23 +240,44 @@ class Command(BaseCommand):
             elif got < target:
                 under[dim] = quantize_money(target - got)
 
+        sbr_numbers = sorted(
+            {
+                detail["receipt_number"]
+                for detail in sbr_details
+                if detail["receipt_number"]
+            }
+        )
+        customer_name = ""
+        if getattr(invoice, "customer", None):
+            customer_name = (
+                invoice.customer.business_name or invoice.customer.name or ""
+            )
+
         return {
             "invoice": invoice,
             "invoice_number": invoice.invoice_number,
             "invoice_id": str(invoice.id),
+            "invoice_date": (
+                invoice.date.isoformat() if getattr(invoice, "date", None) else ""
+            ),
+            "customer_name": customer_name,
             "net_amount": quantize_money(invoice.net_amount or 0),
             "targets": targets,
             "received": received,
             "over": over,
             "under": under,
+            "sbr_numbers": sbr_numbers,
+            "sbr_details": sbr_details,
             "needs_fix": bool(over and under),
             "receipt_lines": receipt_lines,
         }
 
     def _print_report(self, report):
         self.stdout.write("")
+        sbr_list = ", ".join(report["sbr_numbers"]) or "(no SBR found)"
         self.stdout.write(
-            f"{report['invoice_number']}  net={report['net_amount']}"
+            f"{report['invoice_number']}  net={report['net_amount']}  "
+            f"customer={report['customer_name'] or '-'}  SBR: {sbr_list}"
         )
         dims = sorted(set(report["targets"]) | set(report["received"]))
         for dim in dims:
@@ -198,6 +295,67 @@ class Command(BaseCommand):
                 "  UNDER: "
                 + ", ".join(f"{k} -{v}" for k, v in sorted(report["under"].items()))
             )
+        for detail in report["sbr_details"]:
+            self.stdout.write(
+                f"  -> {detail['receipt_number']} "
+                f"({detail['receipt_date']}) "
+                f"line dim={detail['line_dimension']} "
+                f"amount={detail['line_amount']}"
+            )
+
+    def _write_csv_report(self, mismatches, output_path):
+        output_path = Path(output_path)
+        if not output_path.is_absolute():
+            output_path = Path.cwd() / output_path
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        fieldnames = [
+            "invoice_number",
+            "invoice_date",
+            "customer",
+            "invoice_net",
+            "sbr_numbers",
+            "sbr_line_detail",
+            "over_dimensions",
+            "under_dimensions",
+            "dimension_share_detail",
+            "dimension_received_detail",
+        ]
+        with output_path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fieldnames)
+            writer.writeheader()
+            for report in mismatches:
+                sbr_line_detail = "; ".join(
+                    (
+                        f"{d['receipt_number']}|"
+                        f"{d['line_dimension']}|"
+                        f"{d['line_amount']}"
+                    )
+                    for d in report["sbr_details"]
+                )
+                writer.writerow(
+                    {
+                        "invoice_number": report["invoice_number"],
+                        "invoice_date": report["invoice_date"],
+                        "customer": report["customer_name"],
+                        "invoice_net": str(report["net_amount"]),
+                        "sbr_numbers": ", ".join(report["sbr_numbers"]),
+                        "sbr_line_detail": sbr_line_detail,
+                        "over_dimensions": ", ".join(
+                            f"{k} +{v}" for k, v in sorted(report["over"].items())
+                        ),
+                        "under_dimensions": ", ".join(
+                            f"{k} -{v}" for k, v in sorted(report["under"].items())
+                        ),
+                        "dimension_share_detail": ", ".join(
+                            f"{k}={v}" for k, v in sorted(report["targets"].items())
+                        ),
+                        "dimension_received_detail": ", ".join(
+                            f"{k}={v}" for k, v in sorted(report["received"].items())
+                        ),
+                    }
+                )
+        return output_path
 
     def _apply_fix(self, report):
         invoice = report["invoice"]

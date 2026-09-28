@@ -9,6 +9,8 @@ const mapLine = (line) => ({
   description: line.description || "",
   debit: line.debit ?? 0,
   credit: line.credit ?? 0,
+  peopleType: line.people_type || "",
+  peopleName: line.people_name || "",
 });
 
 const mapVoucher = (voucher) => ({

@@ -9,7 +9,7 @@ from accounts.dimensions import build_dimension_code, get_user_active_dimension_
 from accounts.journal import quantize_money
 from accounts.models import Account, AuditLog, Dimension, Expense, ExpenseLine, Inquiry, User, BankTransfer, JournalVoucher, JournalVoucherLine
 from common.tenancy import get_request_tenant_ids
-from inventory.models import Salesman
+from inventory.models import Customer, Supplier
 
 
 def _drf_validation_error_from_django(exc):
@@ -736,6 +736,7 @@ class AccountMiniSerializer(serializers.Serializer):
     id = serializers.UUIDField()
     code = serializers.CharField()
     name = serializers.CharField()
+    account_type = serializers.CharField(required=False, allow_blank=True, default="")
 
 
 class ExpenseLineSerializer(serializers.Serializer):
@@ -1222,6 +1223,18 @@ class JournalVoucherLineSerializer(serializers.Serializer):
         max_length=255,
         default="",
     )
+    people_type = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=20,
+        default="",
+    )
+    people_name = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=255,
+        default="",
+    )
 
     def get_dimension_name(self, obj):
         dimension = Dimension.objects.filter(code=obj.tenant_id).first()
@@ -1232,6 +1245,15 @@ class JournalVoucherLineSerializer(serializers.Serializer):
         data["account_id"] = str(instance.account_id)
         data["tenant_id"] = instance.tenant_id
         data["description"] = instance.description or ""
+        data["people_type"] = instance.people_type or ""
+        data["people_name"] = instance.people_name or ""
+        if instance.account_id and instance.account:
+            data["account"] = {
+                "id": str(instance.account_id),
+                "code": instance.account.code,
+                "name": instance.account.name,
+                "account_type": instance.account.account_type or "",
+            }
         return data
 
 
@@ -1359,21 +1381,31 @@ class JournalVoucherSerializer(serializers.ModelSerializer):
                     }
                 }
             )
+        # Account heads are shared across companies — only require the account
+        # (or an equivalent code) to exist somewhere the user can access.
         if account.tenant_id not in allowed_dimensions:
-            allowed = ", ".join(allowed_dimensions) if allowed_dimensions else "(none)"
-            raise serializers.ValidationError(
-                {
-                    "lines": {
-                        index: {
-                            "account_id": (
-                                f"Line {line_no}: account '{account.code} — {account.name}' "
-                                f"belongs to dimension '{account.tenant_id}', which is outside "
-                                f"your allowed dimensions ({allowed})."
-                            )
+            shared_copy = Account.objects.filter(
+                code=account.code,
+                tenant_id__in=allowed_dimensions,
+                deleted_at__isnull=True,
+                is_active=True,
+                is_postable=True,
+            ).first()
+            if shared_copy is None:
+                allowed = ", ".join(allowed_dimensions) if allowed_dimensions else "(none)"
+                raise serializers.ValidationError(
+                    {
+                        "lines": {
+                            index: {
+                                "account_id": (
+                                    f"Line {line_no}: account '{account.code} — {account.name}' "
+                                    f"is outside your allowed dimensions ({allowed})."
+                                )
+                            }
                         }
                     }
-                }
-            )
+                )
+            account = shared_copy
         if not account.is_active:
             raise serializers.ValidationError(
                 {
@@ -1401,6 +1433,76 @@ class JournalVoucherSerializer(serializers.ModelSerializer):
                 }
             )
         return account
+
+    def _resolve_party_for_account(self, account, people_type, people_name, index):
+        """Receivable → Customer, Payable → Supplier. Other heads need no party."""
+        line_no = index + 1
+        people_type = str(people_type or "").strip()
+        people_name = str(people_name or "").strip()
+        account_type = account.account_type or Account.AccountType.GENERAL
+
+        if account_type == Account.AccountType.RECEIVABLE:
+            expected = "Customer"
+            model = Customer
+        elif account_type == Account.AccountType.PAYABLE:
+            expected = "Supplier"
+            model = Supplier
+        else:
+            return "", ""
+
+        if people_type and people_type != expected:
+            raise serializers.ValidationError(
+                {
+                    "lines": {
+                        index: {
+                            "people_type": (
+                                f"Line {line_no}: {account.code} — {account.name} "
+                                f"requires a {expected.lower()}."
+                            )
+                        }
+                    }
+                }
+            )
+        if not people_name:
+            raise serializers.ValidationError(
+                {
+                    "lines": {
+                        index: {
+                            "people_name": (
+                                f"Line {line_no}: select a {expected.lower()} for "
+                                f"{account.code} — {account.name}."
+                            )
+                        }
+                    }
+                }
+            )
+
+        allowed_dimensions = self._allowed_dimension_codes()
+        party = model.objects.filter(
+            business_name=people_name,
+            deleted_at__isnull=True,
+            tenant_id__in=allowed_dimensions,
+        ).first()
+        if party is None:
+            # Shared masters may live under any active dimension code.
+            party = model.objects.filter(
+                business_name=people_name,
+                deleted_at__isnull=True,
+            ).first()
+        if party is None:
+            raise serializers.ValidationError(
+                {
+                    "lines": {
+                        index: {
+                            "people_name": (
+                                f"Line {line_no}: {expected.lower()} "
+                                f"'{people_name}' was not found."
+                            )
+                        }
+                    }
+                }
+            )
+        return expected, party.business_name
 
     def _validate_lines(self, lines_data):
         allowed_dimensions = self._allowed_dimension_codes()
@@ -1493,6 +1595,12 @@ class JournalVoucherSerializer(serializers.ModelSerializer):
                 )
 
             account = self._validate_account(account_id, line_tenant_id, index)
+            resolved_people_type, resolved_people_name = self._resolve_party_for_account(
+                account,
+                line.get("people_type"),
+                line.get("people_name"),
+                index,
+            )
             total_debit += debit
             total_credit += credit
             prepared_lines.append(
@@ -1502,6 +1610,8 @@ class JournalVoucherSerializer(serializers.ModelSerializer):
                     "debit": debit,
                     "credit": credit,
                     "description": str(line.get("description") or "").strip()[:255],
+                    "people_type": resolved_people_type,
+                    "people_name": resolved_people_name,
                 }
             )
 

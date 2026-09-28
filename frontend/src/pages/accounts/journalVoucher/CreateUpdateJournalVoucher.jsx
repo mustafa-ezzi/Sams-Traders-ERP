@@ -3,9 +3,12 @@ import { useNavigate, useParams } from "react-router-dom";
 import Card from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
 import FormInput from "../../../components/ui/FormInput";
+import SearchableSelect from "../../../components/ui/SearchableSelect";
 import accountService from "../../../api/services/accountService";
+import customerService from "../../../api/services/customerService";
 import dimensionService from "../../../api/services/dimensionService";
 import journalVoucherService from "../../../api/services/journalVoucherService";
+import supplierService from "../../../api/services/supplierService";
 import { formatDecimal } from "../../../utils/format";
 import {
   flattenAccountTree,
@@ -30,6 +33,8 @@ const LINE_FIELD_LABELS = {
   debit: "Debit",
   credit: "Credit",
   description: "Description",
+  people_name: "Party",
+  people_type: "Party",
   _error: "Error",
 };
 
@@ -40,6 +45,8 @@ const createEmptyLine = (tenantId = "") => ({
   description: "",
   debit: "",
   credit: "",
+  peopleType: "",
+  peopleName: "",
 });
 
 const toNumber = (value) => {
@@ -51,6 +58,13 @@ const filterPostableAccounts = (flatAccounts) =>
   flatAccounts.filter(
     (account) => account.is_postable && account.is_active,
   );
+
+const partyKindForAccount = (account) => {
+  const type = account?.account_type || account?.accountType || "";
+  if (type === "RECEIVABLE") return "Customer";
+  if (type === "PAYABLE") return "Supplier";
+  return "";
+};
 
 const formatLineErrorSummary = (lineError = {}) =>
   Object.entries(lineError)
@@ -69,6 +83,8 @@ const CreateUpdateJournalVoucher = () => {
 
   const [dimensions, setDimensions] = useState([]);
   const [sharedAccounts, setSharedAccounts] = useState([]);
+  const [customers, setCustomers] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
   const [form, setForm] = useState({
     date: new Date().toISOString().slice(0, 10),
     remarks: "",
@@ -96,6 +112,14 @@ const CreateUpdateJournalVoucher = () => {
   );
   const isBalanced = Math.abs(difference) < 0.005;
 
+  const accountById = useMemo(() => {
+    const map = new Map();
+    sharedAccounts.forEach((account) => {
+      if (account?.id) map.set(String(account.id), account);
+    });
+    return map;
+  }, [sharedAccounts]);
+
   const accountDimensionCodes = useMemo(() => {
     const fromAuth = (allowedDimensions || [])
       .map((dimension) => dimension?.code)
@@ -122,7 +146,7 @@ const CreateUpdateJournalVoucher = () => {
         Array.isArray(response) ? response : response?.data || [],
       ),
     );
-    // Deduplicate by account code only — not tied to a line dimension.
+    // Account heads are shared across companies — dedupe by code only.
     const accounts = uniqueAccountsByCode(
       filterPostableAccounts(mergeAccountsById(flatLists)),
     );
@@ -134,9 +158,24 @@ const CreateUpdateJournalVoucher = () => {
     let cancelled = false;
     const load = async () => {
       try {
-        const dimensionItems = await dimensionService.list();
+        const [dimensionItems, customerOptions, supplierOptions] =
+          await Promise.all([
+            dimensionService.list(),
+            customerService.options().catch(() => []),
+            supplierService.options().catch(() => []),
+          ]);
         if (cancelled) return;
         setDimensions(dimensionItems || []);
+        setCustomers(
+          Array.isArray(customerOptions)
+            ? customerOptions
+            : customerOptions?.data || [],
+        );
+        setSuppliers(
+          Array.isArray(supplierOptions)
+            ? supplierOptions
+            : supplierOptions?.data || [],
+        );
         const codes = [
           ...new Set(
             [
@@ -187,6 +226,8 @@ const CreateUpdateJournalVoucher = () => {
           description: line.description || "",
           debit: line.debit > 0 ? String(line.debit) : "",
           credit: line.credit > 0 ? String(line.credit) : "",
+          peopleType: line.peopleType || "",
+          peopleName: line.peopleName || "",
         }));
         const ensured =
           mappedLines.length >= 2
@@ -257,11 +298,16 @@ const CreateUpdateJournalVoucher = () => {
       const fieldErrors = {};
       const debit = toNumber(line.debit);
       const credit = toNumber(line.credit);
+      const account = accountById.get(String(line.accountId));
+      const partyKind = partyKindForAccount(account);
       if (!line.tenantId) {
         fieldErrors.tenant_id = `Line ${lineNo}: dimension is required.`;
       }
       if (!line.accountId) {
         fieldErrors.account_id = `Line ${lineNo}: account is required.`;
+      }
+      if (partyKind && !line.peopleName) {
+        fieldErrors.people_name = `Line ${lineNo}: select a ${partyKind.toLowerCase()}.`;
       }
       if (debit > 0 && credit > 0) {
         fieldErrors.amount = `Line ${lineNo}: enter either debit or credit, not both.`;
@@ -292,13 +338,19 @@ const CreateUpdateJournalVoucher = () => {
   const buildPayload = () => ({
     date: form.date,
     remarks: form.remarks,
-    lines: lines.map((line) => ({
-      tenant_id: line.tenantId,
-      account_id: line.accountId,
-      description: line.description || "",
-      debit: toNumber(line.debit),
-      credit: toNumber(line.credit),
-    })),
+    lines: lines.map((line) => {
+      const account = accountById.get(String(line.accountId));
+      const partyKind = partyKindForAccount(account);
+      return {
+        tenant_id: line.tenantId,
+        account_id: line.accountId,
+        description: line.description || "",
+        debit: toNumber(line.debit),
+        credit: toNumber(line.credit),
+        people_type: partyKind || "",
+        people_name: partyKind ? line.peopleName || "" : "",
+      };
+    }),
   });
 
   const handleSubmit = async (event) => {
@@ -344,8 +396,8 @@ const CreateUpdateJournalVoucher = () => {
               {editingId ? "Edit Journal Voucher" : "Journal Voucher"}
             </h2>
             <p className="mt-1 text-sm text-slate-500">
-              Enter debit and credit lines. Accounts are shared across
-              dimensions; only the line dimension changes. Totals must balance.
+              Account heads are shared across companies. Receivable / payable
+              lines ask for the related customer or supplier. Totals must balance.
             </p>
           </div>
           <Button
@@ -428,11 +480,12 @@ const CreateUpdateJournalVoucher = () => {
         ) : null}
 
         <div className="overflow-x-auto rounded-[24px] border border-slate-200 dark:border-slate-700">
-          <table className="min-w-[980px] w-full divide-y divide-slate-200 text-sm dark:divide-slate-700">
+          <table className="min-w-[1180px] w-full divide-y divide-slate-200 text-sm dark:divide-slate-700">
             <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:bg-slate-900/60">
               <tr>
                 <th className="px-3 py-3">Dimension</th>
                 <th className="px-3 py-3">Account</th>
+                <th className="px-3 py-3">Party</th>
                 <th className="px-3 py-3">Description</th>
                 <th className="px-3 py-3 text-right">Debit</th>
                 <th className="px-3 py-3 text-right">Credit</th>
@@ -443,6 +496,14 @@ const CreateUpdateJournalVoucher = () => {
               {lines.map((line, index) => {
                 const errors = lineErrors[index] || {};
                 const hasError = Object.keys(errors).length > 0;
+                const account = accountById.get(String(line.accountId));
+                const partyKind = partyKindForAccount(account);
+                const partyOptions =
+                  partyKind === "Customer"
+                    ? customers
+                    : partyKind === "Supplier"
+                      ? suppliers
+                      : [];
                 return (
                   <Fragment key={line.key}>
                     <tr
@@ -482,9 +543,18 @@ const CreateUpdateJournalVoucher = () => {
                               : selectClassName
                           }
                           value={line.accountId}
-                          onChange={(e) =>
-                            updateLine(index, { accountId: e.target.value })
-                          }
+                          onChange={(e) => {
+                            const nextAccountId = e.target.value;
+                            const nextAccount = accountById.get(
+                              String(nextAccountId),
+                            );
+                            const nextKind = partyKindForAccount(nextAccount);
+                            updateLine(index, {
+                              accountId: nextAccountId,
+                              peopleType: nextKind,
+                              peopleName: "",
+                            });
+                          }}
                         >
                           <option value="">Select account</option>
                           {sharedAccounts.map((account) => (
@@ -493,6 +563,29 @@ const CreateUpdateJournalVoucher = () => {
                             </option>
                           ))}
                         </select>
+                      </td>
+                      <td className="min-w-[200px] px-3 py-3">
+                        {partyKind ? (
+                          <SearchableSelect
+                            value={line.peopleName}
+                            options={partyOptions}
+                            onChange={(peopleName) =>
+                              updateLine(index, {
+                                peopleType: partyKind,
+                                peopleName,
+                              })
+                            }
+                            getOptionValue={(party) =>
+                              party.business_name || party.name || ""
+                            }
+                            getOptionLabel={(party) =>
+                              party.business_name || party.name || "Party"
+                            }
+                            placeholder={`Select ${partyKind.toLowerCase()}…`}
+                          />
+                        ) : (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
                       </td>
                       <td className="min-w-[200px] px-3 py-3">
                         <input
@@ -559,7 +652,7 @@ const CreateUpdateJournalVoucher = () => {
                     {hasError ? (
                       <tr className="bg-rose-50/70 dark:bg-rose-950/30">
                         <td
-                          colSpan={6}
+                          colSpan={7}
                           className="px-3 pb-3 text-xs font-medium text-rose-700 dark:text-rose-300"
                         >
                           Line {index + 1}: {formatLineErrorSummary(errors)}
@@ -572,7 +665,7 @@ const CreateUpdateJournalVoucher = () => {
             </tbody>
             <tfoot className="bg-slate-50 dark:bg-slate-900/60">
               <tr>
-                <td colSpan={3} className="px-3 py-3 text-right font-semibold">
+                <td colSpan={4} className="px-3 py-3 text-right font-semibold">
                   Totals
                 </td>
                 <td className="px-3 py-3 text-right font-bold">

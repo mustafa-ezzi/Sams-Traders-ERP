@@ -1113,6 +1113,8 @@ def _build_journal_voucher_lines(voucher):
                 "credit": credit,
                 "line_description": (voucher_line.description or "").strip()
                 or "Journal Voucher",
+                "people_type": voucher_line.people_type or "",
+                "people_name": voucher_line.people_name or "",
             }
         )
     return lines

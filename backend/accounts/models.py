@@ -439,6 +439,8 @@ class JournalVoucherLine(BaseModel):
     debit = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     credit = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     description = models.CharField(max_length=255, blank=True, default="")
+    people_type = models.CharField(max_length=20, blank=True, default="")
+    people_name = models.CharField(max_length=255, blank=True, default="")
 
     class Meta:
         ordering = ["created_at", "id"]
