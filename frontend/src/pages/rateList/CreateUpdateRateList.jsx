@@ -71,7 +71,7 @@ const CreateUpdateRateList = () => {
   const loadLookups = async () => {
     try {
       const [productOptions, groupList] = await Promise.all([
-        productService.options(),
+        productService.options("", { product_type: "FINISHED_GOOD" }),
         rateListGroupService.options(),
       ]);
       setProducts(productOptions || []);

@@ -29,8 +29,9 @@ const productService = {
     });
     return response.data;
   },
-  async options(tenantId = "") {
+  async options(tenantId = "", params = {}) {
     const response = await axiosInstance.get("/inventory/products/options/", {
+      params,
       headers: tenantHeader(tenantId),
     });
     return response.data.data || [];

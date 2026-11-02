@@ -1728,12 +1728,17 @@ class RateListLineSerializer(serializers.ModelSerializer):
 
     def validate_product_id(self, value):
         tenant_ids = get_shared_tenant_ids(self.context["request"])
-        if not Product.objects.filter(
+        product = Product.objects.filter(
             id=value,
             tenant_id__in=tenant_ids,
             deleted_at__isnull=True,
-        ).exists():
+        ).first()
+        if not product:
             raise serializers.ValidationError("Product not found")
+        if product.product_type not in {"FINISHED_GOOD", "READY_MADE"}:
+            raise serializers.ValidationError(
+                "Only finished goods can be added to a rate list."
+            )
         return value
 
     def validate_group_id(self, value):
@@ -1882,7 +1887,12 @@ class RateListSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         lines_data = validated_data.pop("lines", [])
         request = self.context["request"]
-        tenant_id = getattr(request, "tenant_id", None) or request.user.tenant_id
+        # ViewSet.perform_create may pass tenant_id into save(); don't pass it twice.
+        tenant_id = (
+            validated_data.pop("tenant_id", None)
+            or getattr(request, "tenant_id", None)
+            or request.user.tenant_id
+        )
         rate_list = RateList.objects.create(tenant_id=tenant_id, **validated_data)
         self._create_lines(rate_list, lines_data, tenant_id)
         return rate_list
