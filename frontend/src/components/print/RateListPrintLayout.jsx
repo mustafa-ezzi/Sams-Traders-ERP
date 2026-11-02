@@ -1,17 +1,18 @@
-import { Fragment } from "react";
 import { CompanyLetterheadBanner } from "./InvoicePrintLayout";
 import { formatMoney } from "../../utils/format";
 
+const COL_COUNT = 8;
+
 const groupLinesByGroup = (lines = []) => {
   const groups = new Map();
-  lines.forEach((line, index) => {
+  lines.forEach((line) => {
     const groupName =
       String(line.groupName || line.group_name || "Ungrouped").trim() ||
       "Ungrouped";
     if (!groups.has(groupName)) {
       groups.set(groupName, []);
     }
-    groups.get(groupName).push({ ...line, _index: index });
+    groups.get(groupName).push(line);
   });
   return [...groups.entries()].sort(([a], [b]) =>
     a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }),
@@ -27,7 +28,24 @@ const formatPercent = (value) => {
   })}%`;
 };
 
-const COL_COUNT = 8;
+const buildPrintRows = (lines = []) => {
+  const rows = [];
+  let serial = 0;
+  groupLinesByGroup(lines).forEach(([groupName, groupLines]) => {
+    rows.push({ type: "group", key: `group-${groupName}`, groupName });
+    groupLines.forEach((line, index) => {
+      serial += 1;
+      rows.push({
+        type: "line",
+        key: line.id || `${groupName}-${serial}`,
+        serial,
+        line,
+        alt: index % 2 === 1,
+      });
+    });
+  });
+  return rows;
+};
 
 const RateListPrintLayout = ({
   company,
@@ -39,17 +57,19 @@ const RateListPrintLayout = ({
 }) => {
   const companyName = company?.name || "Company";
   const logoSrc = company?.logo || company?.logoUrl || "/logo.png";
-  const grouped = groupLinesByGroup(lines);
-  let serial = 0;
+  const rows = buildPrintRows(lines);
+  const showTitle = title && title.trim() && title.trim().toLowerCase() !== "rate list";
 
   return (
     <article
       className="inv-print-sheet mx-auto max-w-[210mm] bg-white px-8 py-8 text-slate-800 print:max-w-none print:px-0 print:py-0"
       style={{
-        ["--inv-accent"]: "#334155",
+        ["--inv-accent"]: "#1e293b",
         ["--inv-accent-soft"]: "#f1f5f9",
         fontFamily:
           '"Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif',
+        WebkitPrintColorAdjust: "exact",
+        printColorAdjust: "exact",
       }}
     >
       <CompanyLetterheadBanner
@@ -61,91 +81,106 @@ const RateListPrintLayout = ({
         ntn={company?.ntn || ""}
       />
 
-      <div className="mt-5 flex items-end justify-between gap-4 border-b border-slate-300 pb-3">
-        <div>
-          <h1 className="text-[20px] font-bold tracking-wide text-slate-900">
-            RATE LIST
-          </h1>
-          {title && title !== "Rate List" ? (
-            <p className="mt-0.5 text-[13px] text-slate-600">{title}</p>
-          ) : null}
-          {notes ? (
-            <p className="mt-1 max-w-xl text-[12px] text-slate-500">{notes}</p>
-          ) : null}
+      <div className="mt-5 flex justify-end">
+        <div className="border border-slate-300 px-3 py-1.5 text-right">
+          <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+            Date
+          </p>
+          <p className="mt-0.5 text-[13px] font-bold text-slate-900">
+            {formatDisplayDate(printDate)}
+          </p>
         </div>
-        <p className="shrink-0 text-[13px] text-slate-700">
-          <span className="font-medium text-slate-500">Date:</span>{" "}
-          <span className="font-semibold">{formatDisplayDate(printDate)}</span>
-        </p>
       </div>
 
-      {!grouped.length ? (
+      <div className="mt-2 flex items-center gap-3">
+        <div className="h-px flex-1 bg-slate-300" />
+        <h1 className="shrink-0 text-[18px] font-extrabold tracking-[0.22em] text-slate-800">
+          RATE LIST
+        </h1>
+        <div className="h-px flex-1 bg-slate-300" />
+      </div>
+      {showTitle ? (
+        <p className="mt-1.5 text-center text-[14px] font-semibold text-slate-700">
+          {title}
+        </p>
+      ) : null}
+      {notes ? (
+        <p className="mt-1 text-center text-[11px] text-slate-500">{notes}</p>
+      ) : null}
+
+      {!rows.length ? (
         <p className="mt-10 text-center text-sm text-slate-500">
           No products selected for print.
         </p>
       ) : (
-        <table className="mt-4 w-full border-collapse text-left text-[12px]">
+        <table className="mt-5 w-full border-collapse overflow-hidden border border-slate-300 text-left text-[11.5px]">
           <thead>
-            <tr className="border-b-2 border-slate-800 text-[10px] font-bold uppercase tracking-wide text-slate-700">
-              <th className="w-10 py-2 pr-2">S.No</th>
-              <th className="w-[78px] py-2 pr-2">SKU</th>
-              <th className="py-2 pr-2">Product</th>
-              <th className="py-2 pr-2">Description</th>
-              <th className="w-14 py-2 pr-2">UOM</th>
-              <th className="w-[78px] py-2 pr-2 text-right">TP</th>
-              <th className="w-[62px] py-2 pr-2 text-right">Disc %</th>
-              <th className="w-[92px] py-2 text-right">Selling Price</th>
+            <tr
+              className="text-[10px] font-bold uppercase tracking-[0.12em] text-white"
+              style={{ background: "#1e293b" }}
+            >
+              <th className="w-10 px-2 py-2.5 text-center">S.No</th>
+              <th className="w-[76px] px-2 py-2.5">SKU</th>
+              <th className="px-2 py-2.5">Product</th>
+              <th className="px-2 py-2.5">Description</th>
+              <th className="w-14 px-2 py-2.5">UOM</th>
+              <th className="w-[78px] px-2 py-2.5 text-right">TP</th>
+              <th className="w-[62px] px-2 py-2.5 text-right">Disc %</th>
+              <th className="w-[96px] px-2 py-2.5 text-right">Selling Price</th>
             </tr>
           </thead>
           <tbody>
-            {grouped.map(([groupName, groupLines]) => (
-              <Fragment key={groupName}>
-                <tr>
+            {rows.map((row) =>
+              row.type === "group" ? (
+                <tr key={row.key}>
                   <td
                     colSpan={COL_COUNT}
-                    className="bg-slate-100 py-1.5 pl-2 text-[11px] font-bold uppercase tracking-wide text-slate-800"
+                    className="border-t border-slate-300 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-800"
+                    style={{
+                      background: "#e2e8f0",
+                      borderLeft: "4px solid #1e293b",
+                    }}
                   >
-                    {groupName}
+                    {row.groupName}
                   </td>
                 </tr>
-                {groupLines.map((line) => {
-                  serial += 1;
-                  return (
-                    <tr
-                      key={line.id || `${groupName}-${serial}`}
-                      className="border-b border-slate-200 align-top"
-                    >
-                      <td className="py-1.5 pr-2 tabular-nums text-slate-500">
-                        {serial}
-                      </td>
-                      <td className="py-1.5 pr-2 whitespace-nowrap">
-                        {line.sku || "—"}
-                      </td>
-                      <td className="py-1.5 pr-2 font-medium text-slate-900">
-                        {line.productName || line.product_name || "—"}
-                      </td>
-                      <td className="py-1.5 pr-2 text-slate-600">
-                        {line.description || "—"}
-                      </td>
-                      <td className="py-1.5 pr-2 whitespace-nowrap">
-                        {line.uomName || line.uom_name || "—"}
-                      </td>
-                      <td className="py-1.5 pr-2 text-right tabular-nums">
-                        {formatMoney(line.tradePrice ?? line.trade_price)}
-                      </td>
-                      <td className="py-1.5 pr-2 text-right tabular-nums">
-                        {formatPercent(
-                          line.discountPercent ?? line.discount_percent,
-                        )}
-                      </td>
-                      <td className="py-1.5 text-right font-semibold tabular-nums text-slate-900">
-                        {formatMoney(line.sellingPrice ?? line.selling_price)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </Fragment>
-            ))}
+              ) : (
+                <tr
+                  key={row.key}
+                  className="align-top"
+                  style={{ background: row.alt ? "#f8fafc" : "#ffffff" }}
+                >
+                  <td className="border-t border-slate-200 px-2 py-2 text-center tabular-nums text-slate-500">
+                    {row.serial}
+                  </td>
+                  <td className="border-t border-slate-200 px-2 py-2 whitespace-nowrap text-slate-700">
+                    {row.line.sku || "—"}
+                  </td>
+                  <td className="border-t border-slate-200 px-2 py-2 font-medium text-slate-900">
+                    {row.line.productName || row.line.product_name || "—"}
+                  </td>
+                  <td className="border-t border-slate-200 px-2 py-2 text-slate-600">
+                    {row.line.description || "—"}
+                  </td>
+                  <td className="border-t border-slate-200 px-2 py-2 whitespace-nowrap text-slate-600">
+                    {row.line.uomName || row.line.uom_name || "—"}
+                  </td>
+                  <td className="border-t border-slate-200 px-2 py-2 text-right tabular-nums text-slate-700">
+                    {formatMoney(row.line.tradePrice ?? row.line.trade_price)}
+                  </td>
+                  <td className="border-t border-slate-200 px-2 py-2 text-right tabular-nums text-slate-600">
+                    {formatPercent(
+                      row.line.discountPercent ?? row.line.discount_percent,
+                    )}
+                  </td>
+                  <td className="border-t border-slate-200 px-2 py-2 text-right font-semibold tabular-nums text-slate-900">
+                    {formatMoney(
+                      row.line.sellingPrice ?? row.line.selling_price,
+                    )}
+                  </td>
+                </tr>
+              ),
+            )}
           </tbody>
         </table>
       )}
