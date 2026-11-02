@@ -677,6 +677,9 @@ const filterNavItems = (items = [], { isTenantChild, perms }) =>
   items.filter((item) => {
     if (item.orgAdminOnly) return !isTenantChild;
     if (!isTenantChild) return true;
+    if (item.perm === "rate_list") {
+      return perms.includes("rate_list") || perms.includes("rate_list_read");
+    }
     return Boolean(item.perm && perms.includes(item.perm));
   });
 

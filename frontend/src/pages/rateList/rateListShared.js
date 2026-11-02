@@ -41,8 +41,71 @@ export const createEmptyLine = () =>
     cost: "0",
     percentage: "0",
     discountPercent: "0",
-    includeInPrint: true,
+    includeInPrint: false,
   });
+
+export const uniqueProductsById = (products = []) => {
+  const seen = new Set();
+  return (products || []).filter((product) => {
+    const id = String(product?.id || "");
+    if (!id || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+};
+
+export const lineFromProduct = (product, saved = null) =>
+  withComputedPrices({
+    key: saved?.id || saved?.key || product.id,
+    productId: product.id,
+    groupId: saved?.groupId || "",
+    sku: saved?.sku || product.sku || "",
+    productName: saved?.productName || product.name || "",
+    uomName:
+      saved?.uomName || product.unit_name || product.unitName || "",
+    description: saved?.description || "",
+    cost:
+      saved?.cost ??
+      product.confirmed_unit_cost ??
+      product.confirmedUnitCost ??
+      0,
+    percentage: saved?.percentage ?? 0,
+    discountPercent: saved?.discountPercent ?? 0,
+    includeInPrint: Boolean(saved),
+  });
+
+export const buildFinishedGoodLines = (products = [], savedLines = []) => {
+  const savedByProduct = new Map(
+    (savedLines || [])
+      .filter((line) => line.productId)
+      .map((line) => [String(line.productId), line]),
+  );
+  const used = new Set();
+  const catalogLines = uniqueProductsById(products)
+    .slice()
+    .sort((a, b) =>
+      `${a.sku || ""} ${a.name || ""}`.localeCompare(
+        `${b.sku || ""} ${b.name || ""}`,
+        undefined,
+        { numeric: true, sensitivity: "base" },
+      ),
+    )
+    .map((product) => {
+      const saved = savedByProduct.get(String(product.id));
+      if (saved) used.add(String(product.id));
+      return lineFromProduct(product, saved);
+    });
+  const extras = (savedLines || [])
+    .filter((line) => line.productId && !used.has(String(line.productId)))
+    .map((line) =>
+      withComputedPrices({
+        ...line,
+        key: line.id || line.key || line.productId,
+        includeInPrint: true,
+      }),
+    );
+  return [...catalogLines, ...extras];
+};
 
 export const formatDisplayDate = (value) => {
   if (!value) return "—";

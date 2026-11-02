@@ -83,8 +83,13 @@ const CreateUpdateStaffAccess = () => {
   const togglePerm = (key) => {
     setForm((prev) => {
       const set = new Set(prev.ui_permissions);
-      if (set.has(key)) set.delete(key);
-      else set.add(key);
+      if (set.has(key)) {
+        set.delete(key);
+      } else {
+        set.add(key);
+        if (key === "rate_list") set.delete("rate_list_read");
+        if (key === "rate_list_read") set.delete("rate_list");
+      }
       return { ...prev, ui_permissions: [...set] };
     });
   };

@@ -39,6 +39,7 @@ const PERM_HOME = {
   masters_categories: "/masters/categories",
   rate_list_groups: "/masters/rate-list-groups",
   rate_list: "/rate-lists",
+  rate_list_read: "/rate-lists",
   warehouses: "/warehouses",
   raw_materials: "/raw-materials",
   products: "/products",
@@ -73,6 +74,7 @@ export function pathToPermissionKey(pathname) {
   if (p.startsWith("/masters/brands")) return "masters_brands";
   if (p.startsWith("/masters/categories")) return "masters_categories";
   if (p.startsWith("/masters/rate-list-groups")) return "rate_list_groups";
+  if (p.startsWith("/rate-lists/create")) return "rate_list";
   if (p.startsWith("/rate-lists")) return "rate_list";
 
   if (p.startsWith("/purchase-invoices")) return "purchase_invoices";
@@ -136,5 +138,17 @@ export function childMayAccessPath(isTenantChild, uiPermissions, pathname) {
     return false;
   }
   if (!key) return false;
-  return (uiPermissions || []).includes(key);
+  const perms = uiPermissions || [];
+  if (key === "rate_list") {
+    if (pathname?.startsWith("/rate-lists/create")) {
+      return perms.includes("rate_list");
+    }
+    return perms.includes("rate_list") || perms.includes("rate_list_read");
+  }
+  return perms.includes(key);
+}
+
+export function canWriteRateList(isTenantChild, uiPermissions = []) {
+  if (!isTenantChild) return true;
+  return (uiPermissions || []).includes("rate_list");
 }

@@ -14,6 +14,7 @@ import dimensionService from "../../api/services/dimensionService";
 import { useToast } from "../../context/ToastContext";
 import { useAuth } from "../../context/AuthContext";
 import { dimensionToCompanyConfig } from "../../utils/dimensionCompany";
+import { canWriteRateList } from "../../utils/tenantAccess";
 import { usePersistedListState } from "../../hooks/usePersistedListState";
 import {
   extractErrorMessage,
@@ -23,7 +24,8 @@ import {
 const GetAllRateList = () => {
   const navigate = useNavigate();
   const toast = useToast();
-  const { allowedDimensions, tenantId } = useAuth();
+  const { allowedDimensions, tenantId, isTenantChild, uiPermissions } = useAuth();
+  const canWrite = canWriteRateList(isTenantChild, uiPermissions);
   const printDimensions = useMemo(
     () =>
       (allowedDimensions || []).filter(
@@ -116,9 +118,7 @@ const GetAllRateList = () => {
       const rateList = await rateListService.getById(recordId);
       if (printCancelledRef.current) return;
 
-      const selectedLines = (rateList.lines || []).filter(
-        (line) => line.includeInPrint,
-      );
+      const selectedLines = rateList.lines || [];
       if (!selectedLines.length) {
         toast.error("No products selected for print on this rate list");
         setPrintModal(null);
@@ -176,9 +176,11 @@ const GetAllRateList = () => {
               Build priced product lists by group and print with company branding.
             </p>
           </div>
-          <Button onClick={() => navigate("/rate-lists/create")}>
-            New rate list
-          </Button>
+          {canWrite ? (
+            <Button onClick={() => navigate("/rate-lists/create")}>
+              New rate list
+            </Button>
+          ) : null}
         </div>
 
         <div className="mt-4 flex flex-wrap items-end gap-3">
@@ -248,16 +250,18 @@ const GetAllRateList = () => {
                           />
                           <IconButton
                             icon="edit"
-                            label="Edit"
+                            label={canWrite ? "Edit" : "View"}
                             onClick={() =>
                               navigate(`/rate-lists/${record.id}/edit`)
                             }
                           />
-                          <IconButton
-                            icon="delete"
-                            label="Delete"
-                            onClick={() => setDeleteId(record.id)}
-                          />
+                          {canWrite ? (
+                            <IconButton
+                              icon="delete"
+                              label="Delete"
+                              onClick={() => setDeleteId(record.id)}
+                            />
+                          ) : null}
                         </div>
                       </td>
                     </tr>

@@ -40,6 +40,7 @@ TENANT_UI_PERMISSION_KEYS = frozenset(
         "masters_categories",
         "rate_list_groups",
         "rate_list",
+        "rate_list_read",
         "warehouses",
         "raw_materials",
         "products",

@@ -3,7 +3,6 @@ import { useNavigate, useParams } from "react-router-dom";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import FormInput from "../../components/ui/FormInput";
-import SearchableSelect from "../../components/ui/SearchableSelect";
 import DimensionPrintButtons from "../../components/ui/DimensionPrintButtons";
 import RateListPrintModal from "../../components/print/RateListPrintModal";
 import productService from "../../api/services/productService";
@@ -14,8 +13,9 @@ import { useToast } from "../../context/ToastContext";
 import { useAuth } from "../../context/AuthContext";
 import { dimensionToCompanyConfig } from "../../utils/dimensionCompany";
 import { selectClassName } from "../../utils/themeClasses";
+import { canWriteRateList } from "../../utils/tenantAccess";
 import {
-  createEmptyLine,
+  buildFinishedGoodLines,
   extractErrorMessage,
   formatDisplayDate,
   todayIsoDate,
@@ -27,7 +27,8 @@ const CreateUpdateRateList = () => {
   const editingId = id || "";
   const navigate = useNavigate();
   const toast = useToast();
-  const { allowedDimensions, tenantId } = useAuth();
+  const { allowedDimensions, tenantId, isTenantChild, uiPermissions } = useAuth();
+  const canWrite = canWriteRateList(isTenantChild, uiPermissions);
   const printDimensions = useMemo(
     () =>
       (allowedDimensions || []).filter(
@@ -39,18 +40,12 @@ const CreateUpdateRateList = () => {
   const [title, setTitle] = useState("");
   const [listDate, setListDate] = useState(todayIsoDate());
   const [notes, setNotes] = useState("");
-  const [lines, setLines] = useState([createEmptyLine()]);
-  const [products, setProducts] = useState([]);
+  const [lines, setLines] = useState([]);
   const [groups, setGroups] = useState([]);
   const [groupFilter, setGroupFilter] = useState("");
-  const [loading, setLoading] = useState(Boolean(editingId));
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [printModal, setPrintModal] = useState(null);
-
-  const productMap = useMemo(
-    () => Object.fromEntries(products.map((product) => [product.id, product])),
-    [products],
-  );
 
   const groupOptions = useMemo(
     () => groups.map((group) => ({ id: group.id, name: group.name })),
@@ -68,59 +63,51 @@ const CreateUpdateRateList = () => {
     visibleLines.length > 0 &&
     visibleLines.every(({ line }) => line.includeInPrint);
 
-  const loadLookups = async () => {
-    try {
-      const [productOptions, groupList] = await Promise.all([
-        productService.options("", { product_type: "FINISHED_GOOD" }),
-        rateListGroupService.options(),
-      ]);
-      setProducts(productOptions || []);
-      setGroups(groupList || []);
-    } catch (loadError) {
-      toast.error(extractErrorMessage(loadError) || "Failed to load lookups");
-    }
-  };
-
-  const loadRateList = async () => {
-    if (!editingId) return;
-    setLoading(true);
-    try {
-      const record = await rateListService.getById(editingId);
-      setTitle(record.title || "");
-      setListDate(record.listDate || todayIsoDate());
-      setNotes(record.notes || "");
-      setLines(
-        (record.lines || []).length
-          ? record.lines.map((line) =>
-              withComputedPrices({
-                key: line.id || createEmptyLine().key,
-                productId: line.productId || "",
-                groupId: line.groupId || "",
-                sku: line.sku || "",
-                productName: line.productName || "",
-                uomName: line.uomName || "",
-                description: line.description || "",
-                cost: line.cost ?? 0,
-                percentage: line.percentage ?? 0,
-                discountPercent: line.discountPercent ?? 0,
-                includeInPrint: line.includeInPrint !== false,
-              }),
-            )
-          : [createEmptyLine()],
-      );
-    } catch (loadError) {
-      toast.error(extractErrorMessage(loadError) || "Failed to load rate list");
-      navigate("/rate-lists");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const selectedLines = useMemo(
+    () => lines.filter((line) => line.includeInPrint && line.productId),
+    [lines],
+  );
 
   useEffect(() => {
-    loadLookups();
-    loadRateList();
+    if (!canWrite && !editingId) {
+      navigate("/rate-lists", { replace: true });
+      return undefined;
+    }
+    let cancelled = false;
+    const load = async () => {
+      setLoading(true);
+      try {
+        const [productOptions, groupList] = await Promise.all([
+          productService.options("", { product_type: "FINISHED_GOOD" }),
+          rateListGroupService.options(),
+        ]);
+        if (cancelled) return;
+        setGroups(groupList || []);
+        let savedLines = [];
+        if (editingId) {
+          const record = await rateListService.getById(editingId);
+          if (cancelled) return;
+          setTitle(record.title || "");
+          setListDate(record.listDate || todayIsoDate());
+          setNotes(record.notes || "");
+          savedLines = record.lines || [];
+        }
+        setLines(buildFinishedGoodLines(productOptions || [], savedLines));
+      } catch (loadError) {
+        if (!cancelled) {
+          toast.error(extractErrorMessage(loadError) || "Failed to load rate list");
+          if (editingId) navigate("/rate-lists");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editingId]);
+  }, [editingId, canWrite]);
 
   const updateLine = (index, patch) => {
     setLines((prev) =>
@@ -128,36 +115,6 @@ const CreateUpdateRateList = () => {
         lineIndex === index ? withComputedPrices({ ...line, ...patch }) : line,
       ),
     );
-  };
-
-  const handleProductChange = (index, productId) => {
-    const product = productMap[productId];
-    if (!product) {
-      updateLine(index, {
-        productId: "",
-        sku: "",
-        productName: "",
-        uomName: "",
-        cost: "0",
-      });
-      return;
-    }
-    updateLine(index, {
-      productId,
-      sku: product.sku || "",
-      productName: product.name || "",
-      uomName: product.unit_name || product.unitName || "",
-      cost: product.confirmed_unit_cost ?? product.confirmedUnitCost ?? 0,
-    });
-  };
-
-  const addLine = () => setLines((prev) => [...prev, createEmptyLine()]);
-
-  const removeLine = (index) => {
-    setLines((prev) => {
-      if (prev.length <= 1) return [createEmptyLine()];
-      return prev.filter((_, lineIndex) => lineIndex !== index);
-    });
   };
 
   const toggleSelectAllVisible = () => {
@@ -176,7 +133,7 @@ const CreateUpdateRateList = () => {
     title: title.trim(),
     list_date: listDate,
     notes: notes.trim(),
-    lines: lines.map((line, index) => ({
+    lines: selectedLines.map((line, index) => ({
       product_id: line.productId,
       group_id: line.groupId || null,
       sku: line.sku || "",
@@ -186,24 +143,27 @@ const CreateUpdateRateList = () => {
       cost: Number(line.cost) || 0,
       percentage: Number(line.percentage) || 0,
       discount_percent: Number(line.discountPercent) || 0,
-      include_in_print: Boolean(line.includeInPrint),
+      include_in_print: true,
       sort_order: index,
     })),
   });
 
   const validateBeforeSave = () => {
+    if (!canWrite) {
+      toast.error("You have read-only access to rate lists");
+      return false;
+    }
     if (!listDate) {
       toast.error("List date is required");
       return false;
     }
-    if (!lines.length) {
-      toast.error("Add at least one line");
+    if (!selectedLines.length) {
+      toast.error("Select at least one finished good to add to the rate list");
       return false;
     }
-    for (let index = 0; index < lines.length; index += 1) {
-      const line = lines[index];
-      if (!line.productId) {
-        toast.error(`Line ${index + 1}: select a product`);
+    for (const line of selectedLines) {
+      if (!line.groupId) {
+        toast.error(`${line.productName || "Product"}: select a group`);
         return false;
       }
     }
@@ -229,7 +189,7 @@ const CreateUpdateRateList = () => {
   };
 
   const handleSave = async () => {
-    if (!validateBeforeSave()) return;
+    if (!canWrite || !validateBeforeSave()) return;
     setSaving(true);
     try {
       const payload = buildPayload();
@@ -320,10 +280,18 @@ const CreateUpdateRateList = () => {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-              {editingId ? "Edit Rate List" : "Create Rate List"}
+              {canWrite
+                ? editingId
+                  ? "Edit Rate List"
+                  : "Create Rate List"
+                : "View Rate List"}
             </h2>
             <p className="mt-1 text-sm text-slate-500">
-              Cost + % → TP, then discount % → selling price. Print hides cost and markup %.
+              All finished goods are listed. Check the products to add to this
+              rate list.
+              {canWrite
+                ? ""
+                : " You have read-only access."}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -334,11 +302,13 @@ const CreateUpdateRateList = () => {
               dimensions={printDimensions}
               onPrint={handleOpenPrint}
               recordId={editingId || "draft"}
-              disabled={!lines.some((line) => line.includeInPrint)}
+              disabled={!selectedLines.length}
             />
-            <Button onClick={handleSave} disabled={saving}>
-              {saving ? "Saving…" : "Save"}
-            </Button>
+            {canWrite ? (
+              <Button onClick={handleSave} disabled={saving}>
+                {saving ? "Saving…" : "Save"}
+              </Button>
+            ) : null}
           </div>
         </div>
 
@@ -348,6 +318,7 @@ const CreateUpdateRateList = () => {
             value={title}
             onChange={(event) => setTitle(event.target.value)}
             placeholder="Optional title"
+            disabled={!canWrite}
           />
           <FormInput
             label="List date"
@@ -355,6 +326,7 @@ const CreateUpdateRateList = () => {
             required
             value={listDate}
             onChange={(event) => setListDate(event.target.value)}
+            disabled={!canWrite}
           />
           <div>
             <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
@@ -381,6 +353,7 @@ const CreateUpdateRateList = () => {
             value={notes}
             onChange={(event) => setNotes(event.target.value)}
             placeholder="Optional notes"
+            disabled={!canWrite}
           />
         </div>
       </Card>
@@ -388,24 +361,22 @@ const CreateUpdateRateList = () => {
       <Card>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div className="text-sm text-slate-600 dark:text-slate-300">
-            {lines.length} line{lines.length === 1 ? "" : "s"}
+            {lines.length} finished good{lines.length === 1 ? "" : "s"}
+            {` · ${selectedLines.length} selected`}
             {groupFilter
               ? ` · showing ${visibleLines.length} in filter`
               : ""}
           </div>
-          <div className="flex gap-2">
+          {canWrite ? (
             <Button variant="secondary" onClick={toggleSelectAllVisible}>
-              {allVisibleSelected ? "Unselect visible" : "Select visible for print"}
+              {allVisibleSelected ? "Unselect visible" : "Select visible"}
             </Button>
-            <Button variant="secondary" onClick={addLine}>
-              Add line
-            </Button>
-          </div>
+          ) : null}
         </div>
 
         {!lines.length ? (
           <p className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500 dark:border-slate-700">
-            No products yet. Add a line to start the rate list.
+            No finished goods found.
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -413,7 +384,7 @@ const CreateUpdateRateList = () => {
               <thead className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500 dark:border-slate-700">
                 <tr>
                   <th className="px-2 py-2">S.No</th>
-                  <th className="px-2 py-2">Print</th>
+                  <th className="px-2 py-2">Include</th>
                   <th className="px-2 py-2 min-w-[180px]">Product</th>
                   <th className="px-2 py-2">SKU</th>
                   <th className="px-2 py-2 min-w-[140px]">Description</th>
@@ -424,7 +395,6 @@ const CreateUpdateRateList = () => {
                   <th className="px-2 py-2">Disc %</th>
                   <th className="px-2 py-2">Selling</th>
                   <th className="px-2 py-2 min-w-[140px]">Group of</th>
-                  <th className="px-2 py-2" />
                 </tr>
               </thead>
               <tbody>
@@ -438,6 +408,7 @@ const CreateUpdateRateList = () => {
                       <input
                         type="checkbox"
                         checked={Boolean(line.includeInPrint)}
+                        disabled={!canWrite}
                         onChange={(event) =>
                           updateLine(index, {
                             includeInPrint: event.target.checked,
@@ -445,17 +416,8 @@ const CreateUpdateRateList = () => {
                         }
                       />
                     </td>
-                    <td className="px-2 py-2 min-w-[200px]">
-                      <SearchableSelect
-                        value={line.productId}
-                        options={products}
-                        getOptionLabel={(option) =>
-                          `${option.sku ? `${option.sku} · ` : ""}${option.name}`
-                        }
-                        onChange={(value) => handleProductChange(index, value)}
-                        placeholder="Select product"
-                        showAllOptions
-                      />
+                    <td className="px-2 py-2 min-w-[200px] font-medium text-slate-800 dark:text-slate-100">
+                      {line.productName || "—"}
                     </td>
                     <td className="px-2 py-2 whitespace-nowrap text-slate-600">
                       {line.sku || "—"}
@@ -468,6 +430,7 @@ const CreateUpdateRateList = () => {
                           updateLine(index, { description: event.target.value })
                         }
                         placeholder="Optional"
+                        disabled={!canWrite}
                       />
                     </td>
                     <td className="px-2 py-2 whitespace-nowrap">
@@ -483,6 +446,7 @@ const CreateUpdateRateList = () => {
                         onChange={(event) =>
                           updateLine(index, { cost: event.target.value })
                         }
+                        disabled={!canWrite}
                       />
                     </td>
                     <td className="px-2 py-2">
@@ -495,6 +459,7 @@ const CreateUpdateRateList = () => {
                         onChange={(event) =>
                           updateLine(index, { percentage: event.target.value })
                         }
+                        disabled={!canWrite}
                       />
                     </td>
                     <td className="px-2 py-2 whitespace-nowrap font-medium">
@@ -513,6 +478,7 @@ const CreateUpdateRateList = () => {
                             discountPercent: event.target.value,
                           })
                         }
+                        disabled={!canWrite}
                       />
                     </td>
                     <td className="px-2 py-2 whitespace-nowrap font-semibold text-slate-900 dark:text-slate-100">
@@ -525,6 +491,7 @@ const CreateUpdateRateList = () => {
                         onChange={(event) =>
                           updateLine(index, { groupId: event.target.value })
                         }
+                        disabled={!canWrite}
                       >
                         <option value="">Select group</option>
                         {groupOptions.map((group) => (
@@ -533,14 +500,6 @@ const CreateUpdateRateList = () => {
                           </option>
                         ))}
                       </select>
-                    </td>
-                    <td className="px-2 py-2">
-                      <Button
-                        variant="secondary"
-                        onClick={() => removeLine(index)}
-                      >
-                        Remove
-                      </Button>
                     </td>
                   </tr>
                 ))}

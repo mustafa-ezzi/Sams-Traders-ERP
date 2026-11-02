@@ -6,7 +6,7 @@ from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework.response import Response
 from rest_framework import viewsets, status
 from rest_framework.viewsets import ModelViewSet
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, SAFE_METHODS
 from django.utils.timezone import now
 from decimal import Decimal
 from django.db.models import Count, DecimalField, IntegerField, OuterRef, Prefetch, Q, Subquery, Sum, Value
@@ -166,6 +166,21 @@ class BrandViewSet(SharedMasterViewSet):
     serializer_class = BrandSerializer
 
 
+class RateListAccessPermission(IsAuthenticated):
+    """Tenant staff can be granted full rate-list access or read-only."""
+
+    def has_permission(self, request, view):
+        if not super().has_permission(request, view):
+            return False
+        user = request.user
+        if not getattr(user, "parent_user_id", None):
+            return True
+        perms = set(user.ui_permissions or [])
+        if request.method in SAFE_METHODS:
+            return "rate_list" in perms or "rate_list_read" in perms
+        return "rate_list" in perms
+
+
 class RateListGroupViewSet(SharedMasterViewSet):
     queryset = RateListGroup.objects.all()
     serializer_class = RateListGroupSerializer
@@ -173,6 +188,7 @@ class RateListGroupViewSet(SharedMasterViewSet):
 
 class RateListViewSet(BaseTenantViewSet):
     serializer_class = RateListSerializer
+    permission_classes = [RateListAccessPermission]
     search_fields = ["title", "notes"]
     ordering_fields = ["list_date", "title", "created_at", "id"]
     ordering = ["-list_date", "-created_at", "-id"]
