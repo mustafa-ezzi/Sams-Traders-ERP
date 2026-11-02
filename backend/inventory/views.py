@@ -27,6 +27,8 @@ from .models import (
     Production,
     Product,
     ProductMaterial,
+    RateList,
+    RateListGroup,
     RawMaterial,
     Size,
     Stock,
@@ -47,6 +49,8 @@ from .serializers import (
     PartySerializer,
     PartyOpeningBalanceSerializer,
     ProductDropdownOptionSerializer,
+    RateListGroupSerializer,
+    RateListSerializer,
     SalesmanSerializer,
     SalesmanDropdownOptionSerializer,
     ProductionSerializer,
@@ -160,6 +164,32 @@ class SharedMasterViewSet(BaseTenantViewSet):
 class BrandViewSet(SharedMasterViewSet):
     queryset = Brand.objects.all()
     serializer_class = BrandSerializer
+
+
+class RateListGroupViewSet(SharedMasterViewSet):
+    queryset = RateListGroup.objects.all()
+    serializer_class = RateListGroupSerializer
+
+
+class RateListViewSet(BaseTenantViewSet):
+    serializer_class = RateListSerializer
+    search_fields = ["title", "notes"]
+    ordering_fields = ["list_date", "title", "created_at", "id"]
+    ordering = ["-list_date", "-created_at", "-id"]
+
+    def get_queryset(self):
+        return (
+            RateList.objects.filter(
+                **get_request_tenant_filter(self.request), deleted_at__isnull=True
+            )
+            .prefetch_related("lines", "lines__group", "lines__product")
+        )
+
+    def perform_destroy(self, instance):
+        stamp = now()
+        instance.deleted_at = stamp
+        instance.save(update_fields=["deleted_at", "updated_at"])
+        instance.lines.filter(deleted_at__isnull=True).update(deleted_at=stamp)
 
 
 class CategoryViewSet(SharedMasterViewSet):

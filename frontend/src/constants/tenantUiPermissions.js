@@ -65,6 +65,8 @@ export const TENANT_UI_PERMISSION_GROUPS = [
       { id: "masters_units", label: "Units" },
       { id: "masters_brands", label: "Brands" },
       { id: "masters_categories", label: "Categories" },
+      { id: "rate_list_groups", label: "Rate list groups" },
+      { id: "rate_list", label: "Rate lists" },
       { id: "warehouses", label: "Warehouses" },
       { id: "raw_materials", label: "Raw materials" },
       { id: "products", label: "Products" },

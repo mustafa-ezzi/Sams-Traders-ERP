@@ -492,6 +492,18 @@ const navigation = [
         perm: "masters_categories",
       },
       {
+        to: "/masters/rate-list-groups",
+        label: "Rate List Groups",
+        icon: icons.masters,
+        perm: "rate_list_groups",
+      },
+      {
+        to: "/rate-lists",
+        label: "Rate Lists",
+        icon: icons.products,
+        perm: "rate_list",
+      },
+      {
         to: "/warehouses",
         label: "Warehouses",
         icon: icons.warehouse,
@@ -638,6 +650,9 @@ const pageTitles = {
   "/masters/categories": { title: "Categories", eyebrow: "Masters" },
   "/masters/categories/create": { title: "Create Category", eyebrow: "Masters" },
   "/masters/brands": { title: "Brands", eyebrow: "Masters" },
+  "/masters/rate-list-groups": { title: "Rate List Groups", eyebrow: "Masters" },
+  "/rate-lists": { title: "Rate Lists", eyebrow: "Sales" },
+  "/rate-lists/create": { title: "Create Rate List", eyebrow: "Sales" },
   "/support": { title: "Support", eyebrow: "Users" },
   "/settings/staff": { title: "Staff access", eyebrow: "Admin" },
   "/settings/activity-log": { title: "Activity log", eyebrow: "Admin" },
@@ -878,6 +893,9 @@ const Layout = () => {
     }
     if (pathname.startsWith("/masters/categories/") && pathname.endsWith("/edit")) {
       return { title: "Edit Category", eyebrow: "Masters" };
+    }
+    if (pathname.startsWith("/rate-lists/") && pathname.endsWith("/edit")) {
+      return { title: "Edit Rate List", eyebrow: "Sales" };
     }
     if (pathname.startsWith("/production/") && pathname.endsWith("/edit")) {
       return { title: "Edit Production", eyebrow: "Inventory" };

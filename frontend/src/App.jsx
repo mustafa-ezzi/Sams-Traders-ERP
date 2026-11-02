@@ -7,6 +7,9 @@ import UnitsPage from "./pages/masters/UnitsPage";
 import CategoriesPage from "./pages/administrator/categories/GetAllCategories";
 import CategoryFormPage from "./pages/administrator/categories/CreateUpdateCategories";
 import BrandsPage from "./pages/masters/BrandsPage";
+import RateListGroupsPage from "./pages/rateList/RateListGroupsPage";
+import GetAllRateList from "./pages/rateList/GetAllRateList";
+import CreateUpdateRateList from "./pages/rateList/CreateUpdateRateList";
 import RawMaterialPage from "./pages/administrator/rawMaterial/GetAllRawMaterial";
 import RawMaterialFormPage from "./pages/administrator/rawMaterial/CreateUpdateRawMaterial";
 import ProductPage from "./pages/product/ProductPage";
@@ -143,6 +146,10 @@ const App = () => (
         <Route path="masters/categories/create" element={<CategoryFormPage />} />
         <Route path="masters/categories/:id/edit" element={<CategoryFormPage />} />
         <Route path="masters/brands" element={<BrandsPage />} />
+        <Route path="masters/rate-list-groups" element={<RateListGroupsPage />} />
+        <Route path="rate-lists" element={<GetAllRateList />} />
+        <Route path="rate-lists/create" element={<CreateUpdateRateList />} />
+        <Route path="rate-lists/:id/edit" element={<CreateUpdateRateList />} />
         <Route path="raw-materials" element={<RawMaterialPage />} />
         <Route path="raw-materials/create" element={<RawMaterialFormPage />} />
         <Route path="raw-materials/:id/edit" element={<RawMaterialFormPage />} />

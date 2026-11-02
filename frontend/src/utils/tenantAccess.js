@@ -37,6 +37,8 @@ const PERM_HOME = {
   masters_units: "/masters/units",
   masters_brands: "/masters/brands",
   masters_categories: "/masters/categories",
+  rate_list_groups: "/masters/rate-list-groups",
+  rate_list: "/rate-lists",
   warehouses: "/warehouses",
   raw_materials: "/raw-materials",
   products: "/products",
@@ -70,6 +72,8 @@ export function pathToPermissionKey(pathname) {
   if (p.startsWith("/masters/units")) return "masters_units";
   if (p.startsWith("/masters/brands")) return "masters_brands";
   if (p.startsWith("/masters/categories")) return "masters_categories";
+  if (p.startsWith("/masters/rate-list-groups")) return "rate_list_groups";
+  if (p.startsWith("/rate-lists")) return "rate_list";
 
   if (p.startsWith("/purchase-invoices")) return "purchase_invoices";
   if (p.startsWith("/purchase-returns")) return "purchase_returns";

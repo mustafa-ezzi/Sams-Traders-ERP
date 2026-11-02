@@ -19,12 +19,16 @@ from .models import (
     Product,
     ProductCostState,
     ProductMaterial,
+    RateList,
+    RateListGroup,
+    RateListLine,
     RawMaterial,
     Salesman,
     Size,
     Unit,
     Warehouse,
 )
+from .services import quantize_money
 
 class NamedDropdownOptionSerializer(serializers.Serializer):
     id = serializers.UUIDField()
@@ -85,8 +89,14 @@ class ProductDropdownOptionSerializer(serializers.Serializer):
     name = serializers.CharField()
     product_type = serializers.CharField()
     unit = serializers.UUIDField(source="unit_id", allow_null=True)
+    unit_name = serializers.SerializerMethodField()
+    confirmed_unit_cost = serializers.DecimalField(max_digits=12, decimal_places=2)
     net_amount = serializers.DecimalField(max_digits=12, decimal_places=2)
     quantity = serializers.DecimalField(max_digits=12, decimal_places=2)
+
+    def get_unit_name(self, obj):
+        unit = getattr(obj, "unit", None)
+        return getattr(unit, "name", "") or ""
 
 
 def validate_account_mapping(
@@ -1666,4 +1676,224 @@ class PartyOpeningBalanceSerializer(serializers.ModelSerializer):
                 setattr(instance, field, value)
         instance.save()
         sync_party_opening_balance_journal(instance)
+        return instance
+
+
+def compute_rate_list_prices(cost, percentage, discount_percent):
+    cost = quantize_money(cost)
+    percentage = quantize_money(percentage)
+    discount_percent = quantize_money(discount_percent)
+    trade_price = quantize_money(cost * (Decimal("1") + (percentage / Decimal("100"))))
+    selling_price = quantize_money(
+        trade_price * (Decimal("1") - (discount_percent / Decimal("100")))
+    )
+    return cost, percentage, discount_percent, trade_price, selling_price
+
+
+class RateListGroupSerializer(SharedUniqueNameSerializer):
+    duplicate_name_message = "Rate list group with this name already exists."
+
+    class Meta:
+        model = RateListGroup
+        fields = "__all__"
+        read_only_fields = ["tenant_id"]
+        extra_kwargs = {"name": {"validators": []}}
+
+
+class RateListLineSerializer(serializers.ModelSerializer):
+    product_id = serializers.UUIDField()
+    group_id = serializers.UUIDField(required=False, allow_null=True)
+    group_name = serializers.CharField(source="group.name", read_only=True, allow_null=True)
+
+    class Meta:
+        model = RateListLine
+        fields = [
+            "id",
+            "product_id",
+            "group_id",
+            "group_name",
+            "sku",
+            "product_name",
+            "uom_name",
+            "description",
+            "cost",
+            "percentage",
+            "trade_price",
+            "discount_percent",
+            "selling_price",
+            "include_in_print",
+            "sort_order",
+        ]
+        read_only_fields = ["trade_price", "selling_price", "group_name"]
+
+    def validate_product_id(self, value):
+        tenant_ids = get_shared_tenant_ids(self.context["request"])
+        if not Product.objects.filter(
+            id=value,
+            tenant_id__in=tenant_ids,
+            deleted_at__isnull=True,
+        ).exists():
+            raise serializers.ValidationError("Product not found")
+        return value
+
+    def validate_group_id(self, value):
+        if value is None:
+            return value
+        tenant_ids = get_shared_tenant_ids(self.context["request"])
+        if not RateListGroup.objects.filter(
+            id=value,
+            tenant_id__in=tenant_ids,
+            deleted_at__isnull=True,
+        ).exists():
+            raise serializers.ValidationError("Rate list group not found")
+        return value
+
+    def validate(self, attrs):
+        cost = attrs.get("cost", 0)
+        percentage = attrs.get("percentage", 0)
+        discount_percent = attrs.get("discount_percent", 0)
+
+        if Decimal(str(cost or 0)) < 0:
+            raise serializers.ValidationError({"cost": "Cost cannot be negative."})
+        if Decimal(str(percentage or 0)) < 0:
+            raise serializers.ValidationError({"percentage": "Percentage cannot be negative."})
+        if Decimal(str(discount_percent or 0)) < 0:
+            raise serializers.ValidationError(
+                {"discount_percent": "Discount percent cannot be negative."}
+            )
+        if Decimal(str(discount_percent or 0)) > 100:
+            raise serializers.ValidationError(
+                {"discount_percent": "Discount percent cannot exceed 100."}
+            )
+
+        cost, percentage, discount_percent, trade_price, selling_price = compute_rate_list_prices(
+            cost, percentage, discount_percent
+        )
+        attrs["cost"] = cost
+        attrs["percentage"] = percentage
+        attrs["discount_percent"] = discount_percent
+        attrs["trade_price"] = trade_price
+        attrs["selling_price"] = selling_price
+        return attrs
+
+
+class RateListSerializer(serializers.ModelSerializer):
+    lines = RateListLineSerializer(many=True)
+    line_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RateList
+        fields = [
+            "id",
+            "tenant_id",
+            "title",
+            "list_date",
+            "notes",
+            "line_count",
+            "lines",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["tenant_id", "line_count", "created_at", "updated_at"]
+
+    def get_line_count(self, obj):
+        if hasattr(obj, "_prefetched_objects_cache") and "lines" in obj._prefetched_objects_cache:
+            return len([line for line in obj.lines.all() if line.deleted_at is None])
+        return obj.lines.filter(deleted_at__isnull=True).count()
+
+    def validate_lines(self, value):
+        if not value:
+            raise serializers.ValidationError("At least one line is required.")
+        return value
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        active_lines = instance.lines.filter(deleted_at__isnull=True).select_related(
+            "group", "product"
+        )
+        data["lines"] = RateListLineSerializer(active_lines, many=True).data
+        return data
+
+    def _resolve_line_snapshots(self, line_data, tenant_ids):
+        product = Product.objects.filter(
+            id=line_data["product_id"],
+            tenant_id__in=tenant_ids,
+            deleted_at__isnull=True,
+        ).select_related("unit").first()
+        if not product:
+            raise serializers.ValidationError({"product_id": "Product not found"})
+
+        group = None
+        group_id = line_data.get("group_id")
+        if group_id:
+            group = RateListGroup.objects.filter(
+                id=group_id,
+                tenant_id__in=tenant_ids,
+                deleted_at__isnull=True,
+            ).first()
+            if not group:
+                raise serializers.ValidationError({"group_id": "Rate list group not found"})
+
+        sku = (line_data.get("sku") or "").strip() or (product.sku or "")
+        product_name = (line_data.get("product_name") or "").strip() or product.name
+        uom_name = (line_data.get("uom_name") or "").strip()
+        if not uom_name and product.unit_id:
+            uom_name = product.unit.name if product.unit else ""
+
+        return {
+            "product": product,
+            "group": group,
+            "sku": sku,
+            "product_name": product_name,
+            "uom_name": uom_name,
+            "description": line_data.get("description") or "",
+            "cost": line_data["cost"],
+            "percentage": line_data["percentage"],
+            "trade_price": line_data["trade_price"],
+            "discount_percent": line_data["discount_percent"],
+            "selling_price": line_data["selling_price"],
+            "include_in_print": line_data.get("include_in_print", True),
+            "sort_order": line_data.get("sort_order", 0),
+        }
+
+    def _create_lines(self, rate_list, lines_data, tenant_id):
+        tenant_ids = get_shared_tenant_ids(self.context["request"])
+        for index, line_data in enumerate(lines_data):
+            prepared = self._resolve_line_snapshots(line_data, tenant_ids)
+            RateListLine.objects.create(
+                tenant_id=tenant_id,
+                rate_list=rate_list,
+                product=prepared["product"],
+                group=prepared["group"],
+                sku=prepared["sku"],
+                product_name=prepared["product_name"],
+                uom_name=prepared["uom_name"],
+                description=prepared["description"],
+                cost=prepared["cost"],
+                percentage=prepared["percentage"],
+                trade_price=prepared["trade_price"],
+                discount_percent=prepared["discount_percent"],
+                selling_price=prepared["selling_price"],
+                include_in_print=prepared["include_in_print"],
+                sort_order=prepared.get("sort_order", index),
+            )
+
+    @transaction.atomic
+    def create(self, validated_data):
+        lines_data = validated_data.pop("lines", [])
+        request = self.context["request"]
+        tenant_id = getattr(request, "tenant_id", None) or request.user.tenant_id
+        rate_list = RateList.objects.create(tenant_id=tenant_id, **validated_data)
+        self._create_lines(rate_list, lines_data, tenant_id)
+        return rate_list
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        lines_data = validated_data.pop("lines", None)
+        for field, value in validated_data.items():
+            setattr(instance, field, value)
+        instance.save()
+        if lines_data is not None:
+            instance.lines.filter(deleted_at__isnull=True).update(deleted_at=now())
+            self._create_lines(instance, lines_data, instance.tenant_id)
         return instance

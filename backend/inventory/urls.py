@@ -1,11 +1,29 @@
 from rest_framework.routers import DefaultRouter
-from .views import BrandViewSet, CategoryViewSet, CustomerViewSet, OpeningStockViewSet, PartyOpeningBalanceViewSet, ProductionViewSet, ProductViewSet, RawMaterialViewSet, SalesmanViewSet, SizeViewSet, SupplierViewSet, UnitViewSet, WarehouseViewSet
+from .views import (
+    BrandViewSet,
+    CategoryViewSet,
+    CustomerViewSet,
+    OpeningStockViewSet,
+    PartyOpeningBalanceViewSet,
+    ProductionViewSet,
+    ProductViewSet,
+    RateListGroupViewSet,
+    RateListViewSet,
+    RawMaterialViewSet,
+    SalesmanViewSet,
+    SizeViewSet,
+    SupplierViewSet,
+    UnitViewSet,
+    WarehouseViewSet,
+)
 
 router = DefaultRouter()
 router.register(r'brands', BrandViewSet)
 router.register(r'categories', CategoryViewSet)
 router.register(r'sizes', SizeViewSet)
 router.register(r'units', UnitViewSet)
+router.register(r'rate-list-groups', RateListGroupViewSet, basename='rate-list-groups')
+router.register(r'rate-lists', RateListViewSet, basename='rate-lists')
 router.register(r'raw-materials', RawMaterialViewSet, basename='raw-materials')
 router.register(r'products', ProductViewSet, basename='product')
 router.register(r'customers', CustomerViewSet, basename='customer')

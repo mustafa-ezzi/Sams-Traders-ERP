@@ -479,3 +479,72 @@ class PartyOpeningBalance(BaseModel):
                 name="unique_active_supplier_opening_balance",
             ),
         ]
+
+
+# =========================
+# RATE LIST
+# =========================
+
+class RateListGroup(BaseModel):
+    name = models.CharField(max_length=255)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant_id", "name"],
+                condition=models.Q(deleted_at__isnull=True),
+                name="unique_active_rate_list_group_per_tenant",
+            )
+        ]
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class RateList(BaseModel):
+    title = models.CharField(max_length=255, blank=True, default="")
+    list_date = models.DateField()
+    notes = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["-list_date", "-created_at"]
+
+    def __str__(self):
+        return self.title or f"Rate List {self.list_date}"
+
+
+class RateListLine(BaseModel):
+    rate_list = models.ForeignKey(
+        RateList, on_delete=models.CASCADE, related_name="lines"
+    )
+    product = models.ForeignKey(
+        Product, on_delete=models.PROTECT, related_name="rate_list_lines"
+    )
+    group = models.ForeignKey(
+        RateListGroup,
+        on_delete=models.PROTECT,
+        related_name="rate_list_lines",
+        null=True,
+        blank=True,
+    )
+
+    sku = models.CharField(max_length=50, blank=True, default="")
+    product_name = models.CharField(max_length=255, blank=True, default="")
+    uom_name = models.CharField(max_length=255, blank=True, default="")
+    description = models.TextField(blank=True, default="")
+
+    cost = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    percentage = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    trade_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    discount_percent = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    selling_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+
+    include_in_print = models.BooleanField(default=True)
+    sort_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["sort_order", "created_at"]
+
+    def __str__(self):
+        return self.product_name or str(self.product_id)
