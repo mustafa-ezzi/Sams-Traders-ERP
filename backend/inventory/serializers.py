@@ -91,12 +91,19 @@ class ProductDropdownOptionSerializer(serializers.Serializer):
     unit = serializers.UUIDField(source="unit_id", allow_null=True)
     unit_name = serializers.SerializerMethodField()
     confirmed_unit_cost = serializers.DecimalField(max_digits=12, decimal_places=2)
+    average_cost = serializers.SerializerMethodField()
     net_amount = serializers.DecimalField(max_digits=12, decimal_places=2)
     quantity = serializers.DecimalField(max_digits=12, decimal_places=2)
 
     def get_unit_name(self, obj):
         unit = getattr(obj, "unit", None)
         return getattr(unit, "name", "") or ""
+
+    def get_average_cost(self, obj):
+        value = getattr(obj, "_average_cost", None)
+        if value is None:
+            return "0.00"
+        return str(value)
 
 
 def validate_account_mapping(

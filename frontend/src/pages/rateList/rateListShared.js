@@ -54,6 +54,16 @@ export const uniqueProductsById = (products = []) => {
   });
 };
 
+export const productAverageCost = (product) => {
+  const average = Number(product?.average_cost ?? product?.averageCost);
+  if (Number.isFinite(average) && average > 0) return average;
+  return (
+    Number(
+      product?.confirmed_unit_cost ?? product?.confirmedUnitCost ?? 0,
+    ) || 0
+  );
+};
+
 export const lineFromProduct = (product, saved = null) =>
   withComputedPrices({
     key: saved?.id || saved?.key || product.id,
@@ -64,11 +74,7 @@ export const lineFromProduct = (product, saved = null) =>
     uomName:
       saved?.uomName || product.unit_name || product.unitName || "",
     description: saved?.description || "",
-    cost:
-      saved?.cost ??
-      product.confirmed_unit_cost ??
-      product.confirmedUnitCost ??
-      0,
+    cost: productAverageCost(product),
     percentage: saved?.percentage ?? 0,
     discountPercent: saved?.discountPercent ?? 0,
     includeInPrint: Boolean(saved),
