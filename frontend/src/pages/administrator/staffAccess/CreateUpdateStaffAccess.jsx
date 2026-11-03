@@ -83,12 +83,26 @@ const CreateUpdateStaffAccess = () => {
   const togglePerm = (key) => {
     setForm((prev) => {
       const set = new Set(prev.ui_permissions);
-      if (set.has(key)) {
-        set.delete(key);
-      } else {
-        set.add(key);
-        if (key === "rate_list") set.delete("rate_list_read");
-        if (key === "rate_list_read") set.delete("rate_list");
+      if (set.has(key)) set.delete(key);
+      else set.add(key);
+      return { ...prev, ui_permissions: [...set] };
+    });
+  };
+  const rateListAccess = form.ui_permissions.includes("rate_list")
+    ? "write"
+    : form.ui_permissions.includes("rate_list_read")
+      ? "read"
+      : "none";
+  const setRateListAccess = (mode) => {
+    setForm((prev) => {
+      const set = new Set(prev.ui_permissions);
+      set.delete("rate_list");
+      set.delete("rate_list_read");
+      if (mode === "read") {
+        set.add("rate_list_read");
+      } else if (mode === "write") {
+        set.add("rate_list_read");
+        set.add("rate_list");
       }
       return { ...prev, ui_permissions: [...set] };
     });
@@ -276,21 +290,42 @@ const CreateUpdateStaffAccess = () => {
                     </p>{" "}
                     <div className="flex flex-wrap gap-2">
                       {" "}
-                      {group.keys.map((k) => (
-                        <label
-                          key={k.id}
-                          className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm shadow-sm"
-                        >
-                          {" "}
-                          <input
-                            type="checkbox"
-                            className="rounded border-slate-300"
-                            checked={form.ui_permissions.includes(k.id)}
-                            onChange={() => togglePerm(k.id)}
-                          />{" "}
-                          {k.label}{" "}
-                        </label>
-                      ))}{" "}
+                      {group.keys
+                        .filter((k) => !k.hidden)
+                        .map((k) =>
+                          k.id === "rate_list" ? (
+                            <label
+                              key={k.id}
+                              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm shadow-sm"
+                            >
+                              Rate lists
+                              <select
+                                className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-800"
+                                value={rateListAccess}
+                                onChange={(event) =>
+                                  setRateListAccess(event.target.value)
+                                }
+                              >
+                                <option value="none">No access</option>
+                                <option value="read">Read only</option>
+                                <option value="write">Read &amp; write</option>
+                              </select>
+                            </label>
+                          ) : (
+                            <label
+                              key={k.id}
+                              className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm shadow-sm"
+                            >
+                              <input
+                                type="checkbox"
+                                className="rounded border-slate-300"
+                                checked={form.ui_permissions.includes(k.id)}
+                                onChange={() => togglePerm(k.id)}
+                              />
+                              {k.label}
+                            </label>
+                          ),
+                        )}
                     </div>{" "}
                   </div>
                 ))}{" "}
