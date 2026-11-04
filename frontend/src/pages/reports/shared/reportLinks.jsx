@@ -14,11 +14,41 @@ export const partyLedgerPath = (partnerType, partnerId) => {
   return `/reports/party-ledger?partner_type=${encodeURIComponent(type)}&partner_id=${encodeURIComponent(partnerId)}`;
 };
 
+export const inventoryStockPath = ({
+  mode,
+  tenantScope,
+  itemCategory,
+  warehouseId,
+} = {}) => {
+  const base =
+    mode === "valuation"
+      ? "/reports/inventory/stock-valuation"
+      : "/reports/inventory/stock-quantity";
+  const params = new URLSearchParams();
+  if (tenantScope) params.set("tenant_scope", tenantScope);
+  if (itemCategory) params.set("item_category", itemCategory);
+  if (warehouseId) params.set("warehouse_id", warehouseId);
+  params.set("generated", "1");
+  return `${base}?${params.toString()}`;
+};
+
+export const inventoryReturnPath = (fromValue) => {
+  const raw = String(fromValue || "").trim();
+  if (
+    raw.startsWith("/reports/inventory/stock-quantity") ||
+    raw.startsWith("/reports/inventory/stock-valuation")
+  ) {
+    return raw;
+  }
+  return "/reports/inventory/stock-quantity";
+};
+
 export const itemLedgerPath = ({
   itemType,
   itemId,
   warehouseId,
   tenantScope,
+  from,
 } = {}) => {
   if (!itemId) return null;
   const params = new URLSearchParams();
@@ -29,6 +59,7 @@ export const itemLedgerPath = ({
   params.set("item_id", itemId);
   if (warehouseId) params.set("warehouse_id", warehouseId);
   if (tenantScope) params.set("tenant_scope", tenantScope);
+  if (from) params.set("from", from);
   return `/reports/inventory/item-ledger?${params.toString()}`;
 };
 

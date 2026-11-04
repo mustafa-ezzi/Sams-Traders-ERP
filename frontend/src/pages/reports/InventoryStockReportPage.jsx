@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import SearchableSelect from "../../components/ui/SearchableSelect";
@@ -16,7 +17,12 @@ import {
   resolveReportTenant,
   selectClassName,
 } from "./shared/reportHelpers";
-import { REPORT_PATHS, ReportLink, itemLedgerPath } from "./shared/reportLinks";
+import {
+  REPORT_PATHS,
+  ReportLink,
+  inventoryStockPath,
+  itemLedgerPath,
+} from "./shared/reportLinks";
 
 const money = (value) => formatDecimal(value);
 
@@ -31,16 +37,26 @@ const InventoryStockReportPage = ({ mode = "quantity" }) => {
   const isValuation = reportMode === "valuation";
   const toast = useToast();
   const { tenantId } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const skipTenantReset = useRef(true);
+  const autoLoadedKey = useRef("");
   const [dimensions, setDimensions] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
   const [loadingSetup, setLoadingSetup] = useState(false);
   const [loadingReport, setLoadingReport] = useState(false);
   const [error, setError] = useState("");
   const [report, setReport] = useState(null);
-  const [form, setForm] = useState({
-    tenantScope: tenantId,
-    itemCategory: "both",
-    warehouseId: "",
+  const [form, setForm] = useState(() => {
+    const category = searchParams.get("item_category");
+    return {
+      tenantScope: searchParams.get("tenant_scope") || tenantId,
+      itemCategory: ["raw_materials", "finished_goods", "both"].includes(
+        category,
+      )
+        ? category
+        : "both",
+      warehouseId: searchParams.get("warehouse_id") || "",
+    };
   });
 
   useEffect(() => {
@@ -74,6 +90,10 @@ const InventoryStockReportPage = ({ mode = "quantity" }) => {
   }, [dimensions, form.tenantScope, tenantId, toast]);
 
   useEffect(() => {
+    if (skipTenantReset.current) {
+      skipTenantReset.current = false;
+      return;
+    }
     setForm((current) => ({ ...current, warehouseId: "" }));
     setReport(null);
   }, [form.tenantScope]);
@@ -82,22 +102,27 @@ const InventoryStockReportPage = ({ mode = "quantity" }) => {
     setForm((current) => ({ ...current, [field]: value }));
   };
 
-  const handleGenerate = async (event) => {
-    event.preventDefault();
+  const generateReport = async (nextForm = form) => {
     setError("");
     setLoadingReport(true);
     try {
       const params = {
-        tenant_scope: form.tenantScope,
-        item_category: form.itemCategory,
+        tenant_scope: nextForm.tenantScope,
+        item_category: nextForm.itemCategory,
         report_mode: reportMode,
       };
-      if (form.warehouseId) params.warehouse_id = form.warehouseId;
+      if (nextForm.warehouseId) params.warehouse_id = nextForm.warehouseId;
       const response = await accountService.getInventoryStockReport(
         params,
-        form.tenantScope === "BOTH" ? tenantId : form.tenantScope,
+        nextForm.tenantScope === "BOTH" ? tenantId : nextForm.tenantScope,
       );
       setReport(response);
+      const nextParams = new URLSearchParams();
+      nextParams.set("tenant_scope", nextForm.tenantScope);
+      nextParams.set("item_category", nextForm.itemCategory);
+      if (nextForm.warehouseId) nextParams.set("warehouse_id", nextForm.warehouseId);
+      nextParams.set("generated", "1");
+      setSearchParams(nextParams, { replace: true });
     } catch (reportError) {
       const message =
         extractErrorMessage(reportError) ||
@@ -108,6 +133,35 @@ const InventoryStockReportPage = ({ mode = "quantity" }) => {
       setLoadingReport(false);
     }
   };
+
+  const handleGenerate = (event) => {
+    event.preventDefault();
+    generateReport();
+  };
+
+  useEffect(() => {
+    if (searchParams.get("generated") !== "1") return;
+    if (!form.tenantScope) return;
+    if (form.tenantScope === "BOTH" && !dimensions.length) return;
+    const key = [
+      reportMode,
+      searchParams.get("tenant_scope") || tenantId,
+      searchParams.get("item_category") || "both",
+      searchParams.get("warehouse_id") || "",
+    ].join(":");
+    if (autoLoadedKey.current === key) return;
+    autoLoadedKey.current = key;
+    generateReport({
+      tenantScope: searchParams.get("tenant_scope") || tenantId,
+      itemCategory: ["raw_materials", "finished_goods", "both"].includes(
+        searchParams.get("item_category"),
+      )
+        ? searchParams.get("item_category")
+        : "both",
+      warehouseId: searchParams.get("warehouse_id") || "",
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dimensions, form.tenantScope, reportMode, searchParams, tenantId]);
 
   const showDimension = form.tenantScope === "BOTH";
   const summary = report?.summary || {};
@@ -126,6 +180,12 @@ const InventoryStockReportPage = ({ mode = "quantity" }) => {
               itemId: row.item_id,
               warehouseId: row.warehouse_id,
               tenantScope: form.tenantScope,
+              from: inventoryStockPath({
+                mode: reportMode,
+                tenantScope: form.tenantScope,
+                itemCategory: form.itemCategory,
+                warehouseId: form.warehouseId,
+              }),
             })}
             title="Open item ledger"
           >
@@ -172,7 +232,14 @@ const InventoryStockReportPage = ({ mode = "quantity" }) => {
       );
     }
     return cols;
-  }, [form.tenantScope, isValuation, showDimension]);
+  }, [
+    form.itemCategory,
+    form.tenantScope,
+    form.warehouseId,
+    isValuation,
+    reportMode,
+    showDimension,
+  ]);
 
   return (
     <div className="space-y-6">

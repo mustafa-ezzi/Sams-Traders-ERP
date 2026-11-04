@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import SearchableSelect from "../../components/ui/SearchableSelect";
@@ -20,6 +20,7 @@ import {
 import {
   REPORT_PATHS,
   ReportLink,
+  inventoryReturnPath,
   sourceDocumentPath,
 } from "./shared/reportLinks";
 
@@ -33,6 +34,7 @@ const qty = (value) => {
 
 const ItemLedgerReportPage = () => {
   const toast = useToast();
+  const navigate = useNavigate();
   const { tenantId } = useAuth();
   const [searchParams] = useSearchParams();
   const autoLoadedKey = useRef("");
@@ -252,18 +254,15 @@ const ItemLedgerReportPage = () => {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link
-              to="/reports/inventory/stock-quantity"
-              className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() =>
+                navigate(inventoryReturnPath(searchParams.get("from")))
+              }
             >
-              Stock by Quantity
-            </Link>
-            <Link
-              to="/reports/inventory/stock-valuation"
-              className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-            >
-              Stock by Valuation
-            </Link>
+              ← Back to inventory report
+            </Button>
             {editPath ? (
               <Link
                 to={editPath}
