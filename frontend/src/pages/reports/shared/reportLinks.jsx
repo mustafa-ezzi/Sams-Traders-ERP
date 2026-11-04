@@ -14,6 +14,24 @@ export const partyLedgerPath = (partnerType, partnerId) => {
   return `/reports/party-ledger?partner_type=${encodeURIComponent(type)}&partner_id=${encodeURIComponent(partnerId)}`;
 };
 
+export const itemLedgerPath = ({
+  itemType,
+  itemId,
+  warehouseId,
+  tenantScope,
+} = {}) => {
+  if (!itemId) return null;
+  const params = new URLSearchParams();
+  params.set(
+    "item_type",
+    itemType === "raw_materials" ? "raw_materials" : "finished_goods",
+  );
+  params.set("item_id", itemId);
+  if (warehouseId) params.set("warehouse_id", warehouseId);
+  if (tenantScope) params.set("tenant_scope", tenantScope);
+  return `/reports/inventory/item-ledger?${params.toString()}`;
+};
+
 export const REPORT_PATHS = {
   salesInvoice: (id) => editPath("/sales-invoices", id),
   purchaseInvoice: (id) => editPath("/purchase-invoices", id),
@@ -25,6 +43,9 @@ export const REPORT_PATHS = {
   supplier: (id) => editPath("/suppliers", id),
   product: (id) => editPath("/products", id),
   rawMaterial: (id) => editPath("/raw-materials", id),
+  production: (id) => editPath("/production", id),
+  openingStock: () => "/opening-stock",
+  itemLedger: itemLedgerPath,
   salesman: (id) => editPath("/salesmen", id),
   expense: (id) => editPath("/expenses", id),
   account: (id) => editPath("/accounts", id),
@@ -44,6 +65,9 @@ const SOURCE_TYPE_PATH = {
   EXPENSE: REPORT_PATHS.expense,
   BANK_TRANSFER: REPORT_PATHS.bankTransfer,
   SALESMAN_COMMISSION_PAYMENT: REPORT_PATHS.salesmanCommission,
+  PRODUCTION: REPORT_PATHS.production,
+  PRODUCTION_CONSUMPTION: REPORT_PATHS.production,
+  OPENING_STOCK: REPORT_PATHS.openingStock,
 };
 
 export const sourceDocumentPath = (sourceType, sourceId) => {
@@ -69,6 +93,8 @@ export const documentTypePath = (documentType, sourceId) => {
   if (label.includes("expense")) return REPORT_PATHS.expense(sourceId);
   if (label.includes("bank transfer")) return REPORT_PATHS.bankTransfer(sourceId);
   if (label.includes("commission")) return REPORT_PATHS.salesmanCommission(sourceId);
+  if (label.includes("production")) return REPORT_PATHS.production(sourceId);
+  if (label.includes("opening")) return REPORT_PATHS.openingStock();
   return sourceDocumentPath(
     // fallback if raw source_type was passed as documentType
     documentType,

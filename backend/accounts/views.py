@@ -2,6 +2,7 @@ from collections import defaultdict
 from datetime import date
 from datetime import timedelta
 from decimal import Decimal
+from uuid import UUID
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
@@ -32,6 +33,7 @@ from accounts.reporting import (
     build_payable_aging_report,
     build_profit_and_loss_report,
     build_inventory_stock_report,
+    build_item_ledger_report,
     build_receivable_aging_report,
     build_sales_report,
     build_salesman_performance_report,
@@ -1732,6 +1734,60 @@ class AccountViewSet(ModelViewSet):
             report_mode=report_mode,
             warehouse_id=warehouse_id,
         )
+
+        return Response(
+            {
+                "data": {
+                    "tenant_scope": tenant_scope,
+                    **payload,
+                }
+            }
+        )
+
+    @action(detail=False, methods=["get"], url_path="item-ledger-report")
+    def item_ledger_report(self, request):
+        tenant_scope = request.query_params.get("tenant_scope") or request.user.tenant_id
+        item_type = (request.query_params.get("item_type") or "").strip().lower()
+        item_id_raw = request.query_params.get("item_id")
+        warehouse_id = request.query_params.get("warehouse_id") or None
+        from_raw = request.query_params.get("from_date")
+        to_raw = request.query_params.get("to_date")
+
+        if item_type not in {"finished_goods", "raw_materials"}:
+            raise ValidationError(
+                {"item_type": "Valid values are finished_goods, raw_materials."}
+            )
+        try:
+            item_id = UUID(str(item_id_raw))
+        except (TypeError, ValueError):
+            raise ValidationError({"item_id": "A valid item is required."})
+
+        from_date = None
+        to_date = None
+        if from_raw:
+            try:
+                from_date = date.fromisoformat(from_raw)
+            except ValueError:
+                raise ValidationError({"from_date": "Date must be in YYYY-MM-DD format."})
+        if to_raw:
+            try:
+                to_date = date.fromisoformat(to_raw)
+            except ValueError:
+                raise ValidationError({"to_date": "Date must be in YYYY-MM-DD format."})
+        if from_date and to_date and from_date > to_date:
+            raise ValidationError({"date": "From date cannot be after to date."})
+
+        tenant_ids = self._resolve_tenant_ids(tenant_scope)
+        payload = build_item_ledger_report(
+            tenant_ids=tenant_ids,
+            item_type=item_type,
+            item_id=item_id,
+            warehouse_id=warehouse_id,
+            from_date=from_date,
+            to_date=to_date,
+        )
+        if not payload:
+            raise ValidationError({"item_id": "Item was not found in the selected dimension."})
 
         return Response(
             {

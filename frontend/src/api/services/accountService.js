@@ -168,6 +168,16 @@ const accountService = {
     );
     return response.data.data || {};
   },
+  async getItemLedgerReport(params, selectedTenant = "") {
+    const response = await axiosInstance.get(
+      "/accounts/accounts/item-ledger-report/",
+      {
+        params,
+        headers: tenantHeader(selectedTenant),
+      },
+    );
+    return response.data.data || {};
+  },
   async getTrialBalanceReport(params, selectedTenant = "") {
     const response = await axiosInstance.get("/accounts/accounts/trial-balance-report/", {
       params,

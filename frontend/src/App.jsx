@@ -64,6 +64,7 @@ import ExpenseAnalysisPage from "./pages/reports/ExpenseAnalysisPage";
 import AgingReportsPage from "./pages/reports/AgingReportsPage";
 import SalesReportPage from "./pages/reports/SalesReportPage";
 import InventoryStockReportPage from "./pages/reports/InventoryStockReportPage";
+import ItemLedgerReportPage from "./pages/reports/ItemLedgerReportPage";
 import SalesmanReportsPage from "./pages/reports/SalesmanReportsPage";
 import LedgerReportsPage from "./pages/reports/LedgerReportsPage";
 import PartyLedgerReportsPage from "./pages/reports/PartyLedgerReportsPage";
@@ -236,6 +237,10 @@ const App = () => (
         <Route
           path="reports/inventory/stock-valuation"
           element={<InventoryStockReportPage mode="valuation" />}
+        />
+        <Route
+          path="reports/inventory/item-ledger"
+          element={<ItemLedgerReportPage />}
         />
         <Route path="reports/coa-completeness" element={<CoaCompletenessReportPage />} />
         <Route path="warehouses" element={<WarehousePage />} />

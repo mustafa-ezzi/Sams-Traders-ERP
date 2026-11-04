@@ -614,6 +614,10 @@ const pageTitles = {
     title: "Stock by Valuation",
     eyebrow: "Reports",
   },
+  "/reports/inventory/item-ledger": {
+    title: "Item Ledger",
+    eyebrow: "Reports",
+  },
   "/warehouses": { title: "Warehouses", eyebrow: "Inventory" },
   "/opening-stock": { title: "Opening Stock", eyebrow: "Inventory" },
   "/production": { title: "Assembly Process", eyebrow: "Inventory" },

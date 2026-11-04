@@ -16,7 +16,7 @@ import {
   resolveReportTenant,
   selectClassName,
 } from "./shared/reportHelpers";
-import { REPORT_PATHS, ReportLink } from "./shared/reportLinks";
+import { REPORT_PATHS, ReportLink, itemLedgerPath } from "./shared/reportLinks";
 
 const money = (value) => formatDecimal(value);
 
@@ -121,12 +121,13 @@ const InventoryStockReportPage = ({ mode = "quantity" }) => {
         strong: true,
         render: (row) => (
           <ReportLink
-            to={
-              row.item_category === "raw_materials"
-                ? REPORT_PATHS.rawMaterial(row.item_id)
-                : REPORT_PATHS.product(row.item_id)
-            }
-            title="Open item"
+            to={itemLedgerPath({
+              itemType: row.item_category,
+              itemId: row.item_id,
+              warehouseId: row.warehouse_id,
+              tenantScope: form.tenantScope,
+            })}
+            title="Open item ledger"
           >
             {row.item_name}
           </ReportLink>
@@ -171,7 +172,7 @@ const InventoryStockReportPage = ({ mode = "quantity" }) => {
       );
     }
     return cols;
-  }, [isValuation, showDimension]);
+  }, [form.tenantScope, isValuation, showDimension]);
 
   return (
     <div className="space-y-6">

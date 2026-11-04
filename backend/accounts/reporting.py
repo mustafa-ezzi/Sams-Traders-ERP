@@ -2959,6 +2959,681 @@ def build_inventory_stock_report(tenant_ids, item_category="both", report_mode="
     }
 
 
+def _item_qty(value):
+    return Decimal(str(value or 0)).quantize(Decimal("0.0001"))
+
+
+def _item_ledger_event(
+    *,
+    date,
+    created_at,
+    source_type,
+    source_id,
+    document_type,
+    voucher_number,
+    party_name="",
+    warehouse_id="",
+    warehouse_name="",
+    tenant_id="",
+    remarks="",
+    quantity,
+    rate,
+    amount,
+    in_unit_cost=None,
+):
+    return {
+        "date": date,
+        "created_at": created_at,
+        "source_type": source_type,
+        "source_id": str(source_id) if source_id else "",
+        "document_type": document_type,
+        "voucher_number": voucher_number or "",
+        "party_name": party_name or "",
+        "warehouse_id": str(warehouse_id) if warehouse_id else "",
+        "warehouse_name": warehouse_name or "",
+        "tenant_id": tenant_id or "",
+        "remarks": remarks or "",
+        "quantity": _item_qty(quantity),
+        "rate": _money(rate),
+        "amount": _money(amount),
+        "in_unit_cost": _item_qty(in_unit_cost if in_unit_cost is not None else rate),
+    }
+
+
+def _finalize_item_ledger(events, dimension_names, from_date=None, to_date=None):
+    events.sort(
+        key=lambda event: (
+            event["date"],
+            0 if event["quantity"] > 0 else 1,
+            event["created_at"] or event["date"],
+            event["source_type"],
+            event["source_id"],
+        )
+    )
+
+    running_quantity = Decimal("0")
+    running_value = Decimal("0")
+    average_cost = Decimal("0")
+    opening_quantity = Decimal("0")
+    opening_value = Decimal("0")
+    rows = []
+    purchase_qty = Decimal("0")
+    purchase_amount = Decimal("0")
+    sales_qty = Decimal("0")
+    sales_amount = Decimal("0")
+    produced_qty = Decimal("0")
+    consumed_qty = Decimal("0")
+    qty_in = Decimal("0")
+    qty_out = Decimal("0")
+
+    for event in events:
+        if to_date and event["date"] > to_date:
+            continue
+
+        quantity = event["quantity"]
+        if quantity > 0:
+            unit_cost = event["in_unit_cost"]
+            cost_amount = _money(quantity * unit_cost)
+            running_quantity += quantity
+            running_value += cost_amount
+            average_cost = (
+                Decimal("0")
+                if running_quantity <= 0
+                else _item_qty(running_value / running_quantity)
+            )
+        else:
+            sold_quantity = abs(quantity)
+            unit_cost = average_cost
+            cost_amount = _money(sold_quantity * average_cost)
+            running_quantity -= sold_quantity
+            running_value -= cost_amount
+            if running_quantity <= 0:
+                running_quantity = Decimal("0")
+                running_value = Decimal("0")
+                average_cost = Decimal("0")
+            cost_amount = -cost_amount
+
+        if from_date and event["date"] < from_date:
+            opening_quantity = running_quantity
+            opening_value = running_value
+            continue
+
+        qty_in_value = quantity if quantity > 0 else Decimal("0")
+        qty_out_value = abs(quantity) if quantity < 0 else Decimal("0")
+        qty_in += qty_in_value
+        qty_out += qty_out_value
+        source_type = event["source_type"]
+        if source_type == "PURCHASE_INVOICE":
+            purchase_qty += qty_in_value
+            purchase_amount += event["amount"]
+        elif source_type == "SALES_INVOICE":
+            sales_qty += qty_out_value
+            sales_amount += event["amount"]
+        elif source_type == "PRODUCTION":
+            produced_qty += qty_in_value
+        elif source_type == "PRODUCTION_CONSUMPTION":
+            consumed_qty += qty_out_value
+
+        rows.append(
+            {
+                "date": event["date"].isoformat(),
+                "document_type": event["document_type"],
+                "source_type": source_type,
+                "source_id": event["source_id"],
+                "voucher_number": event["voucher_number"],
+                "party_name": event["party_name"],
+                "warehouse_id": event["warehouse_id"],
+                "warehouse_name": event["warehouse_name"],
+                "tenant_id": event["tenant_id"],
+                "dimension_name": dimension_names.get(event["tenant_id"], event["tenant_id"]),
+                "remarks": event["remarks"],
+                "qty_in": str(_item_qty(qty_in_value)),
+                "qty_out": str(_item_qty(qty_out_value)),
+                "rate": str(event["rate"]),
+                "amount": str(event["amount"]),
+                "unit_cost": str(_item_qty(unit_cost)),
+                "cost_amount": str(_money(cost_amount)),
+                "running_quantity": str(_item_qty(running_quantity)),
+                "running_value": str(_money(running_value)),
+                "average_cost_after": str(_item_qty(average_cost)),
+            }
+        )
+
+    if from_date:
+        rows.insert(
+            0,
+            {
+                "date": from_date.isoformat(),
+                "document_type": "Opening Balance",
+                "source_type": "OPENING",
+                "source_id": "",
+                "voucher_number": "Opening",
+                "party_name": "",
+                "warehouse_id": "",
+                "warehouse_name": "",
+                "tenant_id": "",
+                "dimension_name": "",
+                "remarks": "Balance brought forward",
+                "qty_in": str(_item_qty(0)),
+                "qty_out": str(_item_qty(0)),
+                "rate": str(_money(0)),
+                "amount": str(_money(0)),
+                "unit_cost": str(_item_qty(opening_value / opening_quantity if opening_quantity else 0)),
+                "cost_amount": str(_money(0)),
+                "running_quantity": str(_item_qty(opening_quantity)),
+                "running_value": str(_money(opening_value)),
+                "average_cost_after": str(
+                    _item_qty(opening_value / opening_quantity if opening_quantity else 0)
+                ),
+            },
+        )
+
+    closing_quantity = running_quantity
+    closing_value = running_value
+
+    return rows, {
+        "row_count": max(len(rows) - (1 if from_date else 0), 0),
+        "opening_quantity": str(_item_qty(opening_quantity)),
+        "opening_value": str(_money(opening_value)),
+        "qty_in": str(_item_qty(qty_in)),
+        "qty_out": str(_item_qty(qty_out)),
+        "purchase_quantity": str(_item_qty(purchase_qty)),
+        "purchase_amount": str(_money(purchase_amount)),
+        "sales_quantity": str(_item_qty(sales_qty)),
+        "sales_amount": str(_money(sales_amount)),
+        "produced_quantity": str(_item_qty(produced_qty)),
+        "consumed_quantity": str(_item_qty(consumed_qty)),
+        "closing_quantity": str(_item_qty(closing_quantity)),
+        "closing_value": str(_money(closing_value)),
+        "average_cost": str(
+            _item_qty(closing_value / closing_quantity if closing_quantity else 0)
+        ),
+    }
+
+
+def build_item_ledger_report(
+    tenant_ids,
+    item_type,
+    item_id,
+    warehouse_id=None,
+    from_date=None,
+    to_date=None,
+):
+    """Per-item inventory ledger: purchases, production, sales, returns, running qty/cost."""
+    from inventory.models import (
+        OpeningStock,
+        Product,
+        ProductCostState,
+        ProductMaterial,
+        ProductStock,
+        Production,
+        RawMaterial,
+        Stock,
+    )
+    from purchase.models import PurchaseInvoiceLine, PurchaseReturnLine
+    from sales.models import SalesInvoiceLine, SalesReturnLine
+
+    category = (item_type or "").strip().lower()
+    if category not in {"finished_goods", "raw_materials"}:
+        category = "finished_goods"
+
+    dimension_names = _dimension_name_map(tenant_ids)
+    events = []
+
+    def matches_warehouse(value):
+        return not warehouse_id or str(value) == str(warehouse_id)
+
+    if category == "finished_goods":
+        product = (
+            Product.objects.filter(
+                id=item_id,
+                tenant_id__in=tenant_ids,
+                deleted_at__isnull=True,
+            )
+            .select_related("unit")
+            .first()
+        )
+        if not product:
+            return None
+
+        purchase_lines = (
+            PurchaseInvoiceLine.objects.filter(
+                tenant_id__in=tenant_ids,
+                product_id=product.id,
+                deleted_at__isnull=True,
+                invoice__deleted_at__isnull=True,
+            )
+            .select_related("invoice", "invoice__supplier", "invoice__warehouse")
+            .order_by("invoice__date", "created_at")
+        )
+        for line in purchase_lines:
+            if not matches_warehouse(line.invoice.warehouse_id):
+                continue
+            quantity = _item_qty(line.quantity)
+            if quantity <= 0:
+                continue
+            events.append(
+                _item_ledger_event(
+                    date=line.invoice.date,
+                    created_at=line.created_at,
+                    source_type="PURCHASE_INVOICE",
+                    source_id=line.invoice_id,
+                    document_type="Purchase Invoice",
+                    voucher_number=line.invoice.invoice_number,
+                    party_name=line.invoice.supplier.name,
+                    warehouse_id=line.invoice.warehouse_id,
+                    warehouse_name=line.invoice.warehouse.name,
+                    tenant_id=line.tenant_id,
+                    remarks=line.invoice.remarks,
+                    quantity=quantity,
+                    rate=line.rate,
+                    amount=line.total_amount or line.amount,
+                    in_unit_cost=(
+                        _item_qty(Decimal(str(line.total_amount or line.amount or 0)) / quantity)
+                        if quantity
+                        else line.rate
+                    ),
+                )
+            )
+
+        productions = (
+            Production.objects.filter(
+                tenant_id__in=tenant_ids,
+                product_id=product.id,
+                deleted_at__isnull=True,
+            )
+            .select_related("warehouse")
+            .order_by("date", "created_at")
+        )
+        for production in productions:
+            if not matches_warehouse(production.warehouse_id):
+                continue
+            quantity = _item_qty(production.quantity)
+            if quantity <= 0:
+                continue
+            unit_cost = product.confirmed_unit_cost or product.net_amount or 0
+            events.append(
+                _item_ledger_event(
+                    date=production.date,
+                    created_at=production.created_at,
+                    source_type="PRODUCTION",
+                    source_id=production.id,
+                    document_type="Production",
+                    voucher_number="Production",
+                    warehouse_id=production.warehouse_id,
+                    warehouse_name=production.warehouse.name,
+                    tenant_id=production.tenant_id,
+                    remarks=f"Produced {product.name}",
+                    quantity=quantity,
+                    rate=unit_cost,
+                    amount=_money(quantity * _money(unit_cost)),
+                    in_unit_cost=unit_cost,
+                )
+            )
+
+        purchase_return_lines = (
+            PurchaseReturnLine.objects.filter(
+                tenant_id__in=tenant_ids,
+                product_id=product.id,
+                deleted_at__isnull=True,
+                purchase_return__deleted_at__isnull=True,
+                purchase_return__purchase_invoice__deleted_at__isnull=True,
+            )
+            .select_related(
+                "purchase_return",
+                "purchase_return__supplier",
+                "purchase_return__purchase_invoice",
+                "purchase_return__purchase_invoice__warehouse",
+            )
+            .order_by("purchase_return__date", "created_at")
+        )
+        for line in purchase_return_lines:
+            invoice = line.purchase_return.purchase_invoice
+            if not matches_warehouse(invoice.warehouse_id):
+                continue
+            quantity = _item_qty(line.quantity)
+            if quantity <= 0:
+                continue
+            events.append(
+                _item_ledger_event(
+                    date=line.purchase_return.date,
+                    created_at=line.created_at,
+                    source_type="PURCHASE_RETURN",
+                    source_id=line.purchase_return_id,
+                    document_type="Purchase Return",
+                    voucher_number=line.purchase_return.return_number,
+                    party_name=line.purchase_return.supplier.name,
+                    warehouse_id=invoice.warehouse_id,
+                    warehouse_name=invoice.warehouse.name,
+                    tenant_id=line.tenant_id,
+                    remarks=line.purchase_return.remarks,
+                    quantity=-quantity,
+                    rate=line.rate,
+                    amount=line.amount,
+                    in_unit_cost=line.rate,
+                )
+            )
+
+        sales_lines = (
+            SalesInvoiceLine.objects.filter(
+                tenant_id__in=tenant_ids,
+                product_id=product.id,
+                deleted_at__isnull=True,
+                invoice__deleted_at__isnull=True,
+            )
+            .select_related("invoice", "invoice__customer", "invoice__warehouse")
+            .order_by("invoice__date", "created_at")
+        )
+        for line in sales_lines:
+            if not matches_warehouse(line.invoice.warehouse_id):
+                continue
+            quantity = _item_qty(line.quantity)
+            if quantity <= 0:
+                continue
+            events.append(
+                _item_ledger_event(
+                    date=line.invoice.date,
+                    created_at=line.created_at,
+                    source_type="SALES_INVOICE",
+                    source_id=line.invoice_id,
+                    document_type="Sales Invoice",
+                    voucher_number=line.invoice.invoice_number,
+                    party_name=line.invoice.customer.name,
+                    warehouse_id=line.invoice.warehouse_id,
+                    warehouse_name=line.invoice.warehouse.name,
+                    tenant_id=line.tenant_id,
+                    remarks=line.invoice.remarks,
+                    quantity=-quantity,
+                    rate=line.rate,
+                    amount=line.total_amount or line.amount,
+                    in_unit_cost=line.cost_used or 0,
+                )
+            )
+
+        sales_return_lines = (
+            SalesReturnLine.objects.filter(
+                tenant_id__in=tenant_ids,
+                product_id=product.id,
+                deleted_at__isnull=True,
+                sales_return__deleted_at__isnull=True,
+                sales_return__sales_invoice__deleted_at__isnull=True,
+            )
+            .select_related(
+                "sales_return",
+                "sales_return__customer",
+                "sales_return__sales_invoice",
+                "sales_return__sales_invoice__warehouse",
+                "sales_invoice_line",
+            )
+            .order_by("sales_return__date", "created_at")
+        )
+        for line in sales_return_lines:
+            invoice = line.sales_return.sales_invoice
+            if not matches_warehouse(invoice.warehouse_id):
+                continue
+            quantity = _item_qty(line.quantity)
+            if quantity <= 0:
+                continue
+            unit_cost = line.sales_invoice_line.cost_used if line.sales_invoice_line_id else 0
+            events.append(
+                _item_ledger_event(
+                    date=line.sales_return.date,
+                    created_at=line.created_at,
+                    source_type="SALES_RETURN",
+                    source_id=line.sales_return_id,
+                    document_type="Sales Return",
+                    voucher_number=line.sales_return.return_number,
+                    party_name=line.sales_return.customer.name,
+                    warehouse_id=invoice.warehouse_id,
+                    warehouse_name=invoice.warehouse.name,
+                    tenant_id=line.tenant_id,
+                    remarks=line.sales_return.remarks,
+                    quantity=quantity,
+                    rate=line.rate,
+                    amount=line.amount,
+                    in_unit_cost=unit_cost or line.rate,
+                )
+            )
+
+        component_materials = ProductMaterial.objects.filter(
+            tenant_id__in=tenant_ids,
+            component_type__in=["FINISHED_GOOD", "ASSEMBLY_PRODUCT"],
+            component_product_id=product.id,
+            deleted_at__isnull=True,
+            product__deleted_at__isnull=True,
+            product__product_type__in=["ASSEMBLY_PRODUCT", "MANUFACTURED"],
+        ).select_related("product")
+        parent_ids = {row.product_id for row in component_materials if row.product_id}
+        parent_productions = list(
+            Production.objects.filter(
+                tenant_id__in=tenant_ids,
+                product_id__in=parent_ids,
+                deleted_at__isnull=True,
+            ).select_related("warehouse", "product")
+        )
+        productions_by_parent = defaultdict(list)
+        for production in parent_productions:
+            productions_by_parent[production.product_id].append(production)
+        for material in component_materials:
+            for production in productions_by_parent.get(material.product_id, []):
+                if not matches_warehouse(production.warehouse_id):
+                    continue
+                quantity = _item_qty(Decimal(str(material.quantity or 0)) * Decimal(str(production.quantity or 0)))
+                if quantity <= 0:
+                    continue
+                events.append(
+                    _item_ledger_event(
+                        date=production.date,
+                        created_at=production.created_at,
+                        source_type="PRODUCTION_CONSUMPTION",
+                        source_id=production.id,
+                        document_type="Used in Production",
+                        voucher_number="Production",
+                        warehouse_id=production.warehouse_id,
+                        warehouse_name=production.warehouse.name,
+                        tenant_id=production.tenant_id,
+                        remarks=f"Used in {production.product.name}",
+                        quantity=-quantity,
+                        rate=material.rate,
+                        amount=_money(quantity * _money(material.rate)),
+                        in_unit_cost=material.rate,
+                    )
+                )
+
+        stock_qty = (
+            ProductStock.objects.filter(
+                tenant_id__in=tenant_ids,
+                product_id=product.id,
+                deleted_at__isnull=True,
+                **({"warehouse_id": warehouse_id} if warehouse_id else {}),
+            ).aggregate(total=Sum("quantity"))["total"]
+            or 0
+        )
+        cost_state = ProductCostState.objects.filter(
+            tenant_id__in=tenant_ids,
+            product_id=product.id,
+            deleted_at__isnull=True,
+        ).first()
+        item = {
+            "id": str(product.id),
+            "name": product.name,
+            "code": product.sku or "",
+            "category": "finished_goods",
+            "category_label": "Finished Goods",
+            "unit": getattr(product.unit, "name", "") or "-",
+            "current_quantity": str(_item_qty(stock_qty)),
+            "average_cost": str(_item_qty(cost_state.average_cost if cost_state else (product.confirmed_unit_cost or product.net_amount or 0))),
+            "edit_path_type": "product",
+        }
+    else:
+        raw_material = (
+            RawMaterial.objects.filter(
+                id=item_id,
+                tenant_id__in=tenant_ids,
+                deleted_at__isnull=True,
+            )
+            .select_related("purchase_unit")
+            .first()
+        )
+        if not raw_material:
+            return None
+
+        openings = (
+            OpeningStock.objects.filter(
+                tenant_id__in=tenant_ids,
+                raw_material_id=raw_material.id,
+                deleted_at__isnull=True,
+            )
+            .select_related("warehouse")
+            .order_by("date", "created_at")
+        )
+        for opening in openings:
+            if not matches_warehouse(opening.warehouse_id):
+                continue
+            quantity = _item_qty(opening.quantity)
+            if quantity <= 0:
+                continue
+            events.append(
+                _item_ledger_event(
+                    date=opening.date,
+                    created_at=opening.created_at,
+                    source_type="OPENING_STOCK",
+                    source_id=opening.id,
+                    document_type="Opening Stock",
+                    voucher_number="Opening Stock",
+                    warehouse_id=opening.warehouse_id,
+                    warehouse_name=opening.warehouse.name,
+                    tenant_id=opening.tenant_id,
+                    remarks="Opening stock",
+                    quantity=quantity,
+                    rate=raw_material.purchase_price,
+                    amount=_money(quantity * _money(raw_material.purchase_price)),
+                    in_unit_cost=raw_material.purchase_price,
+                )
+            )
+
+        purchase_lines = (
+            PurchaseInvoiceLine.objects.filter(
+                tenant_id__in=tenant_ids,
+                raw_material_id=raw_material.id,
+                deleted_at__isnull=True,
+                invoice__deleted_at__isnull=True,
+            )
+            .select_related("invoice", "invoice__supplier", "invoice__warehouse")
+            .order_by("invoice__date", "created_at")
+        )
+        for line in purchase_lines:
+            if not matches_warehouse(line.invoice.warehouse_id):
+                continue
+            quantity = _item_qty(line.quantity)
+            if quantity <= 0:
+                continue
+            events.append(
+                _item_ledger_event(
+                    date=line.invoice.date,
+                    created_at=line.created_at,
+                    source_type="PURCHASE_INVOICE",
+                    source_id=line.invoice_id,
+                    document_type="Purchase Invoice",
+                    voucher_number=line.invoice.invoice_number,
+                    party_name=line.invoice.supplier.name,
+                    warehouse_id=line.invoice.warehouse_id,
+                    warehouse_name=line.invoice.warehouse.name,
+                    tenant_id=line.tenant_id,
+                    remarks=line.invoice.remarks,
+                    quantity=quantity,
+                    rate=line.rate,
+                    amount=line.total_amount or line.amount,
+                    in_unit_cost=(
+                        _item_qty(Decimal(str(line.total_amount or line.amount or 0)) / quantity)
+                        if quantity
+                        else line.rate
+                    ),
+                )
+            )
+
+        component_materials = ProductMaterial.objects.filter(
+            tenant_id__in=tenant_ids,
+            component_type="RAW_MATERIAL",
+            raw_material_id=raw_material.id,
+            deleted_at__isnull=True,
+            product__deleted_at__isnull=True,
+            product__product_type__in=["ASSEMBLY_PRODUCT", "MANUFACTURED"],
+        ).select_related("product")
+        parent_ids = {row.product_id for row in component_materials if row.product_id}
+        parent_productions = list(
+            Production.objects.filter(
+                tenant_id__in=tenant_ids,
+                product_id__in=parent_ids,
+                deleted_at__isnull=True,
+            ).select_related("warehouse", "product")
+        )
+        productions_by_parent = defaultdict(list)
+        for production in parent_productions:
+            productions_by_parent[production.product_id].append(production)
+        for material in component_materials:
+            for production in productions_by_parent.get(material.product_id, []):
+                if not matches_warehouse(production.warehouse_id):
+                    continue
+                quantity = _item_qty(Decimal(str(material.quantity or 0)) * Decimal(str(production.quantity or 0)))
+                if quantity <= 0:
+                    continue
+                events.append(
+                    _item_ledger_event(
+                        date=production.date,
+                        created_at=production.created_at,
+                        source_type="PRODUCTION_CONSUMPTION",
+                        source_id=production.id,
+                        document_type="Used in Production",
+                        voucher_number="Production",
+                        warehouse_id=production.warehouse_id,
+                        warehouse_name=production.warehouse.name,
+                        tenant_id=production.tenant_id,
+                        remarks=f"Used in {production.product.name}",
+                        quantity=-quantity,
+                        rate=material.rate or raw_material.purchase_price,
+                        amount=_money(quantity * _money(material.rate or raw_material.purchase_price)),
+                        in_unit_cost=material.rate or raw_material.purchase_price,
+                    )
+                )
+
+        stock_qty = (
+            Stock.objects.filter(
+                tenant_id__in=tenant_ids,
+                raw_material_id=raw_material.id,
+                deleted_at__isnull=True,
+                **({"warehouse_id": warehouse_id} if warehouse_id else {}),
+            ).aggregate(total=Sum("quantity"))["total"]
+            or 0
+        )
+        item = {
+            "id": str(raw_material.id),
+            "name": raw_material.name,
+            "code": "",
+            "category": "raw_materials",
+            "category_label": "Raw Material",
+            "unit": getattr(raw_material.purchase_unit, "name", "") or "-",
+            "current_quantity": str(_item_qty(stock_qty)),
+            "average_cost": str(_money(raw_material.purchase_price)),
+            "edit_path_type": "raw_material",
+        }
+
+    rows, summary = _finalize_item_ledger(
+        events,
+        dimension_names,
+        from_date=from_date,
+        to_date=to_date,
+    )
+    return {
+        "item": item,
+        "from_date": from_date.isoformat() if from_date else "",
+        "to_date": to_date.isoformat() if to_date else "",
+        "warehouse_id": str(warehouse_id) if warehouse_id else "",
+        "rows": rows,
+        "summary": summary,
+    }
+
+
 def build_intercompany_cash_report(tenant_ids, from_date, to_date):
     """
     Per-dimension cash in/out by voucher plus who-owes-whom from cross-dimension
