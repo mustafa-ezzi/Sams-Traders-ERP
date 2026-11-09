@@ -74,7 +74,10 @@ export const lineFromProduct = (product, saved = null) =>
     uomName:
       saved?.uomName || product.unit_name || product.unitName || "",
     description: saved?.description || "",
-    cost: productAverageCost(product),
+    // A rate-list line is a price snapshot. Preserve its saved cost when
+    // reopening the list instead of replacing it with the product's current
+    // average cost.
+    cost: saved?.cost ?? productAverageCost(product),
     percentage: saved?.percentage ?? 0,
     discountPercent: saved?.discountPercent ?? 0,
     includeInPrint: Boolean(saved),
