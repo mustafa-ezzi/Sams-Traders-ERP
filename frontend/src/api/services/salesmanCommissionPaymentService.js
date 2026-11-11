@@ -8,6 +8,10 @@ const mapPayment = (payment) => ({
   salesInvoiceId: payment.sales_invoice?.id || payment.sales_invoice_id || "",
   paymentAccountId: payment.payment_account?.id || payment.payment_account_id || "",
   payment: payment.payment ?? 0,
+  paidDate: payment.paid_date ?? payment.paidDate ?? "",
+  isPaid: Boolean(
+    payment.is_paid ?? payment.payment_account?.id ?? payment.payment_account_id,
+  ),
   invoice_count: payment.invoice_count ?? payment.lines?.length ?? 0,
   lines: payment.lines || [],
   commissionAmount: payment.commission_amount ?? payment.commissionAmount ?? 0,
@@ -80,6 +84,14 @@ class SalesmanCommissionPaymentService {
     });
 
     return response.data.data || [];
+  }
+
+  async pay(id, payload) {
+    const response = await axiosInstance.post(`${BASE_URL}${id}/pay/`, payload);
+    return {
+      data: mapPayment(response.data.data || response.data),
+      message: response.data.message || "Commission voucher paid successfully",
+    };
   }
 
   async generateFromReport(payload) {

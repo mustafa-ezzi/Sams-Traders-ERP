@@ -7,6 +7,7 @@ import ConfirmModal from "../../../components/ui/ConfirmModal";
 import StateView from "../../../components/StateView";
 import DimensionPrintButtons from "../../../components/ui/DimensionPrintButtons";
 import CommissionVoucherPrintModal from "../../../components/sales/CommissionVoucherPrintModal";
+import CommissionVoucherPayModal from "../../../components/sales/CommissionVoucherPayModal";
 import salesmanCommissionPaymentService from "../../../api/services/salesmanCommissionPaymentService";
 import dimensionService from "../../../api/services/dimensionService";
 import { formatDecimal } from "../../../utils/format";
@@ -45,6 +46,7 @@ const GetAllSalesmanCommissionPayment = () => {
   const [printDimensions, setPrintDimensions] = useState([]);
   const [printModal, setPrintModal] = useState(null);
   const [printLoadingId, setPrintLoadingId] = useState("");
+  const [payVoucher, setPayVoucher] = useState(null);
   const printCancelledRef = useRef(false);
 
   const loadPayments = async (nextPage = page, nextSearch = search) => {
@@ -161,7 +163,7 @@ const GetAllSalesmanCommissionPayment = () => {
               Salesman Commission Vouchers
             </h2>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Review, print, edit, and remove salesman commission vouchers.
+              Accrue commission to payable, then pay vouchers from bank or cash.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -208,13 +210,16 @@ const GetAllSalesmanCommissionPayment = () => {
                     <th className="px-4 py-3">Salesman</th>
                     <th className="px-4 py-3">Invoice</th>
                     <th className="px-4 py-3">Paid From</th>
-                    <th className="px-4 py-3">Payment</th>
+                    <th className="px-4 py-3">Amount</th>
+                    <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3">Pending After</th>
                     <th className="px-4 py-3">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800">
-                  {records.map((record) => (
+                  {records.map((record) => {
+                    const isPaid = Boolean(record.isPaid || record.payment_account);
+                    return (
                     <tr key={record.id}>
                       <td className="px-4 py-3 font-semibold text-slate-900 dark:text-slate-100">
                         {record.voucher_number}
@@ -240,11 +245,30 @@ const GetAllSalesmanCommissionPayment = () => {
                       <td className="px-4 py-3 font-semibold text-slate-800 dark:text-slate-100">
                         {formatDecimal(record.payment)}
                       </td>
+                      <td className="px-4 py-3">
+                        {isPaid ? (
+                          <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
+                            Paid{record.paidDate ? ` ${record.paidDate}` : ""}
+                          </span>
+                        ) : (
+                          <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                            Unpaid
+                          </span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 font-semibold text-blue-600 dark:text-blue-400">
                         {formatDecimal(record.commissionPendingAmount)}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap items-center gap-2">
+                          {isPaid ? null : (
+                            <Button
+                              type="button"
+                              onClick={() => setPayVoucher(record)}
+                            >
+                              Pay
+                            </Button>
+                          )}
                           <DimensionPrintButtons
                             dimensions={printDimensions}
                             recordId={record.id}
@@ -270,7 +294,8 @@ const GetAllSalesmanCommissionPayment = () => {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -313,6 +338,13 @@ const GetAllSalesmanCommissionPayment = () => {
         company={printModal?.company}
         loading={Boolean(printModal?.loading)}
         onClose={handleClosePrint}
+      />
+
+      <CommissionVoucherPayModal
+        open={Boolean(payVoucher)}
+        voucher={payVoucher}
+        onClose={() => setPayVoucher(null)}
+        onPaid={() => loadPayments(page, search)}
       />
     </div>
   );

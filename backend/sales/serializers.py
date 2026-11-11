@@ -1679,6 +1679,7 @@ class SalesmanCommissionPaymentSerializer(serializers.ModelSerializer):
     )
     lines = SalesmanCommissionPaymentLineSerializer(many=True, required=False)
     invoice_count = serializers.SerializerMethodField()
+    is_paid = serializers.SerializerMethodField()
     commission_amount = serializers.SerializerMethodField()
     commission_paid_amount = serializers.SerializerMethodField()
     commission_pending_amount = serializers.SerializerMethodField()
@@ -1697,6 +1698,8 @@ class SalesmanCommissionPaymentSerializer(serializers.ModelSerializer):
             "payment_account",
             "payment_account_id",
             "payment",
+            "paid_date",
+            "is_paid",
             "remarks",
             "lines",
             "invoice_count",
@@ -1711,6 +1714,7 @@ class SalesmanCommissionPaymentSerializer(serializers.ModelSerializer):
             "voucher_number",
             "payable_account",
             "payment_account",
+            "is_paid",
             "invoice_count",
             "commission_amount",
             "commission_paid_amount",
@@ -1718,6 +1722,9 @@ class SalesmanCommissionPaymentSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+
+    def get_is_paid(self, obj):
+        return bool(obj.payment_account_id)
 
     def get_invoice_count(self, obj):
         lines = getattr(obj, "_prefetched_objects_cache", {}).get("lines")
@@ -1877,6 +1884,26 @@ class SalesmanCommissionPaymentSerializer(serializers.ModelSerializer):
             exclude_id=self.instance.id if self.instance else None,
         )
 
+        payment_account_id = (
+            attrs["payment_account_id"]
+            if "payment_account_id" in attrs
+            else getattr(self.instance, "payment_account_id", None)
+        )
+        paid_date = (
+            attrs["paid_date"]
+            if "paid_date" in attrs
+            else getattr(self.instance, "paid_date", None)
+        )
+        if payment_account_id and not paid_date:
+            attrs["paid_date"] = voucher_date
+            paid_date = voucher_date
+        if paid_date and voucher_date and paid_date < voucher_date:
+            raise serializers.ValidationError(
+                {"paid_date": "Payment date cannot be before the voucher date."}
+            )
+        if not payment_account_id:
+            attrs["paid_date"] = None
+
         # Multi-line payload (generate / bulk).
         if lines_data is not None:
             if not lines_data:
@@ -2020,6 +2047,10 @@ class SalesmanCommissionPaymentSerializer(serializers.ModelSerializer):
             instance.payment_account_id = (
                 validated_data.pop("payment_account_id") or None
             )
+        if "paid_date" in validated_data:
+            instance.paid_date = validated_data.pop("paid_date")
+        elif not instance.payment_account_id:
+            instance.paid_date = None
         validated_data.pop("lines", None)
         instance.payable_account = self._resolve_payable_account()
         instance.date = validated_data.get("date", instance.date)

@@ -720,47 +720,52 @@ def _build_sales_bank_receipt_lines(receipt):
 
 
 def _build_salesman_commission_payment_lines(payment):
-    # Accrual (no bank/cash): Dr Expense, Cr Payable → liability on balance sheet.
-    # Settlement (bank/cash selected): Dr Payable, Cr Bank/Cash.
-    if payment.payment_account_id:
-        return [
-            {
-                "account": payment.payable_account,
-                "debit": payment.payment,
-                "credit": Decimal("0.00"),
-                "line_description": "Salesman Commission Payable",
-                "people_type": "Salesman",
-                "people_name": payment.salesman.name,
-            },
-            {
-                "account": payment.payment_account,
-                "debit": Decimal("0.00"),
-                "credit": payment.payment,
-                "line_description": "Salesman Commission Payment",
-                "people_type": "Salesman",
-                "people_name": payment.salesman.name,
-            },
-        ]
-
+    """Accrue commission: Dr Expense, Cr Payable. Always posted for the voucher."""
     from inventory.party_accounts import resolve_default_commission_expense_account
 
     expense_account = resolve_default_commission_expense_account([payment.tenant_id])
+    amount = quantize_money(payment.payment)
+    salesman_name = payment.salesman.name if payment.salesman_id else ""
     return [
         {
             "account": expense_account,
-            "debit": payment.payment,
+            "debit": amount,
             "credit": Decimal("0.00"),
             "line_description": "Salesman Commission Expense",
             "people_type": "Salesman",
-            "people_name": payment.salesman.name,
+            "people_name": salesman_name,
         },
         {
             "account": payment.payable_account,
             "debit": Decimal("0.00"),
-            "credit": payment.payment,
+            "credit": amount,
             "line_description": "Salesman Commission Payable",
             "people_type": "Salesman",
-            "people_name": payment.salesman.name,
+            "people_name": salesman_name,
+        },
+    ]
+
+
+def _build_salesman_commission_settlement_lines(payment):
+    """Settle accrued payable: Dr Payable, Cr Bank/Cash."""
+    amount = quantize_money(payment.payment)
+    salesman_name = payment.salesman.name if payment.salesman_id else ""
+    return [
+        {
+            "account": payment.payable_account,
+            "debit": amount,
+            "credit": Decimal("0.00"),
+            "line_description": "Salesman Commission Payable",
+            "people_type": "Salesman",
+            "people_name": salesman_name,
+        },
+        {
+            "account": payment.payment_account,
+            "debit": Decimal("0.00"),
+            "credit": amount,
+            "line_description": "Salesman Commission Payment",
+            "people_type": "Salesman",
+            "people_name": salesman_name,
         },
     ]
 
@@ -932,8 +937,33 @@ def sync_sales_bank_receipt_journal(receipt):
 
 
 @transaction.atomic
-def sync_salesman_commission_payment_journal(payment):
+def sync_salesman_commission_settlement_journal(payment):
+    if not payment.payment_account_id:
+        delete_journal_entry(
+            JournalEntry.SourceType.SALESMAN_COMMISSION_SETTLEMENT,
+            payment.id,
+            payment.tenant_id,
+        )
+        return None
+    salesman_name = payment.salesman.name if payment.salesman_id else ""
     return _upsert_journal_entry(
+        tenant_id=payment.tenant_id,
+        source_type=JournalEntry.SourceType.SALESMAN_COMMISSION_SETTLEMENT,
+        source_id=payment.id,
+        date=payment.paid_date or payment.date,
+        reference=f"{payment.voucher_number}-PAY",
+        document_type="Salesman Commission Payment",
+        description=payment.remarks,
+        people_type="Salesman",
+        people_name=salesman_name,
+        lines=_build_salesman_commission_settlement_lines(payment),
+    )
+
+
+@transaction.atomic
+def sync_salesman_commission_payment_journal(payment):
+    salesman_name = payment.salesman.name if payment.salesman_id else ""
+    entry = _upsert_journal_entry(
         tenant_id=payment.tenant_id,
         source_type=JournalEntry.SourceType.SALESMAN_COMMISSION_PAYMENT,
         source_id=payment.id,
@@ -942,9 +972,11 @@ def sync_salesman_commission_payment_journal(payment):
         document_type="Salesman Commission Voucher",
         description=payment.remarks,
         people_type="Salesman",
-        people_name=payment.salesman.name,
+        people_name=salesman_name,
         lines=_build_salesman_commission_payment_lines(payment),
     )
+    sync_salesman_commission_settlement_journal(payment)
+    return entry
 
 
 def _resolve_opening_balance_party_account(party, field_label, tenant_id):

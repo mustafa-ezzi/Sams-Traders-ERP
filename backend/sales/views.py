@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 
 from django.db import transaction
@@ -1060,9 +1061,80 @@ class SalesmanCommissionPaymentViewSet(AuditedModelMixin, viewsets.ModelViewSet)
                 instance.id,
                 instance.tenant_id,
             )
+            delete_journal_entry(
+                JournalEntry.SourceType.SALESMAN_COMMISSION_SETTLEMENT,
+                instance.id,
+                instance.tenant_id,
+            )
         return Response(
             {"data": None, "message": "Salesman commission voucher deleted successfully"},
             status=status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=["post"], url_path="pay")
+    def pay(self, request, pk=None):
+        """Settle an accrued commission voucher from bank/cash. Dr Payable, Cr Bank."""
+        instance = self.get_object()
+        if instance.payment_account_id:
+            raise ValidationError(
+                {"detail": "This commission voucher is already paid."}
+            )
+
+        serializer = self.get_serializer(instance)
+        payment_account_id = serializer.validate_payment_account_id(
+            request.data.get("payment_account_id")
+        )
+        if not payment_account_id:
+            raise ValidationError(
+                {"payment_account_id": "Select a bank or cash account to pay from."}
+            )
+
+        paid_date_raw = request.data.get("paid_date")
+        if paid_date_raw:
+            try:
+                paid_date = date.fromisoformat(str(paid_date_raw)[:10])
+            except ValueError:
+                raise ValidationError({"paid_date": "Date must be in YYYY-MM-DD format."})
+        else:
+            paid_date = date.today()
+        if paid_date < instance.date:
+            raise ValidationError(
+                {"paid_date": "Payment date cannot be before the voucher date."}
+            )
+
+        extra_remarks = (request.data.get("remarks") or "").strip()
+        with transaction.atomic():
+            instance.payment_account_id = payment_account_id
+            instance.paid_date = paid_date
+            if extra_remarks:
+                instance.remarks = (
+                    f"{instance.remarks}\n{extra_remarks}".strip()
+                    if instance.remarks
+                    else extra_remarks
+                )
+            instance.save(
+                update_fields=[
+                    "payment_account",
+                    "paid_date",
+                    "remarks",
+                    "updated_at",
+                ]
+            )
+            sync_salesman_commission_payment_journal(
+                self._get_serializable_payment(instance.id)
+            )
+
+        response_serializer = self.get_serializer(
+            self._get_serializable_payment(instance.id)
+        )
+        return Response(
+            {
+                "data": response_serializer.data,
+                "message": (
+                    f"Paid {instance.voucher_number} "
+                    f"({instance.payment}) from the selected account."
+                ),
+            }
         )
 
     @action(detail=False, methods=["get"], url_path="invoice-options")

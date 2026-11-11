@@ -343,6 +343,7 @@ class SalesmanCommissionPayment(BaseModel):
         related_name="salesman_commission_paid_vouchers",
     )
     payment = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    paid_date = models.DateField(null=True, blank=True)
     remarks = models.TextField(blank=True, default="")
 
     class Meta:
