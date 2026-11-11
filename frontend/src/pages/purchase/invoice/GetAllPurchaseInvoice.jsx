@@ -33,6 +33,9 @@ const orderingFields = {
   due: "due_date",
   supplier: "supplier__business_name",
   warehouse: "warehouse__name",
+  gross: "gross_amount",
+  received: "_paid_amount",
+  balance: "_balance_amount",
   status: "_balance_amount",
 };
 const GetAllPurchaseInvoice = () => {
@@ -264,6 +267,9 @@ const GetAllPurchaseInvoice = () => {
                     <SortableHeader className="px-4 py-3" label="Due" sortKey="due" sortConfig={sortConfig} onSort={handleSort} />{" "}
                     <SortableHeader className="px-4 py-3" label="Supplier" sortKey="supplier" sortConfig={sortConfig} onSort={handleSort} />{" "}
                     <SortableHeader className="px-4 py-3" label="Warehouse" sortKey="warehouse" sortConfig={sortConfig} onSort={handleSort} />{" "}
+                    <SortableHeader className="px-4 py-3" label="Gross" sortKey="gross" sortConfig={sortConfig} onSort={handleSort} />{" "}
+                    <SortableHeader className="px-4 py-3" label="Received" sortKey="received" sortConfig={sortConfig} onSort={handleSort} />{" "}
+                    <SortableHeader className="px-4 py-3" label="Balance" sortKey="balance" sortConfig={sortConfig} onSort={handleSort} />{" "}
                     <SortableHeader className="px-4 py-3" label="Status" sortKey="status" sortConfig={sortConfig} onSort={handleSort} />{" "}
                     <th className="px-4 py-3 text-right">Actions</th>{" "}
                   </tr>{" "}
@@ -302,6 +308,15 @@ const GetAllPurchaseInvoice = () => {
                         <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
                           {record.warehouse?.name}
                         </td>{" "}
+                        <td className="px-4 py-3 text-right text-slate-600 dark:text-slate-300">
+                          {formatDecimal(record.grossAmount)}
+                        </td>
+                        <td className="px-4 py-3 text-right font-semibold text-blue-600 dark:text-blue-400">
+                          {formatDecimal(record.paidAmount)}
+                        </td>
+                        <td className="px-4 py-3 text-right font-semibold text-amber-600">
+                          {formatDecimal(record.balanceAmount)}
+                        </td>
                         <td className="px-4 py-3">
                           {" "}
                           <div className="flex flex-wrap items-center gap-2">

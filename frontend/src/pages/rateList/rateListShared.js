@@ -36,6 +36,8 @@ export const createEmptyLine = () =>
     groupId: "",
     sku: "",
     productName: "",
+    brandId: "",
+    brandName: "",
     uomName: "",
     description: "",
     cost: "0",
@@ -71,6 +73,9 @@ export const lineFromProduct = (product, saved = null) =>
     groupId: saved?.groupId || "",
     sku: saved?.sku || product.sku || "",
     productName: saved?.productName || product.name || "",
+    brandId: product.brand_id || product.brandId || product.brand?.id || "",
+    brandName:
+      product.brand_name || product.brandName || product.brand?.name || "",
     uomName:
       saved?.uomName || product.unit_name || product.unitName || "",
     description: saved?.description || "",
@@ -144,3 +149,40 @@ export const extractErrorMessage = (error) => {
 };
 
 export const todayIsoDate = () => new Date().toISOString().slice(0, 10);
+
+export const brandKeyForLine = (line) => {
+  const name = String(line?.brandName || "").trim() || "Unbranded";
+  const id = String(line?.brandId || "").trim();
+  return id || `name:${name.toLowerCase()}`;
+};
+
+export const groupLinesByBrand = (visibleLines = []) => {
+  const map = new Map();
+  visibleLines.forEach((item) => {
+    const name = String(item.line?.brandName || "").trim() || "Unbranded";
+    const key = brandKeyForLine(item.line);
+    if (!map.has(key)) {
+      map.set(key, { key, name, lines: [] });
+    }
+    map.get(key).lines.push(item);
+  });
+  return [...map.values()]
+    .map((group) => ({
+      ...group,
+      lines: group.lines.slice().sort((a, b) =>
+        String(a.line?.productName || "").localeCompare(
+          String(b.line?.productName || ""),
+          undefined,
+          { numeric: true, sensitivity: "base" },
+        ),
+      ),
+    }))
+    .sort((a, b) => {
+      if (a.name === "Unbranded" && b.name !== "Unbranded") return 1;
+      if (b.name === "Unbranded" && a.name !== "Unbranded") return -1;
+      return a.name.localeCompare(b.name, undefined, {
+        numeric: true,
+        sensitivity: "base",
+      });
+    });
+};

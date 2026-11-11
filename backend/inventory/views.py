@@ -401,12 +401,20 @@ class ProductViewSet(UnpaginatedOptionsMixin, viewsets.ModelViewSet):
             Prefetch("materials", queryset=active_materials)
         )
         product_type = self.request.query_params.get("product_type", "").strip()
-        if product_type == "ASSEMBLY_PRODUCT":
-            qs = qs.filter(
-                product_type__in=["ASSEMBLY_PRODUCT", "MANUFACTURED"]
-            )
-        elif product_type == "FINISHED_GOOD":
-            qs = qs.filter(product_type__in=["FINISHED_GOOD", "READY_MADE"])
+        if product_type:
+            requested = [
+                part.strip() for part in product_type.split(",") if part.strip()
+            ]
+            types = set()
+            for part in requested:
+                if part == "ASSEMBLY_PRODUCT":
+                    types.update(["ASSEMBLY_PRODUCT", "MANUFACTURED"])
+                elif part == "FINISHED_GOOD":
+                    types.update(["FINISHED_GOOD", "READY_MADE"])
+                else:
+                    types.add(part)
+            if types:
+                qs = qs.filter(product_type__in=types)
         qs = qs.annotate(
             quantity=Coalesce(
                 Subquery(quantity_subquery),

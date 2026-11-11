@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
@@ -18,9 +18,12 @@ import {
   buildFinishedGoodLines,
   extractErrorMessage,
   formatDisplayDate,
+  groupLinesByBrand,
   todayIsoDate,
   withComputedPrices,
 } from "./rateListShared";
+
+const RATE_LIST_PRODUCT_TYPES = "FINISHED_GOOD,ASSEMBLY_PRODUCT";
 
 const CreateUpdateRateList = () => {
   const { id } = useParams();
@@ -43,6 +46,8 @@ const CreateUpdateRateList = () => {
   const [lines, setLines] = useState([]);
   const [groups, setGroups] = useState([]);
   const [groupFilter, setGroupFilter] = useState("");
+  const [search, setSearch] = useState("");
+  const [collapsedBrands, setCollapsedBrands] = useState(() => new Set());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [printModal, setPrintModal] = useState(null);
@@ -53,11 +58,26 @@ const CreateUpdateRateList = () => {
   );
 
   const visibleLines = useMemo(() => {
-    if (!groupFilter) return lines.map((line, index) => ({ line, index }));
+    const term = search.trim().toLowerCase();
     return lines
       .map((line, index) => ({ line, index }))
-      .filter(({ line }) => line.groupId === groupFilter);
-  }, [lines, groupFilter]);
+      .filter(({ line }) => {
+        if (groupFilter && line.groupId !== groupFilter) return false;
+        if (!term) return true;
+        return [line.productName, line.sku, line.description, line.brandName]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(term));
+      });
+  }, [lines, groupFilter, search]);
+
+  const brandGroups = useMemo(
+    () => groupLinesByBrand(visibleLines),
+    [visibleLines],
+  );
+
+  const allBrandsCollapsed =
+    brandGroups.length > 0 &&
+    brandGroups.every((group) => collapsedBrands.has(group.key));
 
   const allVisibleSelected =
     visibleLines.length > 0 &&
@@ -78,7 +98,7 @@ const CreateUpdateRateList = () => {
       setLoading(true);
       try {
         const [productOptions, groupList] = await Promise.all([
-          productService.options("", { product_type: "FINISHED_GOOD" }),
+          productService.options("", { product_type: RATE_LIST_PRODUCT_TYPES }),
           rateListGroupService.options(),
         ]);
         if (cancelled) return;
@@ -116,6 +136,29 @@ const CreateUpdateRateList = () => {
       ),
     );
   };
+
+  const toggleBrand = (brandKey) => {
+    setCollapsedBrands((prev) => {
+      const next = new Set(prev);
+      if (next.has(brandKey)) next.delete(brandKey);
+      else next.add(brandKey);
+      return next;
+    });
+  };
+
+  const toggleAllBrands = () => {
+    if (allBrandsCollapsed) {
+      setCollapsedBrands(new Set());
+      return;
+    }
+    setCollapsedBrands(new Set(brandGroups.map((group) => group.key)));
+  };
+
+  useEffect(() => {
+    if (search.trim()) {
+      setCollapsedBrands(new Set());
+    }
+  }, [search]);
 
   const toggleSelectAllVisible = () => {
     const nextValue = !allVisibleSelected;
@@ -158,7 +201,7 @@ const CreateUpdateRateList = () => {
       return false;
     }
     if (!selectedLines.length) {
-      toast.error("Select at least one finished good to add to the rate list");
+      toast.error("Select at least one product to add to the rate list");
       return false;
     }
     for (const line of selectedLines) {
@@ -287,8 +330,8 @@ const CreateUpdateRateList = () => {
                 : "View Rate List"}
             </h2>
             <p className="mt-1 text-sm text-slate-500">
-              All finished goods are listed. Check the products to add to this
-              rate list.
+              Finished goods and assembly products are listed. Check the
+              products to add to this rate list.
               {canWrite
                 ? ""
                 : " You have read-only access."}
@@ -359,24 +402,40 @@ const CreateUpdateRateList = () => {
       </Card>
 
       <Card>
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <div className="text-sm text-slate-600 dark:text-slate-300">
-            {lines.length} finished good{lines.length === 1 ? "" : "s"}
-            {` · ${selectedLines.length} selected`}
-            {groupFilter
-              ? ` · showing ${visibleLines.length} in filter`
-              : ""}
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-[220px] flex-1">
+            <FormInput
+              placeholder="Search product, SKU, or description"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
           </div>
-          {canWrite ? (
-            <Button variant="secondary" onClick={toggleSelectAllVisible}>
-              {allVisibleSelected ? "Unselect visible" : "Select visible"}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="text-sm text-slate-600 dark:text-slate-300">
+              {lines.length} product{lines.length === 1 ? "" : "s"}
+              {` · ${selectedLines.length} selected`}
+              {groupFilter || search.trim()
+                ? ` · showing ${visibleLines.length}`
+                : ""}
+            </div>
+            <Button variant="secondary" onClick={toggleAllBrands}>
+              {allBrandsCollapsed ? "Expand all brands" : "Collapse all brands"}
             </Button>
-          ) : null}
+            {canWrite ? (
+              <Button variant="secondary" onClick={toggleSelectAllVisible}>
+                {allVisibleSelected ? "Unselect visible" : "Select visible"}
+              </Button>
+            ) : null}
+          </div>
         </div>
 
         {!lines.length ? (
           <p className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500 dark:border-slate-700">
-            No finished goods found.
+            No finished goods or assembly products found.
+          </p>
+        ) : !visibleLines.length ? (
+          <p className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500 dark:border-slate-700">
+            No products match the current search or group filter.
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -398,111 +457,153 @@ const CreateUpdateRateList = () => {
                 </tr>
               </thead>
               <tbody>
-                {visibleLines.map(({ line, index }, visibleIndex) => (
-                  <tr
-                    key={line.key}
-                    className="border-b border-slate-100 align-top dark:border-slate-800"
-                  >
-                    <td className="px-2 py-2 text-slate-500">{visibleIndex + 1}</td>
-                    <td className="px-2 py-2">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(line.includeInPrint)}
-                        disabled={!canWrite}
-                        onChange={(event) =>
-                          updateLine(index, {
-                            includeInPrint: event.target.checked,
-                          })
-                        }
-                      />
-                    </td>
-                    <td className="px-2 py-2 min-w-[200px] font-medium text-slate-800 dark:text-slate-100">
-                      {line.productName || "—"}
-                    </td>
-                    <td className="px-2 py-2 whitespace-nowrap text-slate-600">
-                      {line.sku || "—"}
-                    </td>
-                    <td className="px-2 py-2">
-                      <input
-                        className={selectClassName}
-                        value={line.description}
-                        onChange={(event) =>
-                          updateLine(index, { description: event.target.value })
-                        }
-                        placeholder="Optional"
-                        disabled={!canWrite}
-                      />
-                    </td>
-                    <td className="px-2 py-2 whitespace-nowrap">
-                      {line.uomName || "—"}
-                    </td>
-                    <td className="px-2 py-2">
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        className={`${selectClassName} w-24`}
-                        value={line.cost}
-                        onChange={(event) =>
-                          updateLine(index, { cost: event.target.value })
-                        }
-                        disabled={!canWrite}
-                      />
-                    </td>
-                    <td className="px-2 py-2">
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        className={`${selectClassName} w-20`}
-                        value={line.percentage}
-                        onChange={(event) =>
-                          updateLine(index, { percentage: event.target.value })
-                        }
-                        disabled={!canWrite}
-                      />
-                    </td>
-                    <td className="px-2 py-2 whitespace-nowrap font-medium">
-                      {line.tradePrice}
-                    </td>
-                    <td className="px-2 py-2">
-                      <input
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="0.01"
-                        className={`${selectClassName} w-20`}
-                        value={line.discountPercent}
-                        onChange={(event) =>
-                          updateLine(index, {
-                            discountPercent: event.target.value,
-                          })
-                        }
-                        disabled={!canWrite}
-                      />
-                    </td>
-                    <td className="px-2 py-2 whitespace-nowrap font-semibold text-slate-900 dark:text-slate-100">
-                      {line.sellingPrice}
-                    </td>
-                    <td className="px-2 py-2">
-                      <select
-                        className={selectClassName}
-                        value={line.groupId || ""}
-                        onChange={(event) =>
-                          updateLine(index, { groupId: event.target.value })
-                        }
-                        disabled={!canWrite}
-                      >
-                        <option value="">Select group</option>
-                        {groupOptions.map((group) => (
-                          <option key={group.id} value={group.id}>
-                            {group.name}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                  </tr>
-                ))}
+                {brandGroups.map((brandGroup) => {
+                  const collapsed = collapsedBrands.has(brandGroup.key);
+                  const selectedCount = brandGroup.lines.filter(
+                    ({ line }) => line.includeInPrint,
+                  ).length;
+                  return (
+                    <Fragment key={brandGroup.key}>
+                      <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900/60">
+                        <td colSpan={12} className="px-2 py-2">
+                          <button
+                            type="button"
+                            className="flex w-full items-center gap-2 text-left font-semibold text-slate-800 dark:text-slate-100"
+                            onClick={() => toggleBrand(brandGroup.key)}
+                            aria-expanded={!collapsed}
+                          >
+                            <span className="w-4 text-slate-500">
+                              {collapsed ? "▸" : "▾"}
+                            </span>
+                            <span>{brandGroup.name}</span>
+                            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                              {brandGroup.lines.length} product
+                              {brandGroup.lines.length === 1 ? "" : "s"}
+                              {selectedCount
+                                ? ` · ${selectedCount} selected`
+                                : ""}
+                            </span>
+                          </button>
+                        </td>
+                      </tr>
+                      {collapsed
+                        ? null
+                        : brandGroup.lines.map(({ line, index }, productIndex) => (
+                            <tr
+                              key={line.key}
+                              className="border-b border-slate-100 align-top dark:border-slate-800"
+                            >
+                              <td className="px-2 py-2 text-slate-500">
+                                {productIndex + 1}
+                              </td>
+                              <td className="px-2 py-2">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(line.includeInPrint)}
+                                  disabled={!canWrite}
+                                  onChange={(event) =>
+                                    updateLine(index, {
+                                      includeInPrint: event.target.checked,
+                                    })
+                                  }
+                                />
+                              </td>
+                              <td className="px-2 py-2 min-w-[200px] font-medium text-slate-800 dark:text-slate-100">
+                                {line.productName || "—"}
+                              </td>
+                              <td className="px-2 py-2 whitespace-nowrap text-slate-600">
+                                {line.sku || "—"}
+                              </td>
+                              <td className="px-2 py-2">
+                                <input
+                                  className={selectClassName}
+                                  value={line.description}
+                                  onChange={(event) =>
+                                    updateLine(index, {
+                                      description: event.target.value,
+                                    })
+                                  }
+                                  placeholder="Optional"
+                                  disabled={!canWrite}
+                                />
+                              </td>
+                              <td className="px-2 py-2 whitespace-nowrap">
+                                {line.uomName || "—"}
+                              </td>
+                              <td className="px-2 py-2">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  className={`${selectClassName} w-24`}
+                                  value={line.cost}
+                                  onChange={(event) =>
+                                    updateLine(index, { cost: event.target.value })
+                                  }
+                                  disabled={!canWrite}
+                                />
+                              </td>
+                              <td className="px-2 py-2">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  className={`${selectClassName} w-20`}
+                                  value={line.percentage}
+                                  onChange={(event) =>
+                                    updateLine(index, {
+                                      percentage: event.target.value,
+                                    })
+                                  }
+                                  disabled={!canWrite}
+                                />
+                              </td>
+                              <td className="px-2 py-2 whitespace-nowrap font-medium">
+                                {line.tradePrice}
+                              </td>
+                              <td className="px-2 py-2">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="100"
+                                  step="0.01"
+                                  className={`${selectClassName} w-20`}
+                                  value={line.discountPercent}
+                                  onChange={(event) =>
+                                    updateLine(index, {
+                                      discountPercent: event.target.value,
+                                    })
+                                  }
+                                  disabled={!canWrite}
+                                />
+                              </td>
+                              <td className="px-2 py-2 whitespace-nowrap font-semibold text-slate-900 dark:text-slate-100">
+                                {line.sellingPrice}
+                              </td>
+                              <td className="px-2 py-2">
+                                <select
+                                  className={selectClassName}
+                                  value={line.groupId || ""}
+                                  onChange={(event) =>
+                                    updateLine(index, {
+                                      groupId: event.target.value,
+                                    })
+                                  }
+                                  disabled={!canWrite}
+                                >
+                                  <option value="">Select group</option>
+                                  {groupOptions.map((group) => (
+                                    <option key={group.id} value={group.id}>
+                                      {group.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                            </tr>
+                          ))}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>

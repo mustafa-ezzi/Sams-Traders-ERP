@@ -62,8 +62,10 @@ class PurchaseInvoiceViewSet(AuditedModelMixin, viewsets.ModelViewSet):
         "due_date",
         "supplier__business_name",
         "warehouse__name",
+        "gross_amount",
+        "_paid_amount",
         "_balance_amount",
-            "created_at",
+        "created_at",
         "id",
     ]
     ordering = ["-created_at", "-date", "-id"]

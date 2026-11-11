@@ -88,12 +88,18 @@ class ProductDropdownOptionSerializer(serializers.Serializer):
     sku = serializers.CharField(required=False, allow_blank=True)
     name = serializers.CharField()
     product_type = serializers.CharField()
+    brand_id = serializers.UUIDField(allow_null=True, required=False)
+    brand_name = serializers.SerializerMethodField()
     unit = serializers.UUIDField(source="unit_id", allow_null=True)
     unit_name = serializers.SerializerMethodField()
     confirmed_unit_cost = serializers.DecimalField(max_digits=12, decimal_places=2)
     average_cost = serializers.SerializerMethodField()
     net_amount = serializers.DecimalField(max_digits=12, decimal_places=2)
     quantity = serializers.DecimalField(max_digits=12, decimal_places=2)
+
+    def get_brand_name(self, obj):
+        brand = getattr(obj, "brand", None)
+        return getattr(brand, "name", "") or ""
 
     def get_unit_name(self, obj):
         unit = getattr(obj, "unit", None)

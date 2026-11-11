@@ -256,7 +256,6 @@ const GetAllSalesInvoice = () => {
                     <SortableHeader className="px-4 py-3" label="Gross" sortKey="gross" sortConfig={sortConfig} onSort={handleSort} />{" "}
                     <SortableHeader className="px-4 py-3" label="Net" sortKey="net" sortConfig={sortConfig} onSort={handleSort} />{" "}
                     <SortableHeader className="px-4 py-3" label="COGS" sortKey="cogs" sortConfig={sortConfig} onSort={handleSort} />{" "}
-                    <SortableHeader className="px-4 py-3" label="Profit" sortKey="profit" sortConfig={sortConfig} onSort={handleSort} />{" "}
                     <SortableHeader className="px-4 py-3" label="Balance" sortKey="balance" sortConfig={sortConfig} onSort={handleSort} />{" "}
                     <th className="px-4 py-3">Actions</th>{" "}
                   </tr>{" "}
@@ -293,10 +292,6 @@ const GetAllSalesInvoice = () => {
                       <td className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-200">
                         {" "}
                         {formatDecimal(record.costTotal)}{" "}
-                      </td>{" "}
-                      <td className="px-4 py-3 font-semibold text-emerald-600 dark:text-emerald-400">
-                        {" "}
-                        {formatDecimal(record.profit)}{" "}
                       </td>{" "}
                       <td className="px-4 py-3 font-semibold text-amber-600">
                         {" "}
