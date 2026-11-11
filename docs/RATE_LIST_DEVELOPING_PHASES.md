@@ -4,22 +4,28 @@ Working checklist for the Rate List feature. Implement one phase at a time; upda
 
 ## Locked decisions
 
-| Topic | Decision |
-| --- | --- |
-| Persistence | Save Rate Lists + lines in DB (create / reopen / edit) |
-| Group of | New **Rate List Groups** master (Plastic, Melamine, …) |
-| Cost source | Product `confirmed_unit_cost` |
-| SKU / name / UOM | From product (`sku`, `name`, `unit`) |
-| Description | Editable on each line (Product has no description field yet) |
-| Math | `TP = Cost × (1 + Percentage / 100)` · `Selling = TP × (1 − Discount% / 100)` |
-| Print hide | Cost, Percentage (markup) |
-| Print show | S.No, SKU, Product name, Description, UOM, TP, Discount %, Selling Price; grouped by Rate List Group; SAMS/AM logo + current date |
+
+| Topic            | Decision                                                                                                                          |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Persistence      | Save Rate Lists + lines in DB (create / reopen / edit)                                                                            |
+| Group of         | New **Rate List Groups** master (Plastic, Melamine, …)                                                                            |
+| Cost source      | Product `confirmed_unit_cost`                                                                                                     |
+| SKU / name / UOM | From product (`sku`, `name`, `unit`)                                                                                              |
+| Description      | Editable on each line (Product has no description field yet)                                                                      |
+| Math             | `TP = Cost × (1 + Percentage / 100)` · `Selling = TP × (1 − Discount% / 100)`                                                     |
+| Print hide       | Cost, Percentage (markup)                                                                                                         |
+| Print show       | S.No, SKU, Product name, Description, UOM, TP, Discount %, Selling Price; grouped by Rate List Group; SAMS/AM logo + current date |
+
+
+
 
 ## Status key
 
 `pending` · `in_progress` · `done`
 
 ---
+
+
 
 ### Phase 0 — Phases doc
 
@@ -30,6 +36,8 @@ Working checklist for the Rate List feature. Implement one phase at a time; upda
 
 ---
 
+
+
 ### Phase 1 — Backend: Rate List Groups master
 
 - **Status:** done
@@ -39,14 +47,18 @@ Working checklist for the Rate List feature. Implement one phase at a time; upda
 
 ---
 
+
+
 ### Phase 2 — Backend: Rate List + lines
 
 - **Status:** done
 - **Goal:** Persist rate lists with nested lines and server-side pricing math.
 - **Files:** models (`RateList`, `RateListLine`), serializers, views, urls, migration
-- **Acceptance:** Create / get / update / delete rate list with lines; TP and selling price match formula (2 dp).
+- **Acceptance:** Create / get / update / delete rate list with lines; TP and selling  price match formula (2 dp).
 
 ---
+
+
 
 ### Phase 3 — Frontend: Groups master UI
 
@@ -56,6 +68,8 @@ Working checklist for the Rate List feature. Implement one phase at a time; upda
 - **Acceptance:** User can add/edit/delete Plastic, Melamine, etc.
 
 ---
+
+
 
 ### Phase 4 — Frontend: Rate List builder
 
@@ -67,6 +81,8 @@ Working checklist for the Rate List feature. Implement one phase at a time; upda
 
 ---
 
+
+
 ### Phase 5 — Print Rate List
 
 - **Status:** done
@@ -76,6 +92,8 @@ Working checklist for the Rate List feature. Implement one phase at a time; upda
 
 ---
 
+
+
 ### Phase 6 — Polish
 
 - **Status:** done
@@ -84,7 +102,10 @@ Working checklist for the Rate List feature. Implement one phase at a time; upda
 
 ---
 
+
+
 ## Out of scope (for now)
 
 - Product master description field
 - Auto-refreshing cost on old saved lists when product cost changes
+
