@@ -621,7 +621,7 @@ const CreateUpdateSalesInvoice = () => {
               className="grid gap-2 bg-indigo-50 px-4 py-3 text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400 dark:text-slate-500"
               style={{
                 gridTemplateColumns:
-                  "1.8fr 80px 90px 70px 110px 110px 85px 85px 110px 110px 40px",
+                  "1.8fr 80px 90px 70px 110px 110px 85px 85px 110px 110px 110px 40px",
               }}
             >
               <span>Product Name</span>
@@ -634,6 +634,7 @@ const CreateUpdateSalesInvoice = () => {
               <span>Disc (Amt)</span>
               <span>Avg Cost</span>
               <span>COGS</span>
+              <span>Profit</span>
               <span />
             </div>{" "}
             <div className="space-y-0 divide-y divide-slate-100 dark:divide-slate-700 px-4 py-2">
@@ -647,7 +648,7 @@ const CreateUpdateSalesInvoice = () => {
                     className="grid items-center gap-2 py-3"
                     style={{
                       gridTemplateColumns:
-                        "1.8fr 80px 90px 70px 110px 110px 85px 85px 110px 110px 40px",
+                        "1.8fr 80px 90px 70px 110px 110px 85px 85px 110px 110px 110px 40px",
                     }}
                   >
                     {" "}
@@ -732,6 +733,10 @@ const CreateUpdateSalesInvoice = () => {
                     <div className="flex items-center rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 px-3 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
                       {" "}
                       {formatDecimal(metrics?.costTotal || 0)}{" "}
+                    </div>{" "}
+                    <div className="flex items-center rounded-2xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/40 px-3 py-3 text-sm font-semibold text-blue-700 dark:text-blue-300">
+                      {" "}
+                      {formatDecimal(metrics?.profit || 0)}{" "}
                     </div>{" "}
                     <button
                       type="button"
