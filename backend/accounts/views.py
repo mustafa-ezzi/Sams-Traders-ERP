@@ -113,6 +113,7 @@ from .audit_mixin import AuditedModelMixin
 from .journal import (
     delete_bank_transfer_journals,
     delete_journal_entry,
+    realign_journal_voucher_accounts,
     sync_bank_transfer_journal,
     sync_expense_journal,
     sync_journal_voucher_journal,
@@ -480,10 +481,13 @@ class AccountViewSet(ModelViewSet):
         if self.request.user.tenant_id and self.request.user.tenant_id not in valid_tenants:
             valid_tenants.append(self.request.user.tenant_id)
         if tenant_scope == "BOTH":
-            return valid_tenants
-        if tenant_scope in valid_tenants:
-            return [tenant_scope]
-        raise ValidationError({"tenant_scope": "Valid dimension scope is required."})
+            tenant_ids = valid_tenants
+        elif tenant_scope in valid_tenants:
+            tenant_ids = [tenant_scope]
+        else:
+            raise ValidationError({"tenant_scope": "Valid dimension scope is required."})
+        realign_journal_voucher_accounts(tenant_ids)
+        return tenant_ids
 
     def _parse_report_date_range(self):
         from_raw = self.request.query_params.get("from_date")

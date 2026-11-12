@@ -1,10 +1,19 @@
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.db import transaction
+from django.db.models import F, Q
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
-from accounts.models import Account, Expense, JournalEntry, JournalLine, BankTransfer, JournalVoucher
+from accounts.models import (
+    Account,
+    Expense,
+    JournalEntry,
+    JournalLine,
+    BankTransfer,
+    JournalVoucher,
+    JournalVoucherLine,
+)
 from inventory.models import PartyOpeningBalance
 from inventory.party_accounts import (
     resolve_default_payable_account,
@@ -1137,10 +1146,19 @@ def _build_journal_voucher_lines(voucher):
         credit = quantize_money(voucher_line.credit)
         if debit <= 0 and credit <= 0:
             continue
+        target_tenant = voucher_line.tenant_id or voucher.tenant_id
+        account = voucher_line.account
+        if account and account.tenant_id != target_tenant:
+            remapped = _matching_account_in_dimension(account, target_tenant)
+            if remapped:
+                account = remapped
+                if voucher_line.account_id != remapped.id:
+                    voucher_line.account = remapped
+                    voucher_line.save(update_fields=["account", "updated_at"])
         lines.append(
             {
-                "account": voucher_line.account,
-                "tenant_id": voucher_line.tenant_id,
+                "account": account,
+                "tenant_id": target_tenant,
                 "debit": debit,
                 "credit": credit,
                 "line_description": (voucher_line.description or "").strip()
@@ -1165,6 +1183,42 @@ def sync_journal_voucher_journal(voucher):
         people_name="",
         lines=_build_journal_voucher_lines(voucher),
     )
+
+
+def realign_journal_voucher_accounts(tenant_ids=None):
+    """Repost JVs whose line dimension does not match the stored account tenant."""
+    line_qs = JournalVoucherLine.objects.filter(
+        deleted_at__isnull=True,
+        voucher__deleted_at__isnull=True,
+    ).exclude(account__tenant_id=F("tenant_id"))
+    if tenant_ids:
+        line_qs = line_qs.filter(
+            Q(tenant_id__in=tenant_ids) | Q(voucher__tenant_id__in=tenant_ids)
+        )
+    voucher_ids = set(line_qs.values_list("voucher_id", flat=True))
+
+    journal_qs = JournalLine.objects.filter(
+        deleted_at__isnull=True,
+        journal_entry__deleted_at__isnull=True,
+        journal_entry__source_type=JournalEntry.SourceType.JOURNAL_VOUCHER,
+    ).exclude(account__tenant_id=F("tenant_id"))
+    if tenant_ids:
+        journal_qs = journal_qs.filter(
+            Q(tenant_id__in=tenant_ids) | Q(journal_entry__tenant_id__in=tenant_ids)
+        )
+    voucher_ids.update(journal_qs.values_list("journal_entry__source_id", flat=True))
+
+    if not voucher_ids:
+        return 0
+
+    count = 0
+    for voucher in JournalVoucher.objects.filter(
+        id__in=voucher_ids,
+        deleted_at__isnull=True,
+    ).prefetch_related("lines__account"):
+        sync_journal_voucher_journal(voucher)
+        count += 1
+    return count
 
 
 def _build_bank_transfer_lines_same_tenant(transfer):

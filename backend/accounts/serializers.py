@@ -1381,31 +1381,43 @@ class JournalVoucherSerializer(serializers.ModelSerializer):
                     }
                 }
             )
-        # Account heads are shared across companies — only require the account
-        # (or an equivalent code) to exist somewhere the user can access.
-        if account.tenant_id not in allowed_dimensions:
-            shared_copy = Account.objects.filter(
+        if account.tenant_id != line_tenant_id:
+            dimension_copy = Account.objects.filter(
                 code=account.code,
-                tenant_id__in=allowed_dimensions,
+                tenant_id=line_tenant_id,
                 deleted_at__isnull=True,
                 is_active=True,
                 is_postable=True,
             ).first()
-            if shared_copy is None:
-                allowed = ", ".join(allowed_dimensions) if allowed_dimensions else "(none)"
+            if dimension_copy is None:
                 raise serializers.ValidationError(
                     {
                         "lines": {
                             index: {
                                 "account_id": (
                                     f"Line {line_no}: account '{account.code} — {account.name}' "
-                                    f"is outside your allowed dimensions ({allowed})."
+                                    f"is not in dimension '{line_tenant_id}'. "
+                                    f"Create or clone this code into that dimension."
                                 )
                             }
                         }
                     }
                 )
-            account = shared_copy
+            account = dimension_copy
+        elif account.tenant_id not in allowed_dimensions:
+            allowed = ", ".join(allowed_dimensions) if allowed_dimensions else "(none)"
+            raise serializers.ValidationError(
+                {
+                    "lines": {
+                        index: {
+                            "account_id": (
+                                f"Line {line_no}: account '{account.code} — {account.name}' "
+                                f"is outside your allowed dimensions ({allowed})."
+                            )
+                        }
+                    }
+                }
+            )
         if not account.is_active:
             raise serializers.ValidationError(
                 {

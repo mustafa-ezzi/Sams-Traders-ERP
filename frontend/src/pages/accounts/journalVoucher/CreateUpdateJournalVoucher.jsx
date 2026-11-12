@@ -120,6 +120,18 @@ const CreateUpdateJournalVoucher = () => {
     return map;
   }, [sharedAccounts]);
 
+  const accountOptionsForLine = (line) => {
+    const options = uniqueAccountsByCode(sharedAccounts, line.tenantId || "");
+    if (
+      line.accountId &&
+      !options.some((account) => String(account.id) === String(line.accountId))
+    ) {
+      const current = accountById.get(String(line.accountId));
+      if (current) return [current, ...options];
+    }
+    return options;
+  };
+
   const accountDimensionCodes = useMemo(() => {
     const fromAuth = (allowedDimensions || [])
       .map((dimension) => dimension?.code)
@@ -146,10 +158,7 @@ const CreateUpdateJournalVoucher = () => {
         Array.isArray(response) ? response : response?.data || [],
       ),
     );
-    // Account heads are shared across companies — dedupe by code only.
-    const accounts = uniqueAccountsByCode(
-      filterPostableAccounts(mergeAccountsById(flatLists)),
-    );
+    const accounts = filterPostableAccounts(mergeAccountsById(flatLists));
     setSharedAccounts(accounts);
     return accounts;
   };
@@ -557,7 +566,7 @@ const CreateUpdateJournalVoucher = () => {
                           }}
                         >
                           <option value="">Select account</option>
-                          {sharedAccounts.map((account) => (
+                          {accountOptionsForLine(line).map((account) => (
                             <option key={account.id} value={account.id}>
                               {formatAccountLabel(account)}
                             </option>

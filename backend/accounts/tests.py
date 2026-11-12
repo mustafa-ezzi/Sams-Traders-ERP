@@ -8,14 +8,28 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from accounts.journal import (
     sync_expense_journal,
+    sync_journal_voucher_journal,
     sync_purchase_bank_payment_journal,
     sync_purchase_invoice_journal,
     sync_sales_bank_receipt_journal,
     sync_sales_invoice_journal,
 )
 from accounts.models import JournalEntry
-from accounts.models import Account, Dimension, Expense, ExpenseLine, JournalLine, User
-from accounts.reporting import build_profit_and_loss_report, build_receivable_aging_report
+from accounts.models import (
+    Account,
+    Dimension,
+    Expense,
+    ExpenseLine,
+    JournalLine,
+    JournalVoucher,
+    JournalVoucherLine,
+    User,
+)
+from accounts.reporting import (
+    build_balance_sheet_report,
+    build_profit_and_loss_report,
+    build_receivable_aging_report,
+)
 from accounts.views import AccountViewSet, DimensionViewSet, ExpenseViewSet
 from inventory.models import (
     Brand,
@@ -2198,6 +2212,121 @@ class JournalPostingTests(TestCase):
             sum(line.credit for line in entry.lines.filter(deleted_at__isnull=True)),
             Decimal("90.00"),
         )
+
+    def test_journal_voucher_posts_to_line_dimension_coa(self):
+        chemical_tenant = "SE__CHEMICAL"
+        chem_assets = Account.objects.create(
+            tenant_id=chemical_tenant,
+            code="1000",
+            name="Assets",
+            account_group=Account.AccountGroup.ASSET,
+            account_nature=Account.AccountNature.DEBIT,
+            level=1,
+            is_postable=False,
+            is_active=True,
+            sort_order=0,
+        )
+        chem_bank = Account.objects.create(
+            tenant_id=chemical_tenant,
+            code=self.bank.code,
+            name="Bank Al Habib A/c",
+            parent=chem_assets,
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.BANK,
+            account_nature=Account.AccountNature.DEBIT,
+            level=2,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+        chem_equity_root = Account.objects.create(
+            tenant_id=chemical_tenant,
+            code="3000",
+            name="Equity",
+            account_group=Account.AccountGroup.EQUITY,
+            account_nature=Account.AccountNature.CREDIT,
+            level=1,
+            is_postable=False,
+            is_active=True,
+            sort_order=0,
+        )
+        chem_capital = Account.objects.create(
+            tenant_id=chemical_tenant,
+            code="3100",
+            name="Capital",
+            parent=chem_equity_root,
+            account_group=Account.AccountGroup.EQUITY,
+            account_nature=Account.AccountNature.CREDIT,
+            level=2,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+        sams_equity_root = Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="3000",
+            name="Equity",
+            account_group=Account.AccountGroup.EQUITY,
+            account_nature=Account.AccountNature.CREDIT,
+            level=1,
+            is_postable=False,
+            is_active=True,
+            sort_order=0,
+        )
+        sams_capital = Account.objects.create(
+            tenant_id=self.tenant_id,
+            code="3100",
+            name="Capital",
+            parent=sams_equity_root,
+            account_group=Account.AccountGroup.EQUITY,
+            account_nature=Account.AccountNature.CREDIT,
+            level=2,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+
+        voucher = JournalVoucher.objects.create(
+            tenant_id=chemical_tenant,
+            voucher_number="JV-00001",
+            date=date(2026, 11, 10),
+            amount=Decimal("200000.00"),
+        )
+        JournalVoucherLine.objects.create(
+            tenant_id=chemical_tenant,
+            voucher=voucher,
+            account=self.bank,
+            debit=Decimal("200000.00"),
+            credit=Decimal("0.00"),
+        )
+        JournalVoucherLine.objects.create(
+            tenant_id=chemical_tenant,
+            voucher=voucher,
+            account=sams_capital,
+            debit=Decimal("0.00"),
+            credit=Decimal("200000.00"),
+        )
+
+        sync_journal_voucher_journal(voucher)
+
+        posted_accounts = set(
+            JournalLine.objects.filter(
+                journal_entry__source_type=JournalEntry.SourceType.JOURNAL_VOUCHER,
+                journal_entry__source_id=voucher.id,
+                deleted_at__isnull=True,
+            ).values_list("account_id", flat=True)
+        )
+        self.assertEqual(posted_accounts, {chem_bank.id, chem_capital.id})
+
+        chemical_sheet = build_balance_sheet_report(
+            [chemical_tenant],
+            date(2026, 11, 12),
+        )
+        self.assertEqual(chemical_sheet["summary"]["total_assets"], "200000.00")
+        self.assertEqual(chemical_sheet["summary"]["total_equity"], "200000.00")
+
+        sams_sheet = build_balance_sheet_report([self.tenant_id], date(2026, 11, 12))
+        self.assertEqual(sams_sheet["summary"]["total_assets"], "0.00")
 
 
 class DashboardOverviewTests(TestCase):
