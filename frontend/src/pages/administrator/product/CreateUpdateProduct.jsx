@@ -202,8 +202,12 @@ const CreateUpdateProduct = () => {
       accountTrees.map((tree) => flattenAccountTree(tree || [])),
     );
 
-    setInventoryAccounts(getPostableInventoryAccounts(flatAccounts));
-    // COGS: union across all dimensions (no dimension filter).
+    setInventoryAccounts(
+      uniqueAccountsByCode(
+        getPostableInventoryAccounts(flatAccounts),
+        selectedTenantId || "",
+      ),
+    );
     setCogsAccounts(
       uniqueAccountsByCode(
         getSelectablePostingAccounts(flatAccounts, "COGS"),
@@ -211,7 +215,10 @@ const CreateUpdateProduct = () => {
       ),
     );
     setRevenueAccounts(
-      getSelectablePostingAccounts(flatAccounts, "REVENUE"),
+      uniqueAccountsByCode(
+        getSelectablePostingAccounts(flatAccounts, "REVENUE"),
+        selectedTenantId || "",
+      ),
     );
   }, [allowedDimensions]);
 

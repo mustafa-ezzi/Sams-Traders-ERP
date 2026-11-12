@@ -397,6 +397,71 @@ class ProductCoaDefaultsTests(TestCase):
         self.assertEqual(product.cogs_account_id, self.cogs_account.id)
         self.assertEqual(product.revenue_account_id, self.revenue_account.id)
 
+    def test_product_remaps_selected_accounts_to_same_code_in_product_dimension(self):
+        other_dimension = Dimension.objects.create(
+            code="AM_TRADERS",
+            name="AM Traders",
+            is_active=True,
+        )
+        self.user.allowed_dimensions.add(other_dimension)
+        other_inventory = Account.objects.create(
+            tenant_id="AM_TRADERS",
+            code=self.inventory_account.code,
+            name="Finished Goods",
+            account_group=Account.AccountGroup.ASSET,
+            account_type=Account.AccountType.INVENTORY,
+            account_nature=Account.AccountNature.DEBIT,
+            level=2,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+        other_revenue = Account.objects.create(
+            tenant_id="AM_TRADERS",
+            code=self.revenue_account.code,
+            name="Sales - Mops",
+            account_group=Account.AccountGroup.REVENUE,
+            account_type=Account.AccountType.REVENUE,
+            account_nature=Account.AccountNature.CREDIT,
+            level=2,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+        other_cogs = Account.objects.create(
+            tenant_id="AM_TRADERS",
+            code=self.cogs_account.code,
+            name="Sams - Mops",
+            account_group=Account.AccountGroup.COGS,
+            account_type=Account.AccountType.COGS,
+            account_nature=Account.AccountNature.DEBIT,
+            level=2,
+            is_postable=True,
+            is_active=True,
+            sort_order=0,
+        )
+
+        serializer = ProductSerializer(
+            data={
+                "name": "Wet Mop - 200 - Grey",
+                "product_type": "FINISHED_GOOD",
+                "direct_price": "10.00",
+                "unit": self.unit.id,
+                "inventory_account": other_inventory.id,
+                "cogs_account": other_cogs.id,
+                "revenue_account": other_revenue.id,
+                "materials": [],
+            },
+            context={"request": SimpleNamespace(user=self.user)},
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        product = serializer.save()
+        self.assertEqual(product.tenant_id, self.tenant_id)
+        self.assertEqual(product.inventory_account_id, self.inventory_account.id)
+        self.assertEqual(product.cogs_account_id, self.cogs_account.id)
+        self.assertEqual(product.revenue_account_id, self.revenue_account.id)
+
     def test_category_duplicate_name_returns_validation_error_across_owned_dimensions(self):
         other_dimension = Dimension.objects.create(
             code="OTHER_TENANT",

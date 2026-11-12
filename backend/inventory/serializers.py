@@ -296,22 +296,33 @@ def get_category_account_for_tenant(category, field_name, tenant_id):
 
 def resolve_account_for_product_tenant(account, tenant_id, field_name):
     """
-    Prefer the same-code account in the product's dimension when the user
-    picked a COGS (or other) account from another dimension's chart.
-    If no clone exists, keep the selected account (shared COA usage).
+    Map a selected COA row onto the same account code in the product's
+    dimension. Charts are cloned per dimension, so AM 5800 and SAMS 5800
+    are different rows; products must store the row for their own tenant.
     """
     if account is None:
         return None
-    if account.tenant_id == tenant_id:
+    if not tenant_id or account.tenant_id == tenant_id:
         return account
 
-    match = Account.objects.filter(
+    matches = Account.objects.filter(
         tenant_id=tenant_id,
         code=account.code,
         deleted_at__isnull=True,
-        is_active=True,
-    ).first()
-    return match or account
+    )
+    match = matches.filter(is_active=True).first() or matches.first()
+    if match:
+        return match
+
+    raise serializers.ValidationError(
+        {
+            field_name: (
+                f"Account code '{account.code}' ({account.name}) is not available in "
+                f"dimension '{tenant_id}'. The selected account belongs to "
+                f"'{account.tenant_id}'. Create or clone this code into '{tenant_id}'."
+            )
+        }
+    )
 
 
 def get_request_user_dimension_codes(request):
@@ -657,9 +668,12 @@ class ProductSerializer(serializers.ModelSerializer):
         if not name:
             raise serializers.ValidationError("Name is required.")
 
-        tenant_id = getattr(self.instance, "tenant_id", None) or self.context[
-            "request"
-        ].user.tenant_id
+        request = self.context["request"]
+        tenant_id = (
+            getattr(self.instance, "tenant_id", None)
+            or getattr(request, "tenant_id", None)
+            or request.user.tenant_id
+        )
         existing = Product.objects.filter(
             tenant_id=tenant_id,
             name=name,
@@ -674,8 +688,13 @@ class ProductSerializer(serializers.ModelSerializer):
         return name
 
     def validate(self, data):
-        tenant_id = getattr(self.instance, "tenant_id", None) or self.context["request"].user.tenant_id
-        shared_tenant_ids = get_request_user_dimension_codes(self.context["request"])
+        request = self.context["request"]
+        tenant_id = (
+            getattr(self.instance, "tenant_id", None)
+            or getattr(request, "tenant_id", None)
+            or request.user.tenant_id
+        )
+        shared_tenant_ids = get_request_user_dimension_codes(request)
         product_type = data.get("product_type")
         materials = data.get("materials", [])
         brand = data.get("brand", getattr(self.instance, "brand", None))
@@ -856,6 +875,21 @@ class ProductSerializer(serializers.ModelSerializer):
         data = resolve_product_coa_defaults(category, data, instance=self.instance)
         data.pop("tenant_id", None)
 
+        data["inventory_account"] = resolve_account_for_product_tenant(
+            data.get("inventory_account"),
+            tenant_id,
+            "inventory_account",
+        )
+        data["cogs_account"] = resolve_account_for_product_tenant(
+            data.get("cogs_account"),
+            tenant_id,
+            "cogs_account",
+        )
+        data["revenue_account"] = resolve_account_for_product_tenant(
+            data.get("revenue_account"),
+            tenant_id,
+            "revenue_account",
+        )
         validate_account_mapping(
             data.get("inventory_account"),
             tenant_id,
@@ -864,15 +898,9 @@ class ProductSerializer(serializers.ModelSerializer):
             [Account.AccountType.INVENTORY],
             require_postable=False,
         )
-        # COGS may be chosen from any of the user's dimensions (shared COA pick list).
-        data["cogs_account"] = resolve_account_for_product_tenant(
+        validate_account_mapping(
             data.get("cogs_account"),
             tenant_id,
-            "cogs_account",
-        )
-        validate_shared_account_mapping(
-            data.get("cogs_account"),
-            shared_tenant_ids,
             "cogs_account",
             [Account.AccountGroup.COGS],
         )
@@ -888,7 +916,8 @@ class ProductSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         materials_data = validated_data.pop("materials", [])
-        tenant_id = self.context["request"].user.tenant_id
+        request = self.context["request"]
+        tenant_id = getattr(request, "tenant_id", None) or request.user.tenant_id
         if not validated_data.get("sku"):
             validated_data["sku"] = self._generate_next_sku(tenant_id)
 
