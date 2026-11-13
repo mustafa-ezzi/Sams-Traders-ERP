@@ -462,6 +462,44 @@ class ProductCoaDefaultsTests(TestCase):
         self.assertEqual(product.cogs_account_id, self.cogs_account.id)
         self.assertEqual(product.revenue_account_id, self.revenue_account.id)
 
+    def test_product_clones_missing_coa_into_product_dimension(self):
+        chemical_dimension = Dimension.objects.create(
+            code="SE__CHEMICAL",
+            name="Sams Enterprises - Chemicals",
+            is_active=True,
+        )
+        self.user.allowed_dimensions.add(chemical_dimension)
+
+        serializer = ProductSerializer(
+            data={
+                "name": "Chemical Finished Good",
+                "product_type": "FINISHED_GOOD",
+                "direct_price": "10.00",
+                "unit": self.unit.id,
+                "inventory_account": self.inventory_account.id,
+                "cogs_account": self.cogs_account.id,
+                "revenue_account": self.revenue_account.id,
+                "materials": [],
+            },
+            context={
+                "request": SimpleNamespace(
+                    user=self.user,
+                    tenant_id="SE__CHEMICAL",
+                )
+            },
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        product = serializer.save()
+        self.assertEqual(product.tenant_id, "SE__CHEMICAL")
+        self.assertEqual(product.inventory_account.tenant_id, "SE__CHEMICAL")
+        self.assertEqual(product.inventory_account.code, self.inventory_account.code)
+        self.assertEqual(product.cogs_account.tenant_id, "SE__CHEMICAL")
+        self.assertEqual(product.cogs_account.code, self.cogs_account.code)
+        self.assertEqual(product.revenue_account.tenant_id, "SE__CHEMICAL")
+        self.assertEqual(product.revenue_account.code, self.revenue_account.code)
+        self.assertNotEqual(product.inventory_account_id, self.inventory_account.id)
+
     def test_category_duplicate_name_returns_validation_error_across_owned_dimensions(self):
         other_dimension = Dimension.objects.create(
             code="OTHER_TENANT",

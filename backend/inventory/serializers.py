@@ -4,7 +4,10 @@ import re
 from django.db import transaction
 from django.utils.timezone import now
 from accounts.models import Account, Dimension
-from accounts.dimensions import get_user_active_dimension_codes
+from accounts.dimensions import (
+    ensure_account_in_dimension,
+    get_user_active_dimension_codes,
+)
 from common.tenancy import get_shared_tenant_ids, shared_master_exists
 from inventory.party_accounts import assign_default_party_account
 from accounts.journal import sync_party_opening_balance_journal
@@ -283,43 +286,29 @@ def get_category_account_for_tenant(category, field_name, tenant_id):
     account = getattr(category, field_name, None)
     if not account:
         return None
-
-    if account.tenant_id == tenant_id:
-        return account
-
-    return Account.objects.filter(
-        tenant_id=tenant_id,
-        code=account.code,
-        deleted_at__isnull=True,
-    ).first()
+    return ensure_account_in_dimension(account, tenant_id)
 
 
 def resolve_account_for_product_tenant(account, tenant_id, field_name):
     """
     Map a selected COA row onto the same account code in the product's
-    dimension. Charts are cloned per dimension, so AM 5800 and SAMS 5800
-    are different rows; products must store the row for their own tenant.
+    dimension. Missing codes are cloned so one chart can be used in every
+    dimension the user owns.
     """
     if account is None:
         return None
     if not tenant_id or account.tenant_id == tenant_id:
         return account
 
-    matches = Account.objects.filter(
-        tenant_id=tenant_id,
-        code=account.code,
-        deleted_at__isnull=True,
-    )
-    match = matches.filter(is_active=True).first() or matches.first()
-    if match:
-        return match
+    cloned = ensure_account_in_dimension(account, tenant_id)
+    if cloned and cloned.tenant_id == tenant_id:
+        return cloned
 
     raise serializers.ValidationError(
         {
             field_name: (
-                f"Account code '{account.code}' ({account.name}) is not available in "
-                f"dimension '{tenant_id}'. The selected account belongs to "
-                f"'{account.tenant_id}'. Create or clone this code into '{tenant_id}'."
+                f"Account code '{account.code}' ({account.name}) could not be shared "
+                f"into dimension '{tenant_id}'."
             )
         }
     )

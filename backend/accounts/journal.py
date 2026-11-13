@@ -51,13 +51,18 @@ def _matching_account_in_dimension(account, tenant_id):
     if account.tenant_id == tenant_id:
         return account
 
-    return Account.objects.filter(
-        tenant_id=tenant_id,
-        code=account.code,
-        deleted_at__isnull=True,
-        is_active=True,
-        is_postable=True,
-    ).first()
+    from accounts.dimensions import ensure_account_in_dimension
+
+    cloned = ensure_account_in_dimension(account, tenant_id)
+    if (
+        cloned
+        and cloned.tenant_id == tenant_id
+        and cloned.deleted_at is None
+        and cloned.is_active
+        and (cloned.is_postable or not account.is_postable)
+    ):
+        return cloned
+    return None
 
 
 def _account_for_dimension(account, tenant_id):

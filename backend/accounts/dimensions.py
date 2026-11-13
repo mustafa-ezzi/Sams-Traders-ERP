@@ -1,3 +1,5 @@
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import IntegrityError, transaction
 from django.utils.text import slugify
 
 from accounts.management.commands.seed_coa import Command as SeedCoaCommand
@@ -95,3 +97,88 @@ def seed_default_coa_for_dimension(dimension_code):
                 obj.save()
 
         code_map[item["code"]] = obj
+
+
+def _account_by_code(tenant_id, code):
+    return (
+        Account.objects.filter(
+            tenant_id=tenant_id,
+            code=code,
+            deleted_at__isnull=True,
+        )
+        .order_by("-is_active", "level", "code")
+        .first()
+    )
+
+
+def ensure_account_in_dimension(account, tenant_id):
+    """Return the same-code COA row in tenant_id, cloning the parent chain if needed."""
+    if account is None or not tenant_id:
+        return account
+    if account.tenant_id == tenant_id:
+        return account
+
+    existing = _account_by_code(tenant_id, account.code)
+    if existing:
+        return existing
+
+    parent = None
+    if account.parent_id:
+        parent = ensure_account_in_dimension(account.parent, tenant_id)
+        if parent is None or parent.tenant_id != tenant_id:
+            return account
+
+    payload = {
+        "tenant_id": tenant_id,
+        "code": account.code,
+        "name": account.name,
+        "parent": parent,
+        "account_group": account.account_group,
+        "account_type": account.account_type,
+        "account_nature": account.account_nature,
+        "level": (parent.level + 1) if parent else (account.level or 1),
+        "is_postable": account.is_postable,
+        "is_active": True,
+        "sort_order": account.sort_order,
+    }
+
+    try:
+        with transaction.atomic():
+            return Account.objects.create(**payload)
+    except (DjangoValidationError, IntegrityError):
+        existing = _account_by_code(tenant_id, account.code)
+        if existing:
+            return existing
+
+    if payload["name"] == account.name:
+        payload["name"] = f"{account.name} ({account.code})"
+        try:
+            with transaction.atomic():
+                return Account.objects.create(**payload)
+        except (DjangoValidationError, IntegrityError):
+            existing = _account_by_code(tenant_id, account.code)
+            if existing:
+                return existing
+
+    return account
+
+
+def copy_coa_into_dimension(source_tenant_id, target_tenant_id):
+    if not source_tenant_id or not target_tenant_id or source_tenant_id == target_tenant_id:
+        return 0
+
+    copied = 0
+    sources = (
+        Account.objects.filter(
+            tenant_id=source_tenant_id,
+            deleted_at__isnull=True,
+            is_active=True,
+        )
+        .select_related("parent")
+        .order_by("level", "code")
+    )
+    for account in sources:
+        ensured = ensure_account_in_dimension(account, target_tenant_id)
+        if ensured and ensured.tenant_id == target_tenant_id and ensured.id != account.id:
+            copied += 1
+    return copied

@@ -18,7 +18,11 @@ from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 
 from accounts.models import Account
-from accounts.dimensions import get_user_active_dimension_codes, seed_default_coa_for_dimension
+from accounts.dimensions import (
+    copy_coa_into_dimension,
+    get_user_active_dimension_codes,
+    seed_default_coa_for_dimension,
+)
 from accounts.reporting import (
     build_account_statement_report,
     build_balance_sheet_report,
@@ -2678,6 +2682,11 @@ class DimensionViewSet(ModelViewSet):
         serializer.is_valid(raise_exception=True)
         dimension = serializer.save()
         seed_default_coa_for_dimension(dimension.code)
+        for source_tenant in get_user_active_dimension_codes(request.user):
+            if source_tenant != dimension.code:
+                copy_coa_into_dimension(source_tenant, dimension.code)
+        if request.user.tenant_id and request.user.tenant_id != dimension.code:
+            copy_coa_into_dimension(request.user.tenant_id, dimension.code)
         request.user.allowed_dimensions.add(dimension)
         if not request.user.tenant_id:
             request.user.tenant_id = dimension.code

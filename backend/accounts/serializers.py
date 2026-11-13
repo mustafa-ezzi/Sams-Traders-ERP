@@ -665,7 +665,11 @@ class AccountSerializer(serializers.ModelSerializer):
 
             dim_parent = self._resolve_parent_for_dimension(parent, dim_tenant)
             if parent and not dim_parent:
-                continue
+                from accounts.dimensions import ensure_account_in_dimension
+
+                dim_parent = ensure_account_in_dimension(parent, dim_tenant)
+                if not dim_parent or dim_parent.tenant_id != dim_tenant:
+                    continue
 
             payload = dict(validated_data)
             payload["tenant_id"] = dim_tenant
@@ -1382,22 +1386,21 @@ class JournalVoucherSerializer(serializers.ModelSerializer):
                 }
             )
         if account.tenant_id != line_tenant_id:
-            dimension_copy = Account.objects.filter(
-                code=account.code,
-                tenant_id=line_tenant_id,
-                deleted_at__isnull=True,
-                is_active=True,
-                is_postable=True,
-            ).first()
-            if dimension_copy is None:
+            from accounts.dimensions import ensure_account_in_dimension
+
+            dimension_copy = ensure_account_in_dimension(account, line_tenant_id)
+            if (
+                dimension_copy is None
+                or dimension_copy.tenant_id != line_tenant_id
+                or not dimension_copy.is_postable
+            ):
                 raise serializers.ValidationError(
                     {
                         "lines": {
                             index: {
                                 "account_id": (
                                     f"Line {line_no}: account '{account.code} — {account.name}' "
-                                    f"is not in dimension '{line_tenant_id}'. "
-                                    f"Create or clone this code into that dimension."
+                                    f"could not be shared into dimension '{line_tenant_id}'."
                                 )
                             }
                         }
