@@ -121,10 +121,10 @@ class PurchaseInvoiceLineSerializer(serializers.ModelSerializer):
     def validate_raw_material_id(self, value):
         if value is None:
             return value
-        tenant_id = self.context["request"].user.tenant_id
+        tenant_ids = get_shared_tenant_ids(self.context["request"])
         if not RawMaterial.objects.filter(
             id=value,
-            tenant_id=tenant_id,
+            tenant_id__in=tenant_ids,
             deleted_at__isnull=True,
         ).exists():
             raise serializers.ValidationError("Raw material not found for this tenant")

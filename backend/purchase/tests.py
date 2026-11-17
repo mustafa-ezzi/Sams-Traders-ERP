@@ -3,7 +3,7 @@ from decimal import Decimal
 from django.test import TestCase
 from rest_framework.test import APIRequestFactory, force_authenticate
 
-from accounts.models import Account, User
+from accounts.models import Account, Dimension, User
 from inventory.models import Brand, Category, Product, RawMaterial, Supplier, Unit, Warehouse
 from purchase.models import PurchaseBankPayment, PurchaseBankPaymentLine, PurchaseInvoice, PurchaseReturn
 from purchase.serializers import PurchaseBankPaymentSerializer
@@ -216,3 +216,36 @@ class PurchaseBankPaymentTests(TestCase):
         self.assertEqual(raw["name"], "Wet Mop Yarn")
         self.assertEqual(raw["brand_name"], "WYPE")
         self.assertEqual(raw["category_name"], "Mops")
+
+    def test_product_options_include_raw_materials_from_all_user_dimensions(self):
+        sams = Dimension.objects.update_or_create(
+            code=self.tenant_id,
+            defaults={"name": "Sams Traders", "is_active": True},
+        )[0]
+        am = Dimension.objects.create(
+            code="AM_TRADERS",
+            name="AM Traders",
+            is_active=True,
+        )
+        self.user.allowed_dimensions.add(sams, am)
+        brand = Brand.objects.create(tenant_id="AM_TRADERS", name="AM")
+        category = Category.objects.create(tenant_id="AM_TRADERS", name="Pure")
+        unit = Unit.objects.create(tenant_id="AM_TRADERS", name="Kg")
+        RawMaterial.objects.create(
+            tenant_id="AM_TRADERS",
+            name="PP",
+            brand=brand,
+            category=category,
+            purchase_unit=unit,
+            selling_unit=unit,
+            purchase_price=Decimal("5.00"),
+        )
+        request = self.factory.get("/api/purchase/purchase-invoices/product-options/")
+        force_authenticate(request, user=self.user)
+        response = PurchaseInvoiceViewSet.as_view({"get": "product_options"})(request)
+        names = {
+            item["name"]
+            for item in response.data["data"]
+            if item["item_type"] == "RAW_MATERIAL"
+        }
+        self.assertIn("PP", names)

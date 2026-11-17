@@ -251,7 +251,6 @@ class PurchaseInvoiceViewSet(AuditedModelMixin, viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="product-options")
     def product_options(self, request):
-        tenant_id = request.user.tenant_id
         tenant_ids = get_shared_tenant_ids(request)
         warehouse_id = request.query_params.get("warehouse_id")
         search = request.query_params.get("search", "").strip()
@@ -298,17 +297,21 @@ class PurchaseInvoiceViewSet(AuditedModelMixin, viewsets.ModelViewSet):
             )
 
         raw_queryset = RawMaterial.objects.filter(
-            tenant_id=tenant_id,
+            tenant_id__in=tenant_ids,
             deleted_at__isnull=True,
-        ).select_related("purchase_unit", "brand", "category").order_by("name")
+        ).select_related("purchase_unit", "brand", "category").order_by("tenant_id", "name")
         if search:
-            raw_queryset = raw_queryset.filter(name__icontains=search)
+            raw_queryset = raw_queryset.filter(
+                Q(name__icontains=search)
+                | Q(brand__name__icontains=search)
+                | Q(category__name__icontains=search)
+            )
 
         for raw_material in raw_queryset:
             quantity = Decimal("0.00")
             if warehouse_id:
                 stock = Stock.objects.filter(
-                    tenant_id=tenant_id,
+                    tenant_id=raw_material.tenant_id,
                     warehouse_id=warehouse_id,
                     raw_material_id=raw_material.id,
                     deleted_at__isnull=True,
@@ -321,6 +324,10 @@ class PurchaseInvoiceViewSet(AuditedModelMixin, viewsets.ModelViewSet):
                     "name": raw_material.name,
                     "brand_name": raw_material.brand.name if raw_material.brand else "",
                     "category_name": raw_material.category.name if raw_material.category else "",
+                    "dimension_code": raw_material.tenant_id,
+                    "dimension_name": dimension_names.get(
+                        raw_material.tenant_id, raw_material.tenant_id
+                    ),
                     "quantity": str(quantity),
                     "unit": raw_material.purchase_unit.name,
                     "product_type": "RAW_MATERIAL",

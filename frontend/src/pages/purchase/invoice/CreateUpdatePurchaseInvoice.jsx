@@ -396,6 +396,7 @@ const CreateUpdatePurchaseInvoice = () => {
                       )}
                       getOptionLabel={formatPurchaseItemLabel}
                       placeholder="Search name, brand, category"
+                      showAllOptions
                     />{" "}
                     <FormInput
                       type="number"
