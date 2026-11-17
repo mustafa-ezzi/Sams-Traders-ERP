@@ -1178,7 +1178,35 @@ class RawMaterialSerializer(serializers.ModelSerializer):
         model = RawMaterial
         fields = "__all__"
         read_only_fields = ["tenant_id", "created_at", "updated_at", "deleted_at"]
-        extra_kwargs = {"selling_unit": {"required": False}, "selling_price": {"required": False}}
+        extra_kwargs = {
+            "selling_unit": {"required": False},
+            "selling_price": {"required": False},
+            "name": {"validators": []},
+        }
+
+    def validate_name(self, value):
+        name = str(value or "").strip()
+        if not name:
+            raise serializers.ValidationError("Name is required.")
+
+        request = self.context["request"]
+        tenant_id = (
+            getattr(self.instance, "tenant_id", None)
+            or getattr(request, "tenant_id", None)
+            or request.user.tenant_id
+        )
+        existing = RawMaterial.objects.filter(
+            tenant_id=tenant_id,
+            name=name,
+            deleted_at__isnull=True,
+        )
+        if self.instance:
+            existing = existing.exclude(pk=self.instance.pk)
+        if existing.exists():
+            raise serializers.ValidationError(
+                f"A raw material named '{name}' already exists in dimension '{tenant_id}'."
+            )
+        return name
 
     def validate(self, attrs):
         tenant_id = self.context["request"].user.tenant_id

@@ -316,6 +316,39 @@ class RawMaterialViewSet(UnpaginatedOptionsMixin, ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(tenant_id=self.request.user.tenant_id)
 
+    def _map_raw_material_integrity_error(self, exc):
+        message = str(exc).lower()
+        tenant_id = getattr(self.request.user, "tenant_id", "") or ""
+        if "unique_active_rawmaterial_per_tenant" in message or (
+            "rawmaterial" in message and "name" in message and "tenant" in message
+        ):
+            return DRFValidationError(
+                {
+                    "name": (
+                        f"A raw material with this name already exists in dimension '{tenant_id}'."
+                    )
+                }
+            )
+        return DRFValidationError(
+            {
+                "detail": (
+                    f"Could not save raw material in dimension '{tenant_id}' due to a data conflict."
+                )
+            }
+        )
+
+    def create(self, request, *args, **kwargs):
+        try:
+            return super().create(request, *args, **kwargs)
+        except IntegrityError as exc:
+            raise self._map_raw_material_integrity_error(exc) from exc
+
+    def update(self, request, *args, **kwargs):
+        try:
+            return super().update(request, *args, **kwargs)
+        except IntegrityError as exc:
+            raise self._map_raw_material_integrity_error(exc) from exc
+
     def perform_destroy(self, instance):
         instance.deleted_at = now()
         instance.save()

@@ -20,6 +20,7 @@ import {
   formatAccountLabel,
   getPostableInventoryAccounts,
 } from "../../../utils/accounts";
+import { parseApiError } from "../../../utils/apiErrors";
 const schema = z.object({
   name: z.string().trim().min(1, "Name is required"),
   brand: z.string().uuid("brandId must be a valid UUID"),
@@ -39,8 +40,20 @@ const defaultValues = {
   inventory_account: "",
   purchase_price: 0,
 };
-const mapRawMaterialToForm = (row = {}) => ({
-  name: row.name || "",
+const nextCopyName = (name) => {
+  const trimmed = String(name || "").trim();
+  if (!trimmed) return "";
+  const numbered = trimmed.match(/^(.*) \(copy (\d+)\)$/i);
+  if (numbered) {
+    return `${numbered[1]} (copy ${Number(numbered[2]) + 1})`;
+  }
+  if (/\(copy\)$/i.test(trimmed)) {
+    return `${trimmed.replace(/\s*\(copy\)$/i, "")} (copy 2)`;
+  }
+  return `${trimmed} (copy)`;
+};
+const mapRawMaterialToForm = (row = {}, { asCopy = false } = {}) => ({
+  name: asCopy ? nextCopyName(row.name) : row.name || "",
   brand: row.brand?.id || row.brand || "",
   category: row.category?.id || row.category || "",
   purchase_unit: row.purchase_unit?.id || row.purchase_unit || "",
@@ -113,7 +126,7 @@ const CreateUpdateRawMaterial = () => {
     rawMaterialService
       .getById(sourceId)
       .then((row) => {
-        form.reset(mapRawMaterialToForm(row));
+        form.reset(mapRawMaterialToForm(row, { asCopy: isDuplicate }));
       })
       .catch(() =>
         toast.error(
@@ -154,8 +167,14 @@ const CreateUpdateRawMaterial = () => {
       }
       navigate("/raw-materials");
     } catch (submitError) {
-      const msg = submitError?.response?.data?.message || "Save failed";
-      toast.error(msg);
+      const parsed = parseApiError(submitError);
+      if (parsed.fieldErrors?.name) {
+        form.setError("name", {
+          type: "server",
+          message: parsed.fieldErrors.name,
+        });
+      }
+      toast.error(parsed.message || "Save failed");
     }
   });
   return (
@@ -175,8 +194,8 @@ const CreateUpdateRawMaterial = () => {
             </h2>
             {isDuplicate ? (
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                Fields are copied from the selected raw material. Change what
-                you need, then create a new record.
+                Fields are copied from the selected raw material. The name is
+                set to a copy so you can save it, then change anything you need.
               </p>
             ) : null}
           </div>{" "}
