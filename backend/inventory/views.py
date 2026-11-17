@@ -113,9 +113,11 @@ class UnpaginatedOptionsMixin:
     option_serializer_class = NamedDropdownOptionSerializer
     option_ordering = ("name", "id")
 
-    @action(detail=False, methods=["get"], url_path="options")
+    @action(detail=False, methods=["get"], url_path="options", pagination_class=None)
     def dropdown_options(self, request):
-        queryset = self.get_queryset().order_by(*self.option_ordering)
+        queryset = self.filter_queryset(self.get_queryset()).order_by(
+            *self.option_ordering
+        )
         serializer = self.option_serializer_class(
             queryset,
             many=True,
@@ -312,6 +314,24 @@ class RawMaterialViewSet(UnpaginatedOptionsMixin, ModelViewSet):
         if purchase_unit_id:
             qs = qs.filter(purchase_unit_id=purchase_unit_id)
         return qs.order_by("-created_at", "-id")
+
+    @action(detail=False, methods=["get"], url_path="options", pagination_class=None)
+    def dropdown_options(self, request):
+        tenant_ids = get_request_tenant_ids(request)
+        queryset = (
+            RawMaterial.objects.filter(
+                tenant_id__in=tenant_ids,
+                deleted_at__isnull=True,
+            )
+            .select_related("brand", "category", "purchase_unit")
+            .order_by(*self.option_ordering)
+        )
+        serializer = self.option_serializer_class(
+            queryset,
+            many=True,
+            context=self.get_serializer_context(),
+        )
+        return Response({"data": serializer.data})
 
     def perform_create(self, serializer):
         serializer.save(tenant_id=self.request.user.tenant_id)

@@ -79,10 +79,29 @@ class RawMaterialDropdownOptionSerializer(serializers.Serializer):
     id = serializers.UUIDField()
     tenant_id = serializers.CharField(required=False, allow_blank=True)
     name = serializers.CharField()
-    brand_name = serializers.CharField(source="brand.name", required=False, allow_blank=True)
-    purchase_unit = serializers.UUIDField(source="purchase_unit_id")
-    purchase_price = serializers.DecimalField(max_digits=12, decimal_places=2)
-    quantity = serializers.DecimalField(max_digits=12, decimal_places=2)
+    brand_name = serializers.SerializerMethodField()
+    category_name = serializers.SerializerMethodField()
+    purchase_unit = serializers.UUIDField(
+        source="purchase_unit_id", required=False, allow_null=True
+    )
+    purchase_price = serializers.DecimalField(
+        max_digits=12, decimal_places=2, required=False, allow_null=True
+    )
+    quantity = serializers.SerializerMethodField()
+
+    def get_brand_name(self, obj):
+        brand = getattr(obj, "brand", None)
+        return getattr(brand, "name", "") or ""
+
+    def get_category_name(self, obj):
+        category = getattr(obj, "category", None)
+        return getattr(category, "name", "") or ""
+
+    def get_quantity(self, obj):
+        value = getattr(obj, "quantity", None)
+        if value is None:
+            return "0.00"
+        return str(value)
 
 
 class ProductDropdownOptionSerializer(serializers.Serializer):
@@ -93,12 +112,18 @@ class ProductDropdownOptionSerializer(serializers.Serializer):
     product_type = serializers.CharField()
     brand_id = serializers.UUIDField(allow_null=True, required=False)
     brand_name = serializers.SerializerMethodField()
-    unit = serializers.UUIDField(source="unit_id", allow_null=True)
+    unit = serializers.UUIDField(source="unit_id", allow_null=True, required=False)
     unit_name = serializers.SerializerMethodField()
-    confirmed_unit_cost = serializers.DecimalField(max_digits=12, decimal_places=2)
+    confirmed_unit_cost = serializers.DecimalField(
+        max_digits=12, decimal_places=2, required=False, allow_null=True
+    )
     average_cost = serializers.SerializerMethodField()
-    net_amount = serializers.DecimalField(max_digits=12, decimal_places=2)
-    quantity = serializers.DecimalField(max_digits=12, decimal_places=2)
+    net_amount = serializers.DecimalField(
+        max_digits=12, decimal_places=2, required=False, allow_null=True
+    )
+    quantity = serializers.DecimalField(
+        max_digits=12, decimal_places=2, required=False, allow_null=True
+    )
 
     def get_brand_name(self, obj):
         brand = getattr(obj, "brand", None)

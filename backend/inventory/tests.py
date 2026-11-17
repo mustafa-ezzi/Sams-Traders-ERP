@@ -10,13 +10,20 @@ from inventory.models import (
     Product,
     ProductCostState,
     ProductStock,
+    RawMaterial,
     Supplier,
     Unit,
     Warehouse,
 )
 from inventory.services import rebuild_product_costing
 from inventory.serializers import CategorySerializer, ProductSerializer, UnitSerializer
-from inventory.views import BrandViewSet, CategoryViewSet, ProductViewSet, UnitViewSet
+from inventory.views import (
+    BrandViewSet,
+    CategoryViewSet,
+    ProductViewSet,
+    RawMaterialViewSet,
+    UnitViewSet,
+)
 from purchase.models import PurchaseInvoice, PurchaseInvoiceLine
 from sales.models import SalesInvoice, SalesInvoiceLine
 
@@ -743,3 +750,125 @@ class ProductCoaDefaultsTests(TestCase):
         self.assertEqual(product.inventory_account_id, self.inventory_account.id)
         self.assertEqual(product.cogs_account_id, self.cogs_account.id)
         self.assertEqual(product.revenue_account_id, custom_revenue.id)
+
+
+class RawMaterialDropdownOptionsTests(TestCase):
+    def setUp(self):
+        self.am_tenant = "AM_TRADERS"
+        self.sams_tenant = "SAMS_TRADERS"
+        self.user = User.objects.create_user(
+            username="rm-options-user",
+            password="secret",
+            tenant_id=self.am_tenant,
+        )
+        am_dimension, _ = Dimension.objects.update_or_create(
+            code=self.am_tenant,
+            defaults={"name": "AM Traders", "is_active": True},
+        )
+        sams_dimension, _ = Dimension.objects.update_or_create(
+            code=self.sams_tenant,
+            defaults={"name": "Sams Traders", "is_active": True},
+        )
+        self.user.allowed_dimensions.add(am_dimension, sams_dimension)
+        self.factory = APIRequestFactory()
+
+        self.am_brand = Brand.objects.create(tenant_id=self.am_tenant, name="AM")
+        self.am_category = Category.objects.create(
+            tenant_id=self.am_tenant, name="Pure"
+        )
+        self.am_unit = Unit.objects.create(tenant_id=self.am_tenant, name="KG")
+        self.sams_brand = Brand.objects.create(tenant_id=self.sams_tenant, name="SAMS")
+        self.sams_category = Category.objects.create(
+            tenant_id=self.sams_tenant, name="Plastic"
+        )
+        self.sams_unit = Unit.objects.create(tenant_id=self.sams_tenant, name="PC")
+
+    def _create_raw_material(self, tenant_id, name, brand, category, unit):
+        return RawMaterial.objects.create(
+            tenant_id=tenant_id,
+            name=name,
+            brand=brand,
+            category=category,
+            purchase_unit=unit,
+            selling_unit=unit,
+            purchase_price="0.00",
+        )
+
+    def _options_request(self, tenant_ids):
+        request = self.factory.get("/api/inventory/raw-materials/options/")
+        force_authenticate(request, user=self.user)
+        request.tenant_id = tenant_ids[0]
+        request.tenant_ids = list(tenant_ids)
+        request.user.tenant_id = tenant_ids[0]
+        return request
+
+    def test_options_return_every_raw_material_in_selected_dimension(self):
+        names = [
+            "AS",
+            "PP",
+            "PP-Super",
+            "PP - Random",
+            "Melamine Tray Set 3 in 1",
+            "Melamine Tray Set 4 in 1",
+            "Wire Clip for Cloth Pegs",
+        ]
+        for name in names:
+            self._create_raw_material(
+                self.am_tenant, name, self.am_brand, self.am_category, self.am_unit
+            )
+        self._create_raw_material(
+            self.sams_tenant,
+            "SAMS Only Yarn",
+            self.sams_brand,
+            self.sams_category,
+            self.sams_unit,
+        )
+
+        response = RawMaterialViewSet.as_view({"get": "dropdown_options"})(
+            self._options_request([self.am_tenant])
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.data["data"]
+        returned_names = {item["name"] for item in payload}
+        self.assertEqual(returned_names, set(names))
+        self.assertTrue(all(item["tenant_id"] == self.am_tenant for item in payload))
+        self.assertEqual(payload[0]["brand_name"], "AM")
+        self.assertEqual(payload[0]["category_name"], "Pure")
+
+    def test_options_are_not_paginated_past_default_page_size(self):
+        for index in range(25):
+            self._create_raw_material(
+                self.am_tenant,
+                f"Resin {index:02d}",
+                self.am_brand,
+                self.am_category,
+                self.am_unit,
+            )
+
+        response = RawMaterialViewSet.as_view({"get": "dropdown_options"})(
+            self._options_request([self.am_tenant])
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data["data"]), 25)
+
+    def test_options_include_all_selected_dimensions(self):
+        self._create_raw_material(
+            self.am_tenant, "AM PP", self.am_brand, self.am_category, self.am_unit
+        )
+        self._create_raw_material(
+            self.sams_tenant,
+            "SAMS Yarn",
+            self.sams_brand,
+            self.sams_category,
+            self.sams_unit,
+        )
+
+        response = RawMaterialViewSet.as_view({"get": "dropdown_options"})(
+            self._options_request([self.am_tenant, self.sams_tenant])
+        )
+
+        self.assertEqual(response.status_code, 200)
+        names = {item["name"] for item in response.data["data"]}
+        self.assertEqual(names, {"AM PP", "SAMS Yarn"})

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -15,6 +15,7 @@ import FormInput from "../../components/ui/FormInput";
 import { useToast } from "../../context/ToastContext";
 import { useAuth } from "../../context/AuthContext";
 import DimensionCreateSelector from "../../components/ui/DimensionCreateSelector";
+import SearchableSelect from "../../components/ui/SearchableSelect";
 import {
   flattenAccountTree,
   formatAccountLabel,
@@ -72,8 +73,41 @@ const selectClassName =
   "w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100";
 
 const getRawMaterialOptionLabel = (option) => {
-  const brandName = option?.brand_name || option?.brand?.name;
-  return brandName ? `${option.name} - ${brandName}` : option.name;
+  if (!option) return "";
+  const parts = [
+    option.name,
+    option.brand_name || option.brand?.name,
+    option.category_name || option.category?.name,
+  ]
+    .map((part) => String(part || "").trim())
+    .filter(Boolean);
+  return parts.join(" - ");
+};
+
+const getComponentProductOptionLabel = (option) => {
+  if (!option) return "";
+  const cost = option.net_amount ?? option.confirmed_unit_cost;
+  return cost == null
+    ? option.name
+    : `${option.name} | Cost: ${formatDecimal(cost)}`;
+};
+
+const mergeOptionsById = (lists) => {
+  const map = new Map();
+  lists.flat().forEach((item) => {
+    if (item?.id) map.set(String(item.id), item);
+  });
+  return [...map.values()];
+};
+
+const resolveComponentUnitId = (selected) => {
+  if (!selected) return "";
+  if (selected.unit) return selected.unit;
+  const purchaseUnit = selected.purchase_unit;
+  if (purchaseUnit && typeof purchaseUnit === "object") {
+    return purchaseUnit.id || "";
+  }
+  return purchaseUnit || "";
 };
 
 const emptyMaterialRow = {
@@ -170,12 +204,14 @@ const ProductFormPage = () => {
   const form = useForm({ resolver: zodResolver(schema), defaultValues });
   const productType = form.watch("productType");
   const useCalculatedCost = form.watch("useCalculatedCost");
-  const componentTenantId = isEditing
-    ? productTenantId
-    : createDimensionIds.length === 1
-      ? createDimensionIds[0]
-      : "";
-  const accountTenantId = componentTenantId;
+  const componentTenantIds = useMemo(() => {
+    if (isEditing) {
+      return [productTenantId].filter(Boolean);
+    }
+    return [...new Set((createDimensionIds || []).filter(Boolean))];
+  }, [createDimensionIds, isEditing, productTenantId]);
+  const accountTenantId =
+    componentTenantIds.length === 1 ? componentTenantIds[0] : "";
 
   const loadProductSetupOptions = useCallback(async (selectedTenantId = "") => {
     const [brandRes, unitRes] = await Promise.all([
@@ -233,19 +269,24 @@ const ProductFormPage = () => {
   }, [allowedDimensions]);
 
   const loadComponentOptions = useCallback(
-    async (selectedTenantId) => {
-      if (!selectedTenantId) {
+    async (tenantIds) => {
+      const codes = [...new Set((tenantIds || []).filter(Boolean))];
+      if (!codes.length) {
         setRawMaterialOptions([]);
         setComponentProductOptions([]);
         return;
       }
 
-      const [rawMaterialRes, productOptionsRes] = await Promise.all([
-        rawMaterialService.options(selectedTenantId),
-        productService.options(selectedTenantId),
-      ]);
+      const [rawMaterialRes, rawMaterialList, productOptionsRes] =
+        await Promise.all([
+          rawMaterialService.options(codes).catch(() => []),
+          rawMaterialService.listAll(codes).catch(() => []),
+          productService.options(codes).catch(() => []),
+        ]);
 
-      setRawMaterialOptions(rawMaterialRes || []);
+      setRawMaterialOptions(
+        mergeOptionsById([rawMaterialRes || [], rawMaterialList || []]),
+      );
       setComponentProductOptions(
         (productOptionsRes || []).filter(
           (item) =>
@@ -277,7 +318,7 @@ const ProductFormPage = () => {
   const refreshComponentOptions = useCallback(async () => {
     setLoadingComponentOptions(true);
     try {
-      await loadComponentOptions(componentTenantId);
+      await loadComponentOptions(componentTenantIds);
     } catch (loadError) {
       toast.error(
         loadError?.response?.data?.message ||
@@ -286,7 +327,7 @@ const ProductFormPage = () => {
     } finally {
       setLoadingComponentOptions(false);
     }
-  }, [componentTenantId, loadComponentOptions, toast]);
+  }, [componentTenantIds, loadComponentOptions, toast]);
 
   useEffect(() => {
     const loadSetup = async () => {
@@ -330,7 +371,6 @@ const ProductFormPage = () => {
 
   const refreshSelectOptionsProps = {};
   const refreshAccountOptionsProps = {};
-  const refreshComponentOptionsProps = {};
 
   const selectedComponentKeys = materialRows
     .map((row) =>
@@ -694,6 +734,23 @@ const ProductFormPage = () => {
                       row.component_type === "ASSEMBLY_PRODUCT"
                         ? "Assembly Product"
                         : "Finished Good";
+                    const rowOptions = (
+                      row.component_type === "RAW_MATERIAL"
+                        ? rawMaterialOptions
+                        : componentProductOptions.filter((option) =>
+                            row.component_type === "ASSEMBLY_PRODUCT"
+                              ? option.product_type === "ASSEMBLY_PRODUCT" ||
+                                option.product_type === "MANUFACTURED"
+                              : option.product_type === "FINISHED_GOOD" ||
+                                option.product_type === "READY_MADE",
+                          )
+                    ).filter((option) => {
+                      const optionKey = `${row.component_type}:${option.id}`;
+                      return (
+                        optionKey === currentComponentKey ||
+                        !selectedComponentKeys.includes(optionKey)
+                      );
+                    });
                     return (
                       <div
                         key={index}
@@ -736,25 +793,30 @@ const ProductFormPage = () => {
                               ? "Raw Material"
                               : componentProductLabel}
                           </label>
-                          <select
-                            className={selectClassName}
+                          <SearchableSelect
                             value={
                               row.component_type === "RAW_MATERIAL"
                                 ? row.raw_material_id
                                 : row.component_product_id
                             }
-                            {...refreshComponentOptionsProps}
                             disabled={loadingComponentOptions}
-                            onChange={(event) => {
-                              const itemId = event.target.value;
-                              const selected =
-                                row.component_type !== "RAW_MATERIAL"
-                                  ? componentProductOptions.find(
-                                      (item) => item.id === itemId,
-                                    )
-                                  : rawMaterialOptions.find(
-                                      (item) => item.id === itemId,
-                                    );
+                            options={rowOptions}
+                            showAllOptions
+                            getOptionLabel={
+                              row.component_type === "RAW_MATERIAL"
+                                ? getRawMaterialOptionLabel
+                                : getComponentProductOptionLabel
+                            }
+                            placeholder={
+                              loadingComponentOptions
+                                ? "Loading options..."
+                                : `Search ${
+                                    row.component_type === "RAW_MATERIAL"
+                                      ? "raw material"
+                                      : componentProductLabel.toLowerCase()
+                                  }`
+                            }
+                            onChange={(itemId, selected) => {
                               setMaterialRows((prev) =>
                                 prev.map((item, i) =>
                                   i === index
@@ -769,8 +831,7 @@ const ProductFormPage = () => {
                                             ? itemId
                                             : "",
                                         uom_id:
-                                          selected?.unit ||
-                                          selected?.purchase_unit ||
+                                          resolveComponentUnitId(selected) ||
                                           item.uom_id ||
                                           "",
                                         rate: selected
@@ -778,7 +839,7 @@ const ProductFormPage = () => {
                                               row.component_type ===
                                                 "RAW_MATERIAL"
                                                 ? selected.purchase_price
-                                                : selected.net_amount
+                                                : selected.net_amount,
                                             )
                                           : 0,
                                       }
@@ -786,43 +847,7 @@ const ProductFormPage = () => {
                                 ),
                               );
                             }}
-                          >
-                            <option value="">
-                              {loadingComponentOptions
-                                ? "Loading options..."
-                                : `Select ${
-                                    row.component_type === "RAW_MATERIAL"
-                                      ? "raw material"
-                                      : componentProductLabel.toLowerCase()
-                                  }`}
-                            </option>
-                            {(row.component_type === "RAW_MATERIAL"
-                              ? rawMaterialOptions
-                              : componentProductOptions.filter((option) =>
-                                  row.component_type === "ASSEMBLY_PRODUCT"
-                                    ? option.product_type === "ASSEMBLY_PRODUCT" ||
-                                      option.product_type === "MANUFACTURED"
-                                    : option.product_type === "FINISHED_GOOD" ||
-                                      option.product_type === "READY_MADE",
-                                )
-                            ).map((option) => {
-                              const optionKey = `${row.component_type}:${option.id}`;
-                              return (
-                                <option
-                                  key={option.id}
-                                  value={option.id}
-                                  disabled={
-                                    selectedComponentKeys.includes(optionKey) &&
-                                    optionKey !== currentComponentKey
-                                  }
-                                >
-                                  {row.component_type !== "RAW_MATERIAL"
-                                    ? `${option.name} | Cost: ${formatDecimal(option.net_amount)}`
-                                    : getRawMaterialOptionLabel(option)}
-                                </option>
-                              );
-                            })}
-                          </select>
+                          />
                         </div>
 
                         <div className="space-y-2">
