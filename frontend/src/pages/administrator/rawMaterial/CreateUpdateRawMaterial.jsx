@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import rawMaterialService from "../../../api/services/rawMaterialService";
@@ -39,10 +39,21 @@ const defaultValues = {
   inventory_account: "",
   purchase_price: 0,
 };
+const mapRawMaterialToForm = (row = {}) => ({
+  name: row.name || "",
+  brand: row.brand?.id || row.brand || "",
+  category: row.category?.id || row.category || "",
+  purchase_unit: row.purchase_unit?.id || row.purchase_unit || "",
+  inventory_account: row.inventory_account || "",
+  purchase_price: Number(row.purchase_price || 0),
+});
 const CreateUpdateRawMaterial = () => {
   const navigate = useNavigate();
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  const duplicateId = searchParams.get("duplicate") || "";
   const isEdit = Boolean(id);
+  const isDuplicate = Boolean(!isEdit && duplicateId);
   const { tenantId } = useAuth();
   const [createDimensionIds, setCreateDimensionIds] = useState(() =>
     tenantId ? [tenantId] : [],
@@ -96,23 +107,23 @@ const CreateUpdateRawMaterial = () => {
     loadOptions();
   }, []);
   useEffect(() => {
-    if (!isEdit || !id) return;
+    const sourceId = isEdit ? id : duplicateId;
+    if (!sourceId) return;
     setLoadingRecord(true);
     rawMaterialService
-      .getById(id)
+      .getById(sourceId)
       .then((row) => {
-        form.reset({
-          name: row.name,
-          brand: row.brand?.id || row.brand,
-          category: row.category?.id || row.category,
-          purchase_unit: row.purchase_unit?.id || row.purchase_unit,
-          inventory_account: row.inventory_account || "",
-          purchase_price: Number(row.purchase_price),
-        });
+        form.reset(mapRawMaterialToForm(row));
       })
-      .catch(() => toast.error("Failed to load raw material"))
+      .catch(() =>
+        toast.error(
+          isDuplicate
+            ? "Failed to load raw material to duplicate"
+            : "Failed to load raw material",
+        ),
+      )
       .finally(() => setLoadingRecord(false));
-  }, [isEdit, id, form, toast]);
+  }, [isEdit, isDuplicate, id, duplicateId, form, toast]);
   useEffect(() => {
     if (!selectedCategoryId) {
       form.setValue("inventory_account", "", {
@@ -154,10 +165,21 @@ const CreateUpdateRawMaterial = () => {
         {" "}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           {" "}
-          <h2 className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-slate-100 sm:text-3xl">
-            {" "}
-            {isEdit ? "Edit Raw Material" : "Create Raw Material"}{" "}
-          </h2>{" "}
+          <div>
+            <h2 className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-slate-100 sm:text-3xl">
+              {isEdit
+                ? "Edit Raw Material"
+                : isDuplicate
+                  ? "Duplicate Raw Material"
+                  : "Create Raw Material"}
+            </h2>
+            {isDuplicate ? (
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                Fields are copied from the selected raw material. Change what
+                you need, then create a new record.
+              </p>
+            ) : null}
+          </div>{" "}
           <Button
             type="button"
             variant="secondary"

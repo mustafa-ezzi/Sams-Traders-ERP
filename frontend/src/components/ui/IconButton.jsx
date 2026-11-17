@@ -44,12 +44,36 @@ const printIcon = (
   </svg>
 );
 
+const duplicateIcon = (
+  <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4">
+    <rect
+      x="8"
+      y="8"
+      width="12"
+      height="12"
+      rx="2"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    />
+    <path
+      d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+    />
+  </svg>
+);
+
 const icons = {
   edit: editIcon,
   pencil: editIcon,
   delete: deleteIcon,
   trash: deleteIcon,
   print: printIcon,
+  duplicate: duplicateIcon,
+  copy: duplicateIcon,
 };
 
 const editStyle =
@@ -58,6 +82,8 @@ const deleteStyle =
   "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 hover:text-rose-900 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300 dark:hover:bg-rose-950/60 dark:hover:text-rose-200";
 const printStyle =
   "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-slate-100";
+const duplicateStyle =
+  "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-950/60 dark:hover:text-emerald-200";
 
 const styles = {
   edit: editStyle,
@@ -65,6 +91,8 @@ const styles = {
   delete: deleteStyle,
   trash: deleteStyle,
   print: printStyle,
+  duplicate: duplicateStyle,
+  copy: duplicateStyle,
 };
 
 const IconButton = ({ icon, label, className = "", ...props }) => (

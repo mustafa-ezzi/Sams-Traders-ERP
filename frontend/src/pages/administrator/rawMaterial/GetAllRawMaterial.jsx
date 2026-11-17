@@ -213,6 +213,15 @@ const GetAllRawMaterial = () => {
                           }
                         />{" "}
                         <IconButton
+                          icon="duplicate"
+                          label="Duplicate"
+                          onClick={() =>
+                            navigate(
+                              `/raw-materials/create?duplicate=${row.id}`,
+                            )
+                          }
+                        />{" "}
+                        <IconButton
                           icon="delete"
                           label="Delete raw material"
                           onClick={() => setDeleteId(row.id)}
