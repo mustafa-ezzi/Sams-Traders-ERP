@@ -15,6 +15,7 @@ import IconButton from "../../components/ui/IconButton";
 import DimensionPrintButtons from "../../components/ui/DimensionPrintButtons";
 import PurchaseInvoicePrintModal from "../../components/purchase/PurchaseInvoicePrintModal";
 import { dimensionToCompanyConfig } from "../../utils/dimensionCompany";
+import { formatPurchaseItemLabel } from "./invoice/purchaseInvoiceShared";
 
 const selectClassName =
   "w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100";
@@ -760,7 +761,7 @@ const PurchaseInvoicePage = () => {
 
                     {/* Purchase Item */}
                     <select
-                      className={selectClassName}
+                      className={`${selectClassName} min-w-0 overflow-hidden text-ellipsis`}
                       value={line.itemId}
                       onChange={(e) =>
                         handleLineChange(index, "itemId", e.target.value)
@@ -771,11 +772,7 @@ const PurchaseInvoicePage = () => {
                         .filter((p) => p.item_type === line.itemType)
                         .map((p) => (
                           <option key={`${p.item_type}-${p.id}`} value={p.id}>
-                            {p.name} (
-                            {p.item_type === "RAW_MATERIAL"
-                              ? "Raw Material"
-                              : "Finished Good"}
-                            )
+                            {formatPurchaseItemLabel(p)}
                           </option>
                         ))}
                     </select>

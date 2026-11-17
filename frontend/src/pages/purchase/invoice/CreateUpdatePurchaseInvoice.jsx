@@ -12,10 +12,14 @@ import { useToast } from "../../../context/ToastContext";
 import {
   createEmptyLine,
   extractErrorMessage,
+  formatPurchaseItemLabel,
   selectClassName,
   toNumber,
   toRateString,
 } from "./purchaseInvoiceShared";
+
+const lineGridColumns =
+  "130px minmax(0, 1.8fr) 80px 70px 110px 110px 110px 40px";
 const CreateUpdatePurchaseInvoice = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -344,13 +348,12 @@ const CreateUpdatePurchaseInvoice = () => {
               onChange={(e) => handleChange("remarks", e.target.value)}
             />{" "}
           </div>{" "}
-          <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700">
+          <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-700">
             {" "}
             <div
-              className="grid gap-2 bg-indigo-50 px-4 py-3 text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400 dark:text-slate-500"
+              className="grid min-w-[860px] gap-2 bg-indigo-50 px-4 py-3 text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400 dark:text-slate-500"
               style={{
-                gridTemplateColumns:
-                  "130px 1.8fr 80px 70px 110px 110px 110px 40px",
+                gridTemplateColumns: lineGridColumns,
               }}
             >
               {" "}
@@ -366,10 +369,9 @@ const CreateUpdatePurchaseInvoice = () => {
                 return (
                   <div
                     key={`${index}-${line.itemId}`}
-                    className="grid gap-2 py-3 items-center"
+                    className="grid min-w-[860px] items-center gap-2 py-3"
                     style={{
-                      gridTemplateColumns:
-                        "130px 1.8fr 80px 70px 110px 110px 110px 40px",
+                      gridTemplateColumns: lineGridColumns,
                     }}
                   >
                     {" "}
@@ -384,28 +386,17 @@ const CreateUpdatePurchaseInvoice = () => {
                       <option value="RAW_MATERIAL">Raw Material</option>{" "}
                       <option value="FINISHED_GOOD">Finished Good</option>{" "}
                     </select>{" "}
-                    <select
-                      className={selectClassName}
+                    <SearchableSelect
                       value={line.itemId}
-                      onChange={(e) =>
-                        handleLineChange(index, "itemId", e.target.value)
+                      onChange={(itemId) =>
+                        handleLineChange(index, "itemId", itemId)
                       }
-                    >
-                      {" "}
-                      <option value="">— Select Item —</option>{" "}
-                      {productOptions
-                        .filter((p) => p.item_type === line.itemType)
-                        .map((p) => (
-                          <option key={`${p.item_type}-${p.id}`} value={p.id}>
-                            {" "}
-                            {p.name} ({" "}
-                            {p.item_type === "RAW_MATERIAL"
-                              ? "Raw Material"
-                              : "Finished Good"}
-                            ){" "}
-                          </option>
-                        ))}{" "}
-                    </select>{" "}
+                      options={productOptions.filter(
+                        (item) => item.item_type === line.itemType,
+                      )}
+                      getOptionLabel={formatPurchaseItemLabel}
+                      placeholder="Search name, brand, category"
+                    />{" "}
                     <FormInput
                       type="number"
                       min="0.01"

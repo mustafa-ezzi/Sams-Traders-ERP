@@ -10,6 +10,17 @@ export const createEmptyLine = () => ({
   rate: "0",
   discount: "0",
 });
+export const formatPurchaseItemLabel = (item) => {
+  if (!item) return "";
+  const parts = [
+    item.name,
+    item.brand_name || item.brandName || item.brand?.name,
+    item.category_name || item.categoryName || item.category?.name,
+  ]
+    .map((part) => String(part || "").trim())
+    .filter(Boolean);
+  return parts.join(" - ");
+};
 export const toNumber = (value) => {
   const parsedValue = Number(value);
   return Number.isFinite(parsedValue) ? parsedValue : 0;

@@ -4,7 +4,7 @@ from django.test import TestCase
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from accounts.models import Account, User
-from inventory.models import Product, Supplier, Unit, Warehouse
+from inventory.models import Brand, Category, Product, RawMaterial, Supplier, Unit, Warehouse
 from purchase.models import PurchaseBankPayment, PurchaseBankPaymentLine, PurchaseInvoice, PurchaseReturn
 from purchase.serializers import PurchaseBankPaymentSerializer
 from purchase.views import PurchaseInvoiceViewSet
@@ -191,3 +191,28 @@ class PurchaseBankPaymentTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["data"][0]["unit"], "Carton")
+
+    def test_product_options_include_raw_material_brand_and_category(self):
+        brand = Brand.objects.create(tenant_id=self.tenant_id, name="WYPE")
+        category = Category.objects.create(tenant_id=self.tenant_id, name="Mops")
+        RawMaterial.objects.create(
+            tenant_id=self.tenant_id,
+            name="Wet Mop Yarn",
+            brand=brand,
+            category=category,
+            purchase_unit=self.unit,
+            selling_unit=self.unit,
+            purchase_price=Decimal("10.00"),
+        )
+        request = self.factory.get("/api/purchase/purchase-invoices/product-options/")
+        force_authenticate(request, user=self.user)
+        response = PurchaseInvoiceViewSet.as_view({"get": "product_options"})(request)
+        self.assertEqual(response.status_code, 200)
+        raw = next(
+            item
+            for item in response.data["data"]
+            if item["item_type"] == "RAW_MATERIAL"
+        )
+        self.assertEqual(raw["name"], "Wet Mop Yarn")
+        self.assertEqual(raw["brand_name"], "WYPE")
+        self.assertEqual(raw["category_name"], "Mops")

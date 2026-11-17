@@ -264,7 +264,7 @@ class PurchaseInvoiceViewSet(AuditedModelMixin, viewsets.ModelViewSet):
             tenant_id__in=tenant_ids,
             deleted_at__isnull=True,
             product_type__in=["FINISHED_GOOD", "READY_MADE"],
-        ).select_related("unit").order_by("tenant_id", "name")
+        ).select_related("unit", "brand", "category").order_by("tenant_id", "name")
 
         if search:
             product_queryset = product_queryset.filter(name__icontains=search)
@@ -285,6 +285,8 @@ class PurchaseInvoiceViewSet(AuditedModelMixin, viewsets.ModelViewSet):
                     "id": str(product.id),
                     "item_type": "FINISHED_GOOD",
                     "name": product.name,
+                    "brand_name": product.brand.name if product.brand else "",
+                    "category_name": product.category.name if product.category else "",
                     "dimension_code": product.tenant_id,
                     "dimension_name": dimension_names.get(product.tenant_id, product.tenant_id),
                     "quantity": str(quantity),
@@ -298,7 +300,7 @@ class PurchaseInvoiceViewSet(AuditedModelMixin, viewsets.ModelViewSet):
         raw_queryset = RawMaterial.objects.filter(
             tenant_id=tenant_id,
             deleted_at__isnull=True,
-        ).select_related("purchase_unit").order_by("name")
+        ).select_related("purchase_unit", "brand", "category").order_by("name")
         if search:
             raw_queryset = raw_queryset.filter(name__icontains=search)
 
@@ -317,6 +319,8 @@ class PurchaseInvoiceViewSet(AuditedModelMixin, viewsets.ModelViewSet):
                     "id": str(raw_material.id),
                     "item_type": "RAW_MATERIAL",
                     "name": raw_material.name,
+                    "brand_name": raw_material.brand.name if raw_material.brand else "",
+                    "category_name": raw_material.category.name if raw_material.category else "",
                     "quantity": str(quantity),
                     "unit": raw_material.purchase_unit.name,
                     "product_type": "RAW_MATERIAL",

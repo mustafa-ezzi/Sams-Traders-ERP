@@ -38,6 +38,7 @@ const SearchableSelect = ({
   placeholder = "Type to search…",
   disabled = false,
   showAllOptions = false,
+  className = "",
 }) => {
   const listId = useId();
   const containerRef = useRef(null);
@@ -286,7 +287,8 @@ const SearchableSelect = ({
                     <button
                       key={optionValue}
                       type="button"
-                      className={`flex w-full px-4 py-2 text-left text-sm transition hover:bg-blue-50 dark:hover:bg-blue-950/40 ${
+                      title={getOptionLabel(option)}
+                      className={`block w-full px-4 py-2 text-left text-sm leading-snug break-words whitespace-normal transition hover:bg-blue-50 dark:hover:bg-blue-950/40 ${
                         isSelected
                           ? "bg-blue-50 font-semibold text-blue-700 dark:bg-blue-950/50 dark:text-blue-300"
                           : "text-slate-800 dark:text-slate-100"
@@ -305,7 +307,7 @@ const SearchableSelect = ({
       : null;
 
   return (
-    <div className="space-y-1" ref={containerRef}>
+    <div className={`min-w-0 space-y-1 ${className}`.trim()} ref={containerRef}>
       {label ? (
         <label
           htmlFor={listId}
@@ -319,8 +321,9 @@ const SearchableSelect = ({
           ref={inputRef}
           id={listId}
           type="text"
-          className={inputClassName}
+          className={`${inputClassName} min-w-0 overflow-hidden text-ellipsis whitespace-nowrap`}
           value={query}
+          title={resolvedLabel || query || placeholder}
           placeholder={placeholder}
           disabled={disabled}
           autoComplete="off"
