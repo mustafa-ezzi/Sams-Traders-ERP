@@ -4,6 +4,7 @@ from django.db.models import Sum
 
 from sales.models import (
     SalesBankReceiptLine,
+    SalesInvoice,
     SalesInvoiceLine,
     SalesmanCommissionPayment,
     SalesmanCommissionPaymentLine,
@@ -112,11 +113,90 @@ def allocate_invoice_amount_to_line_share(invoice, amount, scoped_line_total):
     )
 
 
+def _receipt_lines_queryset(excluded_receipt_ids=None, as_of_date=None):
+    qs = SalesBankReceiptLine.objects.filter(
+        deleted_at__isnull=True,
+        receipt__deleted_at__isnull=True,
+    ).exclude(receipt_id__in=excluded_receipt_ids or [])
+    if as_of_date is not None:
+        qs = qs.filter(receipt__date__lte=as_of_date)
+    return qs
+
+
+def _direct_received_for_invoice(receipts_qs, tenant_id=None, line_totals=None):
+    """Receipts explicitly allocated to this invoice."""
+    if not tenant_id:
+        return receipts_qs.aggregate(total=Sum("amount"))["total"] or Decimal("0.00")
+
+    matched = (
+        receipts_qs.filter(tenant_id=tenant_id).aggregate(total=Sum("amount"))["total"]
+        or Decimal("0.00")
+    )
+    line_tenants = {code for code in (line_totals or {}) if code}
+    if line_tenants:
+        orphans = receipts_qs.exclude(tenant_id__in=line_tenants)
+        home_tenant = tenant_id if tenant_id in line_tenants else sorted(line_tenants)[0]
+    else:
+        orphans = receipts_qs.exclude(tenant_id=tenant_id)
+        home_tenant = tenant_id
+    if tenant_id == home_tenant:
+        matched += orphans.aggregate(total=Sum("amount"))["total"] or Decimal("0.00")
+    return matched
+
+
+def get_fifo_unallocated_receipt_share(
+    invoice,
+    tenant_id=None,
+    excluded_receipt_ids=None,
+    as_of_date=None,
+):
+    """
+    Apply customer receipts that reduced AR but were not linked to an invoice
+    (or opening balance) onto the oldest open invoices first.
+    """
+    qs = _receipt_lines_queryset(excluded_receipt_ids, as_of_date).filter(
+        customer_id=invoice.customer_id,
+        sales_invoice__isnull=True,
+        party_opening_balance__isnull=True,
+    )
+    if tenant_id:
+        qs = qs.filter(tenant_id=tenant_id)
+    pool = quantize_money(qs.aggregate(total=Sum("amount"))["total"] or Decimal("0.00"))
+    if pool <= 0:
+        return Decimal("0.00")
+
+    invoices = SalesInvoice.objects.filter(
+        customer_id=invoice.customer_id,
+        deleted_at__isnull=True,
+    ).order_by("date", "created_at", "id")
+
+    for sibling in invoices:
+        if tenant_id:
+            sibling_totals = get_sales_invoice_line_totals_by_tenant(sibling)
+            if sibling_totals and tenant_id not in sibling_totals:
+                continue
+        sibling_financials = get_sales_invoice_financials(
+            sibling,
+            excluded_receipt_ids=excluded_receipt_ids,
+            as_of_date=as_of_date,
+            tenant_id=tenant_id,
+            include_unallocated=False,
+        )
+        take = min(pool, sibling_financials["balance_amount"])
+        if sibling.id == invoice.id:
+            return quantize_money(take)
+        pool = quantize_money(pool - take)
+        if pool <= 0:
+            break
+    return Decimal("0.00")
+
+
 def get_sales_invoice_financials(
     sales_invoice,
     excluded_receipt_ids=None,
     as_of_date=None,
     tenant_id=None,
+    include_unallocated=True,
 ):
     """
     Outstanding balance for a sales invoice.
@@ -124,6 +204,9 @@ def get_sales_invoice_financials(
     When tenant_id is set, amounts are limited to that dimension's share of a
     mixed AM/SAMS invoice (line totals, receipts posted to that dimension, and
     returns against that dimension's invoice lines).
+
+    Receipts that hit the customer but were not linked to an invoice are applied
+    FIFO onto the oldest open invoices so remaining matches the party ledger.
     """
     excluded_receipt_ids = excluded_receipt_ids or []
 
@@ -134,22 +217,21 @@ def get_sales_invoice_financials(
     if as_of_date is not None:
         returns_qs = returns_qs.filter(date__lte=as_of_date)
 
-    receipts_qs = SalesBankReceiptLine.objects.filter(
+    receipts_qs = _receipt_lines_queryset(excluded_receipt_ids, as_of_date).filter(
         sales_invoice=sales_invoice,
-        deleted_at__isnull=True,
-        receipt__deleted_at__isnull=True,
-    ).exclude(receipt_id__in=excluded_receipt_ids)
-    if as_of_date is not None:
-        receipts_qs = receipts_qs.filter(receipt__date__lte=as_of_date)
+    )
 
     if tenant_id:
         line_totals = get_sales_invoice_line_totals_by_tenant(sales_invoice)
-        scoped_line_total = line_totals.get(tenant_id, Decimal("0.00"))
-        net_amount = allocate_invoice_amount_to_line_share(
-            sales_invoice,
-            sales_invoice.net_amount or Decimal("0.00"),
-            scoped_line_total,
-        )
+        if line_totals:
+            scoped_line_total = line_totals.get(tenant_id, Decimal("0.00"))
+            net_amount = allocate_invoice_amount_to_line_share(
+                sales_invoice,
+                sales_invoice.net_amount or Decimal("0.00"),
+                scoped_line_total,
+            )
+        else:
+            net_amount = quantize_money(sales_invoice.net_amount or Decimal("0.00"))
 
         returned_amount = (
             SalesReturnLine.objects.filter(
@@ -165,17 +247,17 @@ def get_sales_invoice_financials(
                 returns_qs.aggregate(total=Sum("gross_amount"))["total"]
                 or Decimal("0.00")
             )
-            returned_amount = allocate_invoice_amount_to_line_share(
-                sales_invoice,
-                header_returned,
-                scoped_line_total,
-            )
+            if line_totals:
+                returned_amount = allocate_invoice_amount_to_line_share(
+                    sales_invoice,
+                    header_returned,
+                    line_totals.get(tenant_id, Decimal("0.00")),
+                )
+            else:
+                returned_amount = header_returned
 
-        received_amount = (
-            receipts_qs.filter(tenant_id=tenant_id).aggregate(total=Sum("amount"))[
-                "total"
-            ]
-            or Decimal("0.00")
+        received_amount = _direct_received_for_invoice(
+            receipts_qs, tenant_id=tenant_id, line_totals=line_totals
         )
     else:
         # Prefer line amounts; fall back to header gross (legacy / header-only rows).
@@ -194,11 +276,16 @@ def get_sales_invoice_financials(
                 or Decimal("0.00")
             )
 
-        received_amount = (
-            receipts_qs.aggregate(total=Sum("amount"))["total"]
-            or Decimal("0.00")
-        )
+        received_amount = _direct_received_for_invoice(receipts_qs)
         net_amount = quantize_money(sales_invoice.net_amount or Decimal("0.00"))
+
+    if include_unallocated:
+        received_amount += get_fifo_unallocated_receipt_share(
+            sales_invoice,
+            tenant_id=tenant_id,
+            excluded_receipt_ids=excluded_receipt_ids,
+            as_of_date=as_of_date,
+        )
 
     returned_amount = quantize_money(returned_amount)
     received_amount = quantize_money(received_amount)

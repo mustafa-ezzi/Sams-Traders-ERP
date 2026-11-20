@@ -79,8 +79,10 @@ const rawMaterialService = {
         : response.data?.message || "Raw material created successfully",
     };
   },
-  async update(id, payload) {
-    const response = await axiosInstance.put(`/inventory/raw-materials/${id}/`, payload);
+  async update(id, payload, tenantId = "") {
+    const response = await axiosInstance.put(`/inventory/raw-materials/${id}/`, payload, {
+      headers: tenantHeader(tenantId),
+    });
     return response.data;
   },
   async remove(id) {

@@ -209,7 +209,9 @@ const GetAllRawMaterial = () => {
                           icon="edit"
                           label="Edit raw material"
                           onClick={() =>
-                            navigate(`/raw-materials/${row.id}/edit`)
+                            navigate(`/raw-materials/${row.id}/edit`, {
+                              state: { tenantId: row.tenant_id },
+                            })
                           }
                         />{" "}
                         <IconButton

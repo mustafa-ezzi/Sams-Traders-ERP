@@ -20,14 +20,17 @@ from .models import (
     PartyOpeningBalance,
     Production,
     Product,
+    ProductCostHistory,
     ProductCostState,
     ProductMaterial,
+    ProductStock,
     RateList,
     RateListGroup,
     RateListLine,
     RawMaterial,
     Salesman,
     Size,
+    Stock,
     Unit,
     Warehouse,
 )
@@ -347,6 +350,56 @@ def get_request_user_dimension_codes(request):
     return tenant_ids
 
 
+def resolve_record_tenant_id(request, instance=None, requested=None):
+    allowed = get_request_user_dimension_codes(request)
+    candidate = str(requested or "").strip()
+    if not candidate:
+        candidate = (
+            getattr(instance, "tenant_id", None)
+            or getattr(request, "tenant_id", None)
+            or getattr(request.user, "tenant_id", "")
+            or ""
+        )
+    candidate = str(candidate or "").strip()
+    if not candidate:
+        raise serializers.ValidationError({"tenant_id": "Select a dimension."})
+    if allowed and candidate not in allowed:
+        raise serializers.ValidationError(
+            {
+                "tenant_id": (
+                    f"Dimension '{candidate}' is not available for this user."
+                )
+            }
+        )
+    return candidate
+
+
+def reassign_raw_material_dimension(instance, old_tenant, new_tenant):
+    if not old_tenant or not new_tenant or old_tenant == new_tenant:
+        return
+    Stock.objects.filter(
+        raw_material=instance, tenant_id=old_tenant, deleted_at__isnull=True
+    ).update(tenant_id=new_tenant)
+    OpeningStock.objects.filter(
+        raw_material=instance, tenant_id=old_tenant, deleted_at__isnull=True
+    ).update(tenant_id=new_tenant)
+
+
+def reassign_product_dimension(instance, old_tenant, new_tenant):
+    if not old_tenant or not new_tenant or old_tenant == new_tenant:
+        return
+    ProductMaterial.objects.filter(product=instance).update(tenant_id=new_tenant)
+    ProductStock.objects.filter(
+        product=instance, tenant_id=old_tenant, deleted_at__isnull=True
+    ).update(tenant_id=new_tenant)
+    ProductCostState.objects.filter(
+        product=instance, tenant_id=old_tenant, deleted_at__isnull=True
+    ).update(tenant_id=new_tenant)
+    ProductCostHistory.objects.filter(
+        product=instance, tenant_id=old_tenant
+    ).update(tenant_id=new_tenant)
+
+
 class TenantUniqueNameSerializer(serializers.ModelSerializer):
     duplicate_name_message = "Record with this name already exists."
 
@@ -579,7 +632,8 @@ class ProductSerializer(serializers.ModelSerializer):
             "stock_value",
             "materials",
         ]
-        read_only_fields = ["tenant_id", "tenant_name"]
+        read_only_fields = ["tenant_name"]
+        extra_kwargs = {"tenant_id": {"required": False}}
 
     def get_tenant_name(self, obj):
         if not hasattr(self, "_dimension_name_cache"):
@@ -683,10 +737,11 @@ class ProductSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Name is required.")
 
         request = self.context["request"]
-        tenant_id = (
-            getattr(self.instance, "tenant_id", None)
-            or getattr(request, "tenant_id", None)
-            or request.user.tenant_id
+        requested_tenant = None
+        if hasattr(self, "initial_data"):
+            requested_tenant = self.initial_data.get("tenant_id")
+        tenant_id = resolve_record_tenant_id(
+            request, self.instance, requested_tenant
         )
         existing = Product.objects.filter(
             tenant_id=tenant_id,
@@ -703,10 +758,8 @@ class ProductSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         request = self.context["request"]
-        tenant_id = (
-            getattr(self.instance, "tenant_id", None)
-            or getattr(request, "tenant_id", None)
-            or request.user.tenant_id
+        tenant_id = resolve_record_tenant_id(
+            request, self.instance, data.get("tenant_id")
         )
         shared_tenant_ids = get_request_user_dimension_codes(request)
         product_type = data.get("product_type")
@@ -886,8 +939,25 @@ class ProductSerializer(serializers.ModelSerializer):
             )
 
         data["tenant_id"] = tenant_id
+        if (
+            self.instance
+            and self.instance.tenant_id != tenant_id
+            and data.get("sku", getattr(self.instance, "sku", ""))
+        ):
+            sku = data.get("sku") or self.instance.sku
+            sku_taken = (
+                Product.objects.filter(
+                    tenant_id=tenant_id,
+                    sku=sku,
+                    deleted_at__isnull=True,
+                )
+                .exclude(pk=self.instance.pk)
+                .exists()
+            )
+            if sku_taken:
+                data["sku"] = self._generate_next_sku(tenant_id)
+
         data = resolve_product_coa_defaults(category, data, instance=self.instance)
-        data.pop("tenant_id", None)
 
         data["inventory_account"] = resolve_account_for_product_tenant(
             data.get("inventory_account"),
@@ -931,7 +1001,9 @@ class ProductSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         materials_data = validated_data.pop("materials", [])
         request = self.context["request"]
-        tenant_id = getattr(request, "tenant_id", None) or request.user.tenant_id
+        tenant_id = validated_data.pop("tenant_id", None) or getattr(
+            request, "tenant_id", None
+        ) or request.user.tenant_id
         if not validated_data.get("sku"):
             validated_data["sku"] = self._generate_next_sku(tenant_id)
 
@@ -974,9 +1046,12 @@ class ProductSerializer(serializers.ModelSerializer):
 
         return product
 
+    @transaction.atomic
     def update(self, instance, validated_data):
         materials_data = validated_data.pop("materials", [])
-        tenant_id = instance.tenant_id
+        old_tenant = instance.tenant_id
+        tenant_id = validated_data.pop("tenant_id", instance.tenant_id)
+        instance.tenant_id = tenant_id
 
         ProductMaterial.objects.filter(
             product=instance, deleted_at__isnull=True
@@ -1016,6 +1091,8 @@ class ProductSerializer(serializers.ModelSerializer):
         )
         component_total = Decimal("0.00")
         instance.save()
+        if old_tenant != tenant_id:
+            reassign_product_dimension(instance, old_tenant, tenant_id)
 
         for material in materials_data:
             material_obj = ProductMaterial.objects.create(
@@ -1202,10 +1279,11 @@ class RawMaterialSerializer(serializers.ModelSerializer):
     class Meta:
         model = RawMaterial
         fields = "__all__"
-        read_only_fields = ["tenant_id", "created_at", "updated_at", "deleted_at"]
+        read_only_fields = ["created_at", "updated_at", "deleted_at"]
         extra_kwargs = {
             "selling_unit": {"required": False},
             "selling_price": {"required": False},
+            "tenant_id": {"required": False},
             "name": {"validators": []},
         }
 
@@ -1215,10 +1293,11 @@ class RawMaterialSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Name is required.")
 
         request = self.context["request"]
-        tenant_id = (
-            getattr(self.instance, "tenant_id", None)
-            or getattr(request, "tenant_id", None)
-            or request.user.tenant_id
+        requested_tenant = None
+        if hasattr(self, "initial_data"):
+            requested_tenant = self.initial_data.get("tenant_id")
+        tenant_id = resolve_record_tenant_id(
+            request, self.instance, requested_tenant
         )
         existing = RawMaterial.objects.filter(
             tenant_id=tenant_id,
@@ -1234,8 +1313,12 @@ class RawMaterialSerializer(serializers.ModelSerializer):
         return name
 
     def validate(self, attrs):
-        tenant_id = self.context["request"].user.tenant_id
-        shared_tenant_ids = get_request_user_dimension_codes(self.context["request"])
+        request = self.context["request"]
+        tenant_id = resolve_record_tenant_id(
+            request, self.instance, attrs.get("tenant_id")
+        )
+        attrs["tenant_id"] = tenant_id
+        shared_tenant_ids = get_request_user_dimension_codes(request)
         if "purchase_price" in attrs:
             attrs["purchase_price"] = attrs.get("purchase_price") or 0
 
@@ -1274,6 +1357,12 @@ class RawMaterialSerializer(serializers.ModelSerializer):
         if purchase_unit:
             attrs["selling_unit"] = purchase_unit
         attrs["selling_price"] = 0
+        if attrs.get("inventory_account"):
+            attrs["inventory_account"] = resolve_account_for_product_tenant(
+                attrs.get("inventory_account"),
+                tenant_id,
+                "inventory_account",
+            )
         validate_account_mapping(
             attrs.get("inventory_account"),
             tenant_id,
@@ -1283,6 +1372,15 @@ class RawMaterialSerializer(serializers.ModelSerializer):
             require_postable=False,
         )
         return attrs
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        old_tenant = instance.tenant_id
+        new_tenant = validated_data.get("tenant_id", old_tenant)
+        instance = super().update(instance, validated_data)
+        if old_tenant != new_tenant:
+            reassign_raw_material_dimension(instance, old_tenant, new_tenant)
+        return instance
 
 
 class RawMaterialDetailedSerializer(serializers.ModelSerializer):
@@ -1298,6 +1396,7 @@ class RawMaterialDetailedSerializer(serializers.ModelSerializer):
         model = RawMaterial
         fields = [
             "id",
+            "tenant_id",
             "name",
             "brand",
             "brand_name",

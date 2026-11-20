@@ -111,6 +111,73 @@ class SalesBankReceiptTests(TestCase):
         self.assertEqual(financials["received_amount"], Decimal("700.00"))
         self.assertEqual(financials["balance_amount"], Decimal("1000.00"))
 
+    def test_unallocated_customer_receipt_reduces_oldest_invoice_remaining(self):
+        self.invoice.net_amount = Decimal("5406.00")
+        self.invoice.gross_amount = Decimal("5406.00")
+        self.invoice.save(update_fields=["net_amount", "gross_amount"])
+        receipt = SalesBankReceipt.objects.create(
+            tenant_id=self.tenant_id,
+            receipt_number="SBR-00043",
+            date="2026-07-14",
+            amount=Decimal("5000.00"),
+        )
+        SalesBankReceiptLine.objects.create(
+            tenant_id=self.tenant_id,
+            receipt=receipt,
+            customer=self.customer,
+            receipt_against="INVOICE",
+            sales_invoice=None,
+            bank_account=self.bank_account,
+            amount=Decimal("5000.00"),
+        )
+
+        financials = get_sales_invoice_financials(self.invoice)
+        scoped = get_sales_invoice_financials(
+            self.invoice, tenant_id=self.tenant_id
+        )
+
+        self.assertEqual(financials["received_amount"], Decimal("5000.00"))
+        self.assertEqual(financials["balance_amount"], Decimal("406.00"))
+        self.assertEqual(scoped["balance_amount"], Decimal("406.00"))
+
+    def test_linked_receipt_in_other_dimension_still_reduces_home_share(self):
+        from sales.models import SalesInvoiceLine
+
+        SalesInvoiceLine.objects.create(
+            tenant_id=self.tenant_id,
+            invoice=self.invoice,
+            product=self.product,
+            quantity=Decimal("1.00"),
+            rate=Decimal("5406.00"),
+            amount=Decimal("5406.00"),
+            discount=Decimal("0.00"),
+            total_amount=Decimal("5406.00"),
+        )
+        self.invoice.net_amount = Decimal("5406.00")
+        self.invoice.gross_amount = Decimal("5406.00")
+        self.invoice.save(update_fields=["net_amount", "gross_amount"])
+        receipt = SalesBankReceipt.objects.create(
+            tenant_id="AM_TRADERS",
+            receipt_number="SBR-00043",
+            date="2026-07-14",
+            amount=Decimal("5000.00"),
+        )
+        SalesBankReceiptLine.objects.create(
+            tenant_id="AM_TRADERS",
+            receipt=receipt,
+            customer=self.customer,
+            receipt_against="INVOICE",
+            sales_invoice=self.invoice,
+            bank_account=self.bank_account,
+            amount=Decimal("5000.00"),
+        )
+
+        scoped = get_sales_invoice_financials(
+            self.invoice, tenant_id=self.tenant_id
+        )
+        self.assertEqual(scoped["received_amount"], Decimal("5000.00"))
+        self.assertEqual(scoped["balance_amount"], Decimal("406.00"))
+
     def test_serializer_blocks_receipt_above_remaining_balance(self):
         receipt = SalesBankReceipt.objects.create(
             tenant_id=self.tenant_id,

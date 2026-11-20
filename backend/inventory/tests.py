@@ -16,7 +16,12 @@ from inventory.models import (
     Warehouse,
 )
 from inventory.services import rebuild_product_costing
-from inventory.serializers import CategorySerializer, ProductSerializer, UnitSerializer
+from inventory.serializers import (
+    CategorySerializer,
+    ProductSerializer,
+    RawMaterialSerializer,
+    UnitSerializer,
+)
 from inventory.views import (
     BrandViewSet,
     CategoryViewSet,
@@ -507,6 +512,50 @@ class ProductCoaDefaultsTests(TestCase):
         self.assertEqual(product.revenue_account.code, self.revenue_account.code)
         self.assertNotEqual(product.inventory_account_id, self.inventory_account.id)
 
+    def test_product_update_can_change_dimension(self):
+        chemical_dimension = Dimension.objects.create(
+            code="SE__CHEMICAL",
+            name="Sams Enterprises - Chemicals",
+            sku_code="CHE",
+            is_active=True,
+        )
+        self.user.allowed_dimensions.add(chemical_dimension)
+        product = Product.objects.create(
+            tenant_id=self.tenant_id,
+            name="Move Me",
+            product_type="FINISHED_GOOD",
+            direct_price="10.00",
+            net_amount="10.00",
+            sku="AME - 0007",
+            category=self.category,
+            inventory_account=self.inventory_account,
+            cogs_account=self.cogs_account,
+            revenue_account=self.revenue_account,
+        )
+
+        serializer = ProductSerializer(
+            product,
+            data={
+                "name": product.name,
+                "product_type": "FINISHED_GOOD",
+                "direct_price": "10.00",
+                "tenant_id": "SE__CHEMICAL",
+                "category": self.category.id,
+                "inventory_account": self.inventory_account.id,
+                "cogs_account": self.cogs_account.id,
+                "revenue_account": self.revenue_account.id,
+                "materials": [],
+            },
+            context={"request": SimpleNamespace(user=self.user)},
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        updated = serializer.save()
+        self.assertEqual(updated.tenant_id, "SE__CHEMICAL")
+        self.assertEqual(updated.inventory_account.tenant_id, "SE__CHEMICAL")
+        self.assertEqual(updated.cogs_account.tenant_id, "SE__CHEMICAL")
+        self.assertEqual(updated.revenue_account.tenant_id, "SE__CHEMICAL")
+
     def test_category_duplicate_name_returns_validation_error_across_owned_dimensions(self):
         other_dimension = Dimension.objects.create(
             code="OTHER_TENANT",
@@ -872,3 +921,28 @@ class RawMaterialDropdownOptionsTests(TestCase):
         self.assertEqual(response.status_code, 200)
         names = {item["name"] for item in response.data["data"]}
         self.assertEqual(names, {"AM PP", "SAMS Yarn"})
+
+    def test_raw_material_update_can_change_dimension(self):
+        raw_material = self._create_raw_material(
+            self.am_tenant, "PP", self.am_brand, self.am_category, self.am_unit
+        )
+        serializer = RawMaterialSerializer(
+            raw_material,
+            data={
+                "name": "PP",
+                "brand": self.am_brand.id,
+                "category": self.am_category.id,
+                "purchase_unit": self.am_unit.id,
+                "purchase_price": "0.00",
+                "tenant_id": self.sams_tenant,
+            },
+            context={
+                "request": SimpleNamespace(
+                    user=self.user,
+                    tenant_id=self.am_tenant,
+                )
+            },
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        updated = serializer.save()
+        self.assertEqual(updated.tenant_id, self.sams_tenant)

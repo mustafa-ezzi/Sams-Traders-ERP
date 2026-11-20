@@ -105,7 +105,6 @@ class SalesInvoiceViewSet(AuditedModelMixin, viewsets.ModelViewSet):
         )
         received_amount_subquery = (
             SalesBankReceiptLine.objects.filter(
-                receipt__tenant_id=OuterRef("tenant_id"),
                 sales_invoice_id=OuterRef("pk"),
                 deleted_at__isnull=True,
                 receipt__deleted_at__isnull=True,

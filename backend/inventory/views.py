@@ -75,8 +75,20 @@ from rest_framework.exceptions import ValidationError
 
 from purchase.models import PurchaseInvoiceLine, PurchaseReturnLine
 from sales.models import SalesInvoiceLine, SalesReturnLine
-from common.tenancy import get_request_tenant_filter, get_request_tenant_ids
+from common.tenancy import (
+    get_request_tenant_filter,
+    get_request_tenant_ids,
+    get_shared_tenant_ids,
+)
 from accounts.dimensions import get_user_active_dimension_codes
+
+
+def queryset_tenant_ids(request, action=""):
+    if action in {"retrieve", "update", "partial_update", "destroy"}:
+        tenant_ids = get_shared_tenant_ids(request)
+        if tenant_ids:
+            return tenant_ids
+    return get_request_tenant_ids(request)
 
 
 def get_raw_material_stock_total(tenant_id, raw_material_ids):
@@ -284,7 +296,7 @@ class RawMaterialViewSet(UnpaginatedOptionsMixin, ModelViewSet):
         return RawMaterialDetailedSerializer
 
     def get_queryset(self):
-        tenant_ids = get_request_tenant_ids(self.request)
+        tenant_ids = queryset_tenant_ids(self.request, getattr(self, "action", ""))
         qs = RawMaterial.objects.filter(
             tenant_id__in=tenant_ids, deleted_at__isnull=True
         ).select_related("brand", "category", "purchase_unit")
@@ -409,7 +421,7 @@ class ProductViewSet(UnpaginatedOptionsMixin, viewsets.ModelViewSet):
         active_materials = ProductMaterial.objects.filter(
             deleted_at__isnull=True
         ).select_related("raw_material", "component_product", "uom")
-        tenant_ids = get_request_tenant_ids(self.request)
+        tenant_ids = queryset_tenant_ids(self.request, getattr(self, "action", ""))
         quantity_subquery = (
             ProductStock.objects.filter(
                 tenant_id__in=tenant_ids,

@@ -335,9 +335,9 @@ const ProductFormPage = () => {
       setLoadingSetupOptions(true);
       try {
         const product = isEditing
-          ? await productService.getById(id, productTenantId)
+          ? await productService.getById(id, routeTenantId)
           : null;
-        const selectedTenantId = product?.tenant_id || productTenantId || "";
+        const selectedTenantId = product?.tenant_id || routeTenantId || "";
 
         if (selectedTenantId) {
           setProductTenantId(selectedTenantId);
@@ -359,7 +359,7 @@ const ProductFormPage = () => {
     };
 
     loadSetup();
-  }, [form, id, isEditing, loadProductSetupOptions, productTenantId, toast]);
+  }, [form, id, isEditing, loadProductSetupOptions, routeTenantId, toast]);
 
   useEffect(() => {
     refreshComponentOptions();
@@ -420,9 +420,8 @@ const ProductFormPage = () => {
       }
 
       if (
-        !isEditing &&
         values.productType === "ASSEMBLY_PRODUCT" &&
-        createDimensionIds.length !== 1
+        (isEditing ? !productTenantId : createDimensionIds.length !== 1)
       ) {
         toast.error(
           "Select one dimension for assembly products so component materials match the product dimension.",
@@ -433,6 +432,7 @@ const ProductFormPage = () => {
       const payload = {
         name: values.name,
         sku: values.sku?.trim() || "",
+        tenant_id: isEditing ? productTenantId : undefined,
         product_type: values.productType,
         moulding_charges: values.mouldingCharges,
         labour_charges: values.labourCharges,
@@ -496,27 +496,52 @@ const ProductFormPage = () => {
           </div>
         ) : (
           <form className="grid gap-4 xl:grid-cols-3" onSubmit={onSubmit}>
-            {!isEditing && (
-              <DimensionCreateSelector
-                selectedIds={createDimensionIds}
-                onChange={(nextIds) => {
-                  setCreateDimensionIds(nextIds);
-                  setMaterialRows([emptyMaterialRow]);
-                  form.setValue("inventory_account", "", {
-                    shouldDirty: true,
-                    shouldValidate: true,
-                  });
-                  form.setValue("cogs_account", "", {
-                    shouldDirty: true,
-                    shouldValidate: true,
-                  });
-                  form.setValue("revenue_account", "", {
-                    shouldDirty: true,
-                    shouldValidate: true,
-                  });
-                }}
-              />
-            )}
+            <DimensionCreateSelector
+              selectedIds={isEditing ? [productTenantId].filter(Boolean) : createDimensionIds}
+              allowAll={!isEditing}
+              label={isEditing ? "Dimension" : undefined}
+              hint={
+                isEditing
+                  ? "This product is saved in the selected company. Assembly components must belong to the same dimension."
+                  : undefined
+              }
+              onChange={(nextIds) => {
+                if (isEditing) {
+                  const nextTenantId = nextIds[0] || "";
+                  if (nextTenantId && nextTenantId !== productTenantId) {
+                    setProductTenantId(nextTenantId);
+                    setMaterialRows([emptyMaterialRow]);
+                    form.setValue("inventory_account", "", {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    });
+                    form.setValue("cogs_account", "", {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    });
+                    form.setValue("revenue_account", "", {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    });
+                  }
+                  return;
+                }
+                setCreateDimensionIds(nextIds);
+                setMaterialRows([emptyMaterialRow]);
+                form.setValue("inventory_account", "", {
+                  shouldDirty: true,
+                  shouldValidate: true,
+                });
+                form.setValue("cogs_account", "", {
+                  shouldDirty: true,
+                  shouldValidate: true,
+                });
+                form.setValue("revenue_account", "", {
+                  shouldDirty: true,
+                  shouldValidate: true,
+                });
+              }}
+            />
             <FormInput
               label="Product Name"
               required

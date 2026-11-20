@@ -11,6 +11,8 @@ const DimensionCreateSelector = ({
   selectedIds,
   onChange,
   className = "",
+  allowAll = true,
+  label,
   hint = "A separate copy is created in each selected dimension with its own SKU and stock.",
 }) => {
   const { tenantId, allowedDimensions } = useAuth();
@@ -35,26 +37,41 @@ const DimensionCreateSelector = ({
     ],
     [codes, selectedIds],
   );
-  const allSelected = codes.length > 0 && codes.every((code) => selected.includes(code));
-  const selectedValue = allSelected ? ALL_DIMENSIONS : selected[0] || tenantId || codes[0] || "";
+  const allSelected =
+    allowAll &&
+    codes.length > 0 &&
+    codes.every((code) => selected.includes(code));
+  const selectedValue = allSelected
+    ? ALL_DIMENSIONS
+    : selected[0] || tenantId || codes[0] || "";
 
   useEffect(() => {
     if (!codes.length) return;
     if (!selected.length) {
+      if ((selectedIds || []).filter(Boolean).length) return;
       onChange([tenantId || codes[0]].filter(Boolean));
       return;
     }
-    if (selected.length > 1 && !allSelected) {
+    if (allowAll && selected.length > 1 && !allSelected) {
       onChange(codes);
+      return;
     }
-  }, [allSelected, codes, onChange, selected.length, tenantId]);
+    if (!allowAll && selected.length !== 1) {
+      onChange([selected[0] || tenantId || codes[0]].filter(Boolean));
+    }
+  }, [allSelected, allowAll, codes, onChange, selected, selectedIds, tenantId]);
 
   const handleChange = (event) => {
     const value = event.target.value;
-    onChange(value === ALL_DIMENSIONS ? codes : [value].filter(Boolean));
+    onChange(
+      allowAll && value === ALL_DIMENSIONS ? codes : [value].filter(Boolean),
+    );
   };
 
-  if (options.length <= 1) {
+  if (!options.length) {
+    return null;
+  }
+  if (allowAll && options.length <= 1) {
     return null;
   }
 
@@ -64,14 +81,14 @@ const DimensionCreateSelector = ({
     >
       <div className="grid gap-2 sm:max-w-sm">
         <label className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">
-          Create in dimensions
+          {label || (allowAll ? "Create in dimensions" : "Dimension")}
         </label>
         <select
           className={selectClassName}
           value={selectedValue}
           onChange={handleChange}
         >
-          <option value={ALL_DIMENSIONS}>All</option>
+          {allowAll ? <option value={ALL_DIMENSIONS}>All</option> : null}
           {options.map((dimension) => (
             <option key={dimension.code} value={dimension.code}>
               {dimension.name || dimension.code}

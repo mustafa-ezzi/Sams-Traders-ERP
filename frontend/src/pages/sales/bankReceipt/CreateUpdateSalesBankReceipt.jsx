@@ -449,11 +449,29 @@ const CreateUpdateSalesBankReceipt = () => {
                     ? option.id === line.partyOpeningBalanceId
                     : option.id === line.salesInvoiceId,
                 );
-                const actualPayment = selectedOption
+                const allocatedOnOtherLines = lines.reduce((sum, other, otherIndex) => {
+                  if (otherIndex === index) return sum;
+                  if (line.receiptAgainst === "OPENING_BALANCE") {
+                    if (other.partyOpeningBalanceId !== line.partyOpeningBalanceId) {
+                      return sum;
+                    }
+                  } else if (
+                    other.salesInvoiceId !== line.salesInvoiceId ||
+                    other.tenantId !== line.tenantId
+                  ) {
+                    return sum;
+                  }
+                  return sum + toNumber(other.amount);
+                }, 0);
+                const rawOutstanding = selectedOption
                   ? line.receiptAgainst === "OPENING_BALANCE"
                     ? toNumber(selectedOption.balance_amount)
                     : balanceForDimension(selectedOption, line.tenantId)
                   : null;
+                const actualPayment =
+                  rawOutstanding == null
+                    ? null
+                    : Math.max(0, rawOutstanding - allocatedOnOtherLines);
                 const remainingPayment =
                   actualPayment == null
                     ? null

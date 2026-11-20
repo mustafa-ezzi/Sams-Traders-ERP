@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import rawMaterialService from "../../../api/services/rawMaterialService";
@@ -62,15 +62,18 @@ const mapRawMaterialToForm = (row = {}, { asCopy = false } = {}) => ({
 });
 const CreateUpdateRawMaterial = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const duplicateId = searchParams.get("duplicate") || "";
   const isEdit = Boolean(id);
   const isDuplicate = Boolean(!isEdit && duplicateId);
   const { tenantId } = useAuth();
+  const routeTenantId = location.state?.tenantId || "";
   const [createDimensionIds, setCreateDimensionIds] = useState(() =>
     tenantId ? [tenantId] : [],
   );
+  const [recordTenantId, setRecordTenantId] = useState(routeTenantId);
   const [loadingOptions, setLoadingOptions] = useState(false);
   const [loadingRecord, setLoadingRecord] = useState(false);
   const [brands, setBrands] = useState([]);
@@ -127,6 +130,12 @@ const CreateUpdateRawMaterial = () => {
       .getById(sourceId)
       .then((row) => {
         form.reset(mapRawMaterialToForm(row, { asCopy: isDuplicate }));
+        if (row?.tenant_id) {
+          setRecordTenantId(row.tenant_id);
+          if (!isEdit) {
+            setCreateDimensionIds([row.tenant_id]);
+          }
+        }
       })
       .catch(() =>
         toast.error(
@@ -155,7 +164,15 @@ const CreateUpdateRawMaterial = () => {
   const onSubmit = form.handleSubmit(async (values) => {
     try {
       if (isEdit) {
-        await rawMaterialService.update(id, values);
+        if (!recordTenantId) {
+          toast.error("Select a dimension for this raw material.");
+          return;
+        }
+        await rawMaterialService.update(
+          id,
+          { ...values, tenant_id: recordTenantId },
+          recordTenantId,
+        );
         toast.success("Raw material updated");
       } else {
         if (!createDimensionIds.length) {
@@ -217,12 +234,26 @@ const CreateUpdateRawMaterial = () => {
           </div>
         ) : (
           <form className="grid gap-4 xl:grid-cols-3" onSubmit={onSubmit}>
-            {!isEdit && (
-              <DimensionCreateSelector
-                selectedIds={createDimensionIds}
-                onChange={setCreateDimensionIds}
-              />
-            )}
+            <DimensionCreateSelector
+              selectedIds={
+                isEdit ? [recordTenantId].filter(Boolean) : createDimensionIds
+              }
+              allowAll={!isEdit}
+              label={isEdit ? "Dimension" : undefined}
+              hint={
+                isEdit
+                  ? "This raw material is saved in the selected company."
+                  : undefined
+              }
+              onChange={(nextIds) => {
+                if (isEdit) {
+                  const nextTenantId = nextIds[0] || "";
+                  if (nextTenantId) setRecordTenantId(nextTenantId);
+                  return;
+                }
+                setCreateDimensionIds(nextIds);
+              }}
+            />
             <FormInput
               label="Raw Material Name"
               required
