@@ -243,7 +243,7 @@ const CreateUpdateRawMaterial = () => {
               hint={
                 isEdit
                   ? "This raw material is saved in the selected company."
-                  : undefined
+                  : "Every raw material must belong to a company. A separate copy is created in each selected dimension."
               }
               onChange={(nextIds) => {
                 if (isEdit) {

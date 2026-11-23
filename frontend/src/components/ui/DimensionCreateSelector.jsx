@@ -71,9 +71,6 @@ const DimensionCreateSelector = ({
   if (!options.length) {
     return null;
   }
-  if (allowAll && options.length <= 1) {
-    return null;
-  }
 
   return (
     <div

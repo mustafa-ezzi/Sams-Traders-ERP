@@ -556,6 +556,49 @@ class ProductCoaDefaultsTests(TestCase):
         self.assertEqual(updated.cogs_account.tenant_id, "SE__CHEMICAL")
         self.assertEqual(updated.revenue_account.tenant_id, "SE__CHEMICAL")
 
+    def test_product_create_rejects_blank_dimension(self):
+        self.user.tenant_id = ""
+        self.user.save(update_fields=["tenant_id"])
+        serializer = ProductSerializer(
+            data={
+                "name": "No Dimension Product",
+                "product_type": "FINISHED_GOOD",
+                "direct_price": "10.00",
+                "tenant_id": "",
+                "unit": self.unit.id,
+                "inventory_account": self.inventory_account.id,
+                "cogs_account": self.cogs_account.id,
+                "revenue_account": self.revenue_account.id,
+                "materials": [],
+            },
+            context={
+                "request": SimpleNamespace(user=self.user, tenant_id="")
+            },
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("tenant_id", serializer.errors)
+
+    def test_product_create_uses_selected_dimension(self):
+        serializer = ProductSerializer(
+            data={
+                "name": "Dimensioned Product",
+                "product_type": "FINISHED_GOOD",
+                "direct_price": "10.00",
+                "tenant_id": self.tenant_id,
+                "unit": self.unit.id,
+                "inventory_account": self.inventory_account.id,
+                "cogs_account": self.cogs_account.id,
+                "revenue_account": self.revenue_account.id,
+                "materials": [],
+            },
+            context={"request": SimpleNamespace(user=self.user)},
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        product = serializer.save()
+        self.assertEqual(product.tenant_id, self.tenant_id)
+
     def test_category_duplicate_name_returns_validation_error_across_owned_dimensions(self):
         other_dimension = Dimension.objects.create(
             code="OTHER_TENANT",
@@ -946,3 +989,22 @@ class RawMaterialDropdownOptionsTests(TestCase):
         self.assertTrue(serializer.is_valid(), serializer.errors)
         updated = serializer.save()
         self.assertEqual(updated.tenant_id, self.sams_tenant)
+
+    def test_raw_material_create_rejects_blank_dimension(self):
+        self.user.tenant_id = ""
+        self.user.save(update_fields=["tenant_id"])
+        serializer = RawMaterialSerializer(
+            data={
+                "name": "No Dimension Yarn",
+                "brand": self.am_brand.id,
+                "category": self.am_category.id,
+                "purchase_unit": self.am_unit.id,
+                "purchase_price": "0.00",
+                "tenant_id": "",
+            },
+            context={
+                "request": SimpleNamespace(user=self.user, tenant_id="")
+            },
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("tenant_id", serializer.errors)

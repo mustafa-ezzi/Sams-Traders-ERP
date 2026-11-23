@@ -18,6 +18,13 @@ export const createAcrossDimensions = async (requestFactory, tenantIds = null) =
     ? explicitTargets
     : [localStorage.getItem("tenantId") || ""].filter(Boolean);
   const filteredTargets = [...new Set(targets.filter(Boolean))];
+  if (!filteredTargets.length) {
+    const error = new Error("Select at least one dimension.");
+    error.response = {
+      data: { tenant_id: ["Select at least one dimension."] },
+    };
+    throw error;
+  }
 
   const successes = [];
   const failures = [];

@@ -450,6 +450,10 @@ const ProductFormPage = () => {
       };
 
       if (isEditing) {
+        if (!productTenantId) {
+          toast.error("Select a dimension for this product.");
+          return;
+        }
         await productService.update(id, payload, productTenantId);
         toast.success("Product updated");
       } else {
@@ -503,7 +507,7 @@ const ProductFormPage = () => {
               hint={
                 isEditing
                   ? "This product is saved in the selected company. Assembly components must belong to the same dimension."
-                  : undefined
+                  : "Every product must belong to a company. A separate copy is created in each selected dimension."
               }
               onChange={(nextIds) => {
                 if (isEditing) {

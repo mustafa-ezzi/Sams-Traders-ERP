@@ -299,7 +299,7 @@ class RawMaterialViewSet(UnpaginatedOptionsMixin, ModelViewSet):
         tenant_ids = queryset_tenant_ids(self.request, getattr(self, "action", ""))
         qs = RawMaterial.objects.filter(
             tenant_id__in=tenant_ids, deleted_at__isnull=True
-        ).select_related("brand", "category", "purchase_unit")
+        ).exclude(tenant_id="").select_related("brand", "category", "purchase_unit")
         qs = qs.annotate(
             quantity=Coalesce(
                 Sum(
@@ -335,6 +335,7 @@ class RawMaterialViewSet(UnpaginatedOptionsMixin, ModelViewSet):
                 tenant_id__in=tenant_ids,
                 deleted_at__isnull=True,
             )
+            .exclude(tenant_id="")
             .select_related("brand", "category", "purchase_unit")
             .order_by(*self.option_ordering)
         )
@@ -346,7 +347,15 @@ class RawMaterialViewSet(UnpaginatedOptionsMixin, ModelViewSet):
         return Response({"data": serializer.data})
 
     def perform_create(self, serializer):
-        serializer.save(tenant_id=self.request.user.tenant_id)
+        tenant_id = str(
+            serializer.validated_data.get("tenant_id")
+            or getattr(self.request, "tenant_id", None)
+            or getattr(self.request.user, "tenant_id", "")
+            or ""
+        ).strip()
+        if not tenant_id:
+            raise DRFValidationError({"tenant_id": "Select a dimension."})
+        serializer.save(tenant_id=tenant_id)
 
     def _map_raw_material_integrity_error(self, exc):
         message = str(exc).lower()
@@ -462,7 +471,7 @@ class ProductViewSet(UnpaginatedOptionsMixin, viewsets.ModelViewSet):
         ).values("total_value")[:1]
         qs = Product.objects.filter(
             tenant_id__in=tenant_ids, deleted_at__isnull=True
-        ).select_related("brand", "unit").prefetch_related(
+        ).exclude(tenant_id="").select_related("brand", "unit").prefetch_related(
             Prefetch("materials", queryset=active_materials)
         )
         product_type = self.request.query_params.get("product_type", "").strip()

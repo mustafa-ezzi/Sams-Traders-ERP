@@ -45,9 +45,15 @@ const productService = {
   async create(payload, tenantIds) {
     const { response, isMulti, tenantIds: targets } = await createAcrossDimensions(
       (tenantId) =>
-        axiosInstance.post("/inventory/products/", payload, {
-          headers: tenantId ? { "x-tenant-id": tenantId } : {},
-        }),
+        axiosInstance.post(
+          "/inventory/products/",
+          { ...payload, tenant_id: tenantId },
+          {
+            headers: tenantId
+              ? { "x-tenant-id": tenantId, "x-tenant-ids": tenantId }
+              : {},
+          },
+        ),
       tenantIds,
     );
     return {

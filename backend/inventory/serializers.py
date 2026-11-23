@@ -350,6 +350,24 @@ def get_request_user_dimension_codes(request):
     return tenant_ids
 
 
+class InjectRequestTenantMixin:
+    """Fill tenant_id from the request header when the client omits it on create."""
+
+    def to_internal_value(self, data):
+        tenant_id = data.get("tenant_id") if hasattr(data, "get") else None
+        if not str(tenant_id or "").strip():
+            request = self.context.get("request")
+            resolved = resolve_record_tenant_id(
+                request, getattr(self, "instance", None), None
+            )
+            if hasattr(data, "copy"):
+                data = data.copy()
+                data["tenant_id"] = resolved
+            else:
+                data = {**(data or {}), "tenant_id": resolved}
+        return super().to_internal_value(data)
+
+
 def resolve_record_tenant_id(request, instance=None, requested=None):
     allowed = get_request_user_dimension_codes(request)
     candidate = str(requested or "").strip()
@@ -598,7 +616,7 @@ class ProductMaterialSerializer(serializers.ModelSerializer):
         return data
 
 
-class ProductSerializer(serializers.ModelSerializer):
+class ProductSerializer(InjectRequestTenantMixin, serializers.ModelSerializer):
     quantity = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
     materials = ProductMaterialSerializer(many=True, required=False)
     tenant_name = serializers.SerializerMethodField()
@@ -633,7 +651,8 @@ class ProductSerializer(serializers.ModelSerializer):
             "materials",
         ]
         read_only_fields = ["tenant_name"]
-        extra_kwargs = {"tenant_id": {"required": False}}
+        extra_kwargs = {"tenant_id": {"required": False, "allow_blank": False}}
+        validators = []
 
     def get_tenant_name(self, obj):
         if not hasattr(self, "_dimension_name_cache"):
@@ -996,14 +1015,22 @@ class ProductSerializer(serializers.ModelSerializer):
         )
 
         data["product_type"] = normalized_product_type
+        data["tenant_id"] = tenant_id
         return data
 
     def create(self, validated_data):
         materials_data = validated_data.pop("materials", [])
         request = self.context["request"]
-        tenant_id = validated_data.pop("tenant_id", None) or getattr(
-            request, "tenant_id", None
-        ) or request.user.tenant_id
+        tenant_id = str(
+            validated_data.pop("tenant_id", None)
+            or getattr(request, "tenant_id", None)
+            or getattr(request.user, "tenant_id", "")
+            or ""
+        ).strip()
+        if not tenant_id:
+            raise serializers.ValidationError(
+                {"tenant_id": "Select a dimension."}
+            )
         if not validated_data.get("sku"):
             validated_data["sku"] = self._generate_next_sku(tenant_id)
 
@@ -1050,7 +1077,13 @@ class ProductSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         materials_data = validated_data.pop("materials", [])
         old_tenant = instance.tenant_id
-        tenant_id = validated_data.pop("tenant_id", instance.tenant_id)
+        tenant_id = str(
+            validated_data.pop("tenant_id", instance.tenant_id) or ""
+        ).strip()
+        if not tenant_id:
+            raise serializers.ValidationError(
+                {"tenant_id": "Select a dimension."}
+            )
         instance.tenant_id = tenant_id
 
         ProductMaterial.objects.filter(
@@ -1275,7 +1308,7 @@ class OpeningStockDetailedSerializer(serializers.Serializer):
     name = serializers.CharField()
 
 
-class RawMaterialSerializer(serializers.ModelSerializer):
+class RawMaterialSerializer(InjectRequestTenantMixin, serializers.ModelSerializer):
     class Meta:
         model = RawMaterial
         fields = "__all__"
@@ -1283,9 +1316,10 @@ class RawMaterialSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             "selling_unit": {"required": False},
             "selling_price": {"required": False},
-            "tenant_id": {"required": False},
+            "tenant_id": {"required": False, "allow_blank": False},
             "name": {"validators": []},
         }
+        validators = []
 
     def validate_name(self, value):
         name = str(value or "").strip()
