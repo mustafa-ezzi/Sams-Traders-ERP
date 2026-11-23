@@ -251,6 +251,43 @@ class SalesBankReceiptTests(TestCase):
         self.assertFalse(serializer.is_valid())
         self.assertIn("lines", serializer.errors)
 
+    def test_receipt_number_uses_next_unused_value_not_row_count(self):
+        SalesBankReceipt.objects.create(
+            tenant_id=self.tenant_id,
+            receipt_number="SBR-00001",
+            date="2026-04-20",
+            amount=Decimal("10.00"),
+        )
+        SalesBankReceipt.objects.create(
+            tenant_id=self.tenant_id,
+            receipt_number="SBR-00171",
+            date="2026-04-20",
+            amount=Decimal("10.00"),
+        )
+
+        serializer = SalesBankReceiptSerializer(
+            data={
+                "date": "2026-04-20",
+                "remarks": "RCT new",
+                "lines": [
+                    {
+                        "customer_id": str(self.customer.id),
+                        "receipt_against": "INVOICE",
+                        "sales_invoice_id": str(self.invoice.id),
+                        "tenant_id": self.tenant_id,
+                        "bank_account_id": str(self.bank_account.id),
+                        "amount": "50.00",
+                    }
+                ],
+            },
+            context={"request": self._get_request()},
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        receipt = serializer.save()
+        self.assertEqual(receipt.receipt_number, "SBR-00172")
+        self.assertEqual(receipt.tenant_id, self.tenant_id)
+
 
 class SalesInvoiceSerializerTests(TestCase):
     def setUp(self):

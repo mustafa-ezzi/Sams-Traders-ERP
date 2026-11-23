@@ -517,7 +517,7 @@ const PartyLedgerReportsPage = () => {
                               }
                               title="Open document"
                             >
-                              {row.id}
+                            {row.id}
                             </ReportLink>
                           </td>
                           <td className="px-4 py-3 text-slate-600">

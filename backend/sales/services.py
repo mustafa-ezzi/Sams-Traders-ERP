@@ -211,8 +211,8 @@ def get_sales_invoice_financials(
     excluded_receipt_ids = excluded_receipt_ids or []
 
     returns_qs = SalesReturn.objects.filter(
-        sales_invoice=sales_invoice,
-        deleted_at__isnull=True,
+            sales_invoice=sales_invoice,
+            deleted_at__isnull=True,
     )
     if as_of_date is not None:
         returns_qs = returns_qs.filter(date__lte=as_of_date)
@@ -264,7 +264,7 @@ def get_sales_invoice_financials(
         line_returned = (
             SalesReturnLine.objects.filter(
                 sales_return__in=returns_qs,
-                deleted_at__isnull=True,
+            deleted_at__isnull=True,
             ).aggregate(total=Sum("amount"))["total"]
             or Decimal("0.00")
         )
@@ -273,11 +273,11 @@ def get_sales_invoice_financials(
         else:
             returned_amount = (
                 returns_qs.aggregate(total=Sum("gross_amount"))["total"]
-                or Decimal("0.00")
-            )
+        or Decimal("0.00")
+    )
 
         received_amount = _direct_received_for_invoice(receipts_qs)
-        net_amount = quantize_money(sales_invoice.net_amount or Decimal("0.00"))
+    net_amount = quantize_money(sales_invoice.net_amount or Decimal("0.00"))
 
     if include_unallocated:
         received_amount += get_fifo_unallocated_receipt_share(
@@ -311,9 +311,9 @@ def get_customer_opening_balance_financials(
 
     opening_amount = quantize_money(opening_balance.amount or Decimal("0.00"))
     receipts_qs = SalesBankReceiptLine.objects.filter(
-        party_opening_balance=opening_balance,
-        deleted_at__isnull=True,
-        receipt__deleted_at__isnull=True,
+            party_opening_balance=opening_balance,
+            deleted_at__isnull=True,
+            receipt__deleted_at__isnull=True,
     ).exclude(receipt_id__in=excluded_receipt_ids)
     if as_of_date is not None:
         receipts_qs = receipts_qs.filter(receipt__date__lte=as_of_date)

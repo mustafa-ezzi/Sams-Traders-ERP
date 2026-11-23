@@ -1,7 +1,7 @@
 import re
 from decimal import Decimal
 
-from django.db import models, transaction
+from django.db import IntegrityError, models, transaction
 from django.utils.timezone import now
 from rest_framework import serializers
 
@@ -1619,8 +1619,25 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
         return attrs
 
     def _generate_receipt_number(self, tenant_id):
-        count = SalesBankReceipt.objects.filter(tenant_id=tenant_id).count() + 1
-        return f"SBR-{count:05d}"
+        prefix = "SBR-"
+        numbers = []
+        for receipt_number in SalesBankReceipt.objects.filter(
+            tenant_id=tenant_id,
+            receipt_number__startswith=prefix,
+        ).values_list("receipt_number", flat=True):
+            match = re.fullmatch(r"SBR-(\d+)", receipt_number or "")
+            if match:
+                numbers.append(int(match.group(1)))
+
+        next_number = (max(numbers) + 1) if numbers else 1
+        while True:
+            candidate = f"{prefix}{next_number:05d}"
+            if not SalesBankReceipt.objects.filter(
+                tenant_id=tenant_id,
+                receipt_number=candidate,
+            ).exists():
+                return candidate
+            next_number += 1
 
     def _create_lines(self, receipt, lines_data):
         for line_data in lines_data:
@@ -1633,13 +1650,30 @@ class SalesBankReceiptSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         lines_data = validated_data.pop("lines")
         tenant_id = lines_data[0]["tenant_id"]
-        receipt = SalesBankReceipt.objects.create(
-            tenant_id=tenant_id,
-            receipt_number=self._generate_receipt_number(tenant_id),
-            **validated_data,
-        )
-        self._create_lines(receipt, lines_data)
-        return receipt
+        last_error = None
+        for _ in range(8):
+            try:
+                with transaction.atomic():
+                    receipt = SalesBankReceipt.objects.create(
+                        tenant_id=tenant_id,
+                        receipt_number=self._generate_receipt_number(tenant_id),
+                        **validated_data,
+                    )
+                    self._create_lines(receipt, lines_data)
+                    return receipt
+            except IntegrityError as exc:
+                message = str(exc).lower()
+                if "unique_active_sales_bank_receipt_number_per_tenant" not in message:
+                    raise
+                last_error = exc
+                continue
+        raise serializers.ValidationError(
+            {
+                "receipt_number": (
+                    "Could not allocate a unique receipt number. Try again."
+                )
+            }
+        ) from last_error
 
     @transaction.atomic
     def update(self, instance, validated_data):
