@@ -334,16 +334,68 @@ def get_customer_opening_balance_financials(
     }
 
 
+def _invoice_dimension_share(sales_invoice, tenant_id):
+    """
+    Share of invoice gross belonging to a dimension (line tenant_id).
+    Returns 1 when tenant_id is omitted. Returns 0 when the invoice has no
+    lines in that dimension (unless the header tenant matches and there are
+    no lines to split).
+    """
+    if not tenant_id:
+        return Decimal("1")
+
+    line_totals = (
+        SalesInvoiceLine.objects.filter(
+            invoice=sales_invoice,
+            deleted_at__isnull=True,
+        )
+        .values("tenant_id")
+        .annotate(total=Sum("total_amount"))
+    )
+    totals_by_tenant = {
+        row["tenant_id"]: quantize_money(row["total"] or Decimal("0.00"))
+        for row in line_totals
+    }
+    scoped = totals_by_tenant.get(tenant_id, Decimal("0.00"))
+    all_lines_total = sum(totals_by_tenant.values(), Decimal("0.00"))
+
+    if scoped > Decimal("0.00"):
+        gross = quantize_money(sales_invoice.gross_amount or Decimal("0.00"))
+        base = gross if gross > Decimal("0.00") else all_lines_total
+        if base <= Decimal("0.00"):
+            return Decimal("0.00")
+        return scoped / base
+
+    if sales_invoice.tenant_id == tenant_id and all_lines_total <= Decimal("0.00"):
+        return Decimal("1")
+    return Decimal("0.00")
+
+
 def get_salesman_commission_financials(
     sales_invoice,
     salesman_id=None,
     excluded_payment_ids=None,
+    tenant_id=None,
+    from_date=None,
+    to_date=None,
 ):
-    excluded_payment_ids = excluded_payment_ids or []
+    """
+    Commission earned / paid / pending for a salesman on one invoice.
 
-    sales_commission_amount = Decimal("0.00")
+    Optional tenant_id scopes amounts to one dimension (invoice line share),
+    matching the salesman performance report allocation.
+
+    Optional from_date/to_date scopes *earned* commission to that period.
+    Pending is min(period earned, lifetime unpaid) so already-vouchered
+    amounts are never re-vouchered.
+    """
+    excluded_payment_ids = excluded_payment_ids or []
+    share = _invoice_dimension_share(sales_invoice, tenant_id)
+
+    lifetime_sales = Decimal("0.00")
     if salesman_id is None or str(sales_invoice.salesman_id or "") == str(salesman_id):
-        sales_commission_amount = sales_invoice.salesman_commission_amount or Decimal("0.00")
+        lifetime_sales = sales_invoice.salesman_commission_amount or Decimal("0.00")
+    lifetime_sales = quantize_money(Decimal(lifetime_sales) * share)
 
     recovery_receipts = SalesBankReceiptLine.objects.filter(
         sales_invoice=sales_invoice,
@@ -353,16 +405,43 @@ def get_salesman_commission_financials(
     if salesman_id is not None:
         recovery_receipts = recovery_receipts.filter(salesman_id=salesman_id)
 
-    recovery_commission_amount = (
-        recovery_receipts.aggregate(total=Sum("recovery_commission_amount"))["total"]
-        or Decimal("0.00")
+    lifetime_recovery = quantize_money(
+        Decimal(
+            recovery_receipts.aggregate(total=Sum("recovery_commission_amount"))["total"]
+            or Decimal("0.00")
+        )
+        * share
     )
 
+    period_sales = lifetime_sales
+    if from_date or to_date:
+        invoice_date = sales_invoice.date
+        in_range = True
+        if from_date and invoice_date < from_date:
+            in_range = False
+        if to_date and invoice_date > to_date:
+            in_range = False
+        period_sales = lifetime_sales if in_range else Decimal("0.00")
+
+    period_recovery_qs = recovery_receipts
+    if from_date:
+        period_recovery_qs = period_recovery_qs.filter(receipt__date__gte=from_date)
+    if to_date:
+        period_recovery_qs = period_recovery_qs.filter(receipt__date__lte=to_date)
+    period_recovery = quantize_money(
+        Decimal(
+            period_recovery_qs.aggregate(total=Sum("recovery_commission_amount"))["total"]
+            or Decimal("0.00")
+        )
+        * share
+    )
+
+    paid_tenant_id = tenant_id or sales_invoice.tenant_id
     line_queryset = SalesmanCommissionPaymentLine.objects.filter(
         sales_invoice=sales_invoice,
         deleted_at__isnull=True,
         payment__deleted_at__isnull=True,
-        payment__tenant_id=sales_invoice.tenant_id,
+        payment__tenant_id=paid_tenant_id,
     )
     if salesman_id is not None:
         line_queryset = line_queryset.filter(payment__salesman_id=salesman_id)
@@ -376,7 +455,7 @@ def get_salesman_commission_financials(
         deleted_at__isnull=True,
     ).values_list("payment_id", flat=True)
     header_queryset = SalesmanCommissionPayment.objects.filter(
-        tenant_id=sales_invoice.tenant_id,
+        tenant_id=paid_tenant_id,
         sales_invoice=sales_invoice,
         deleted_at__isnull=True,
     ).exclude(id__in=payments_with_lines)
@@ -390,13 +469,22 @@ def get_salesman_commission_financials(
     )
 
     paid_amount = quantize_money(line_paid + header_paid)
-    sales_commission_amount = quantize_money(sales_commission_amount)
-    recovery_commission_amount = quantize_money(recovery_commission_amount)
-    commission_amount = quantize_money(sales_commission_amount + recovery_commission_amount)
-    pending_amount = max(
-        quantize_money(commission_amount - paid_amount),
+    lifetime_commission = quantize_money(lifetime_sales + lifetime_recovery)
+    lifetime_pending = max(
+        quantize_money(lifetime_commission - paid_amount),
         Decimal("0.00"),
     )
+
+    if from_date or to_date:
+        sales_commission_amount = period_sales
+        recovery_commission_amount = period_recovery
+        commission_amount = quantize_money(period_sales + period_recovery)
+        pending_amount = min(commission_amount, lifetime_pending)
+    else:
+        sales_commission_amount = lifetime_sales
+        recovery_commission_amount = lifetime_recovery
+        commission_amount = lifetime_commission
+        pending_amount = lifetime_pending
 
     return {
         "commission_amount": commission_amount,

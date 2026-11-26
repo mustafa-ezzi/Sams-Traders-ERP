@@ -71,7 +71,11 @@ class SalesmanCommissionPaymentService {
     };
   }
 
-  async getInvoiceOptions(salesmanId, paymentId = "") {
+  async getInvoiceOptions(
+    salesmanId,
+    paymentId = "",
+    { tenantId = "", fromDate = "", toDate = "" } = {},
+  ) {
     if (!salesmanId) {
       return [];
     }
@@ -80,7 +84,13 @@ class SalesmanCommissionPaymentService {
       params: {
         salesman_id: salesmanId,
         payment_id: paymentId || "",
+        ...(tenantId ? { tenant_id: tenantId } : {}),
+        ...(fromDate ? { from_date: fromDate } : {}),
+        ...(toDate ? { to_date: toDate } : {}),
       },
+      headers: tenantId
+        ? { "x-tenant-id": tenantId, "x-tenant-ids": tenantId }
+        : {},
     });
 
     return response.data.data || [];
@@ -94,10 +104,15 @@ class SalesmanCommissionPaymentService {
     };
   }
 
-  async generateFromReport(payload) {
+  async generateFromReport(payload, tenantId = "") {
     const response = await axiosInstance.post(
       `${BASE_URL}generate-from-report/`,
       payload,
+      {
+        headers: tenantId
+          ? { "x-tenant-id": tenantId, "x-tenant-ids": tenantId }
+          : {},
+      },
     );
     const items = response.data.data || [];
     return {

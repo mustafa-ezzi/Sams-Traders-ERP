@@ -1136,6 +1136,85 @@ class SalesmanCommissionPaymentViewSet(AuditedModelMixin, viewsets.ModelViewSet)
             }
         )
 
+    def _parse_optional_date(self, raw_value, field_name):
+        if raw_value in (None, ""):
+            return None
+        try:
+            return date.fromisoformat(str(raw_value)[:10])
+        except ValueError as exc:
+            raise ValidationError(
+                {field_name: "Date must be in YYYY-MM-DD format."}
+            ) from exc
+
+    def _commission_scope(self, request, *, data=None):
+        """Dimension + optional report period for commission voucher options/generate."""
+        source = data if data is not None else request.query_params
+        tenant_id = (
+            source.get("tenant_id")
+            or getattr(request, "tenant_id", None)
+            or getattr(request.user, "tenant_id", None)
+        )
+        allowed = set(get_shared_tenant_ids(request))
+        if tenant_id and tenant_id not in allowed:
+            raise ValidationError({"tenant_id": "Invalid dimension selection."})
+        from_date = self._parse_optional_date(source.get("from_date"), "from_date")
+        to_date = self._parse_optional_date(source.get("to_date"), "to_date")
+        if from_date and to_date and from_date > to_date:
+            raise ValidationError({"from_date": "From date cannot be after to date."})
+        return tenant_id, from_date, to_date
+
+    def _pending_commission_invoices(
+        self,
+        request,
+        salesman_id,
+        *,
+        tenant_id=None,
+        from_date=None,
+        to_date=None,
+        invoice_ids=None,
+        order_by=("-date", "-created_at"),
+    ):
+        shared_filter = get_shared_tenant_filter(request)
+        invoices = SalesInvoice.objects.filter(
+            **shared_filter,
+            deleted_at__isnull=True,
+        )
+        if tenant_id:
+            invoices = invoices.filter(
+                Q(tenant_id=tenant_id)
+                | Q(lines__tenant_id=tenant_id, lines__deleted_at__isnull=True)
+            )
+
+        sales_q = Q(
+            salesman_id=salesman_id,
+            salesman_commission_amount__gt=Decimal("0.00"),
+        )
+        if from_date:
+            sales_q &= Q(date__gte=from_date)
+        if to_date:
+            sales_q &= Q(date__lte=to_date)
+
+        recovery_q = Q(
+            bank_receipt_lines__salesman_id=salesman_id,
+            bank_receipt_lines__recovery_commission_amount__gt=Decimal("0.00"),
+            bank_receipt_lines__deleted_at__isnull=True,
+            bank_receipt_lines__receipt__deleted_at__isnull=True,
+        )
+        if from_date:
+            recovery_q &= Q(bank_receipt_lines__receipt__date__gte=from_date)
+        if to_date:
+            recovery_q &= Q(bank_receipt_lines__receipt__date__lte=to_date)
+
+        invoices = (
+            invoices.filter(sales_q | recovery_q)
+            .distinct()
+            .select_related("customer", "salesman")
+            .order_by(*order_by)
+        )
+        if invoice_ids:
+            invoices = invoices.filter(id__in=invoice_ids)
+        return invoices
+
     @action(detail=False, methods=["get"], url_path="invoice-options")
     def invoice_options(self, request):
         salesman_id = request.query_params.get("salesman_id")
@@ -1146,6 +1225,7 @@ class SalesmanCommissionPaymentViewSet(AuditedModelMixin, viewsets.ModelViewSet)
         if not user_can_access_salesman(request.user, salesman_id):
             raise ValidationError({"salesman_id": "You do not have access to this salesman."})
 
+        tenant_id, from_date, to_date = self._commission_scope(request)
         shared_filter = get_shared_tenant_filter(request)
         current_payment = None
         if payment_id:
@@ -1164,23 +1244,12 @@ class SalesmanCommissionPaymentViewSet(AuditedModelMixin, viewsets.ModelViewSet)
             if not user_can_access_salesman(request.user, current_payment.salesman_id):
                 raise ValidationError({"payment_id": "Salesman commission voucher not found."})
 
-        invoices = (
-            SalesInvoice.objects.filter(
-                **shared_filter,
-                deleted_at__isnull=True,
-            )
-            .filter(
-                Q(salesman_id=salesman_id, salesman_commission_amount__gt=Decimal("0.00"))
-                | Q(
-                    bank_receipt_lines__salesman_id=salesman_id,
-                    bank_receipt_lines__recovery_commission_amount__gt=Decimal("0.00"),
-                    bank_receipt_lines__deleted_at__isnull=True,
-                    bank_receipt_lines__receipt__deleted_at__isnull=True,
-                )
-            )
-            .distinct()
-            .select_related("customer", "salesman")
-            .order_by("-date", "-created_at")
+        invoices = self._pending_commission_invoices(
+            request,
+            salesman_id,
+            tenant_id=tenant_id,
+            from_date=from_date,
+            to_date=to_date,
         )
 
         payload = []
@@ -1190,6 +1259,9 @@ class SalesmanCommissionPaymentViewSet(AuditedModelMixin, viewsets.ModelViewSet)
                 invoice,
                 salesman_id=salesman_id,
                 excluded_payment_ids=excluded_payment_ids,
+                tenant_id=tenant_id,
+                from_date=from_date,
+                to_date=to_date,
             )
             include_current_invoice = (
                 current_payment and current_payment.sales_invoice_id == invoice.id
@@ -1206,6 +1278,7 @@ class SalesmanCommissionPaymentViewSet(AuditedModelMixin, viewsets.ModelViewSet)
                     "commission_amount": str(financials["commission_amount"]),
                     "paid_amount": str(financials["paid_amount"]),
                     "pending_amount": str(financials["pending_amount"]),
+                    "tenant_id": tenant_id or invoice.tenant_id,
                 }
             )
 
@@ -1214,14 +1287,16 @@ class SalesmanCommissionPaymentViewSet(AuditedModelMixin, viewsets.ModelViewSet)
     @action(detail=False, methods=["post"], url_path="generate-from-report")
     def generate_from_report(self, request):
         """
-        Create one salesman commission voucher covering all pending invoices.
-        Only one active voucher per salesman per date is allowed.
+        Create one salesman commission voucher for pending commission in the
+        selected dimension (and optional report period).
+        One active voucher per salesman per dimension per date.
         """
         salesman_id = request.data.get("salesman_id")
         voucher_date = request.data.get("date")
         payment_account_id = request.data.get("payment_account_id") or None
         remarks = (request.data.get("remarks") or "").strip()
         invoice_ids = request.data.get("invoice_ids") or []
+        tenant_id, from_date, to_date = self._commission_scope(request, data=request.data)
 
         if not salesman_id:
             raise ValidationError({"salesman_id": "Salesman is required."})
@@ -1229,8 +1304,9 @@ class SalesmanCommissionPaymentViewSet(AuditedModelMixin, viewsets.ModelViewSet)
             raise ValidationError({"date": "Voucher date is required."})
         if not user_can_access_salesman(request.user, salesman_id):
             raise ValidationError({"salesman_id": "You do not have access to this salesman."})
+        if not tenant_id:
+            raise ValidationError({"tenant_id": "Dimension is required."})
 
-        tenant_id = getattr(request, "tenant_id", None) or request.user.tenant_id
         existing = SalesmanCommissionPayment.objects.filter(
             tenant_id=tenant_id,
             salesman_id=salesman_id,
@@ -1242,32 +1318,25 @@ class SalesmanCommissionPaymentViewSet(AuditedModelMixin, viewsets.ModelViewSet)
                 {
                     "date": (
                         f"Voucher {existing.voucher_number} already exists for this salesman "
-                        f"on {voucher_date}. Only one voucher per salesman per day is allowed."
+                        f"on {voucher_date} in this dimension. "
+                        "Only one voucher per salesman per dimension per day is allowed."
                     )
                 }
             )
 
-        shared_filter = get_shared_tenant_filter(request)
-        invoices = (
-            SalesInvoice.objects.filter(
-                **shared_filter,
-                deleted_at__isnull=True,
-            )
-            .filter(
-                Q(salesman_id=salesman_id, salesman_commission_amount__gt=Decimal("0.00"))
-                | Q(
-                    bank_receipt_lines__salesman_id=salesman_id,
-                    bank_receipt_lines__recovery_commission_amount__gt=Decimal("0.00"),
-                    bank_receipt_lines__deleted_at__isnull=True,
-                    bank_receipt_lines__receipt__deleted_at__isnull=True,
-                )
-            )
-            .distinct()
-            .select_related("customer", "salesman")
-            .order_by("date", "created_at")
+        # Ensure serializer create/uniqueness use this dimension.
+        request.tenant_id = tenant_id
+        request.user.tenant_id = tenant_id
+
+        invoices = self._pending_commission_invoices(
+            request,
+            salesman_id,
+            tenant_id=tenant_id,
+            from_date=from_date,
+            to_date=to_date,
+            invoice_ids=invoice_ids,
+            order_by=("date", "created_at"),
         )
-        if invoice_ids:
-            invoices = invoices.filter(id__in=invoice_ids)
 
         lines = []
         skipped = []
@@ -1275,6 +1344,9 @@ class SalesmanCommissionPaymentViewSet(AuditedModelMixin, viewsets.ModelViewSet)
             financials = get_salesman_commission_financials(
                 invoice,
                 salesman_id=salesman_id,
+                tenant_id=tenant_id,
+                from_date=from_date,
+                to_date=to_date,
             )
             pending = financials["pending_amount"]
             if pending <= Decimal("0.00"):
@@ -1297,19 +1369,36 @@ class SalesmanCommissionPaymentViewSet(AuditedModelMixin, viewsets.ModelViewSet)
             if skipped:
                 raise ValidationError(
                     {
-                        "detail": "No pending commission left to voucher for this salesman.",
+                        "detail": (
+                            "No pending commission left to voucher for this salesman "
+                            "in this dimension."
+                        ),
                         "skipped": skipped,
                     }
                 )
             raise ValidationError(
-                {"detail": "No invoices with commission found for this salesman."}
+                {
+                    "detail": (
+                        "No invoices with commission found for this salesman "
+                        "in this dimension."
+                    )
+                }
             )
 
+        period_note = ""
+        if from_date or to_date:
+            period_note = (
+                f" ({from_date.isoformat() if from_date else '…'} to "
+                f"{to_date.isoformat() if to_date else '…'})"
+            )
         payload = {
             "date": voucher_date,
             "salesman_id": salesman_id,
             "remarks": remarks
-            or f"Generated from salesman performance report ({len(lines)} invoices)",
+            or (
+                f"Generated from salesman performance report{period_note} "
+                f"({len(lines)} invoices)"
+            ),
             "payment": str(
                 sum((Decimal(line["amount"]) for line in lines), Decimal("0.00"))
             ),

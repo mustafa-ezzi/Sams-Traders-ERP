@@ -30,6 +30,7 @@ const extractErrorMessage = (error) => {
 
 /**
  * Modal to generate commission vouchers for a salesman from the performance report.
+ * Scoped to the report row's dimension (+ optional period) so AM ≠ Sams totals.
  * Default: accrual to payable (no bank). Optional bank/cash settles immediately.
  */
 const GenerateCommissionVoucherModal = ({
@@ -51,17 +52,23 @@ const GenerateCommissionVoucherModal = ({
   });
 
   const salesmanId = salesman?.salesman_id || "";
+  const tenantId = salesman?.tenant_id || "";
+  const dimensionName = salesman?.dimension_name || tenantId || "";
+  const fromDate = report?.from_date || "";
+  const toDate = report?.to_date || "";
+  const reportPeriodCommission = Number(salesman?.total_commission || 0);
 
   useEffect(() => {
     if (!open) return;
+    const dimensionLabel = dimensionName ? ` · ${dimensionName}` : "";
     setForm({
       date: report?.to_date || new Date().toISOString().slice(0, 10),
       paymentAccountId: "",
       remarks: report
-        ? `Salesman performance ${report.from_date} to ${report.to_date}`
+        ? `Salesman performance ${report.from_date} to ${report.to_date}${dimensionLabel}`
         : "",
     });
-  }, [open, report]);
+  }, [open, report, dimensionName]);
 
   useEffect(() => {
     if (!open) return;
@@ -70,8 +77,12 @@ const GenerateCommissionVoucherModal = ({
       setLoadingOptions(true);
       try {
         const [accountsResponse, options] = await Promise.all([
-          accountService.list(),
-          salesmanCommissionPaymentService.getInvoiceOptions(salesmanId),
+          accountService.list({}, tenantId || ""),
+          salesmanCommissionPaymentService.getInvoiceOptions(salesmanId, "", {
+            tenantId,
+            fromDate,
+            toDate,
+          }),
         ]);
         if (cancelled) return;
         const flatAccounts = flattenAccountTree(
@@ -105,7 +116,7 @@ const GenerateCommissionVoucherModal = ({
     return () => {
       cancelled = true;
     };
-  }, [open, salesmanId, toast]);
+  }, [open, salesmanId, tenantId, fromDate, toDate, toast]);
 
   const pendingInvoices = useMemo(
     () =>
@@ -132,6 +143,10 @@ const GenerateCommissionVoucherModal = ({
       toast.error("Salesman is required");
       return;
     }
+    if (!tenantId) {
+      toast.error("Dimension is required to generate a voucher");
+      return;
+    }
     if (!pendingInvoices.length) {
       toast.error("No pending commission to voucher for this salesman");
       return;
@@ -141,15 +156,21 @@ const GenerateCommissionVoucherModal = ({
     try {
       const payload = {
         salesman_id: salesmanId,
+        tenant_id: tenantId,
         date: form.date,
         remarks: form.remarks,
         invoice_ids: pendingInvoices.map((invoice) => invoice.id),
+        ...(fromDate ? { from_date: fromDate } : {}),
+        ...(toDate ? { to_date: toDate } : {}),
       };
       if (form.paymentAccountId) {
         payload.payment_account_id = form.paymentAccountId;
       }
       const response =
-        await salesmanCommissionPaymentService.generateFromReport(payload);
+        await salesmanCommissionPaymentService.generateFromReport(
+          payload,
+          tenantId,
+        );
       toast.success(response.message);
       onGenerated?.(response.data || []);
       onClose?.();
@@ -173,8 +194,12 @@ const GenerateCommissionVoucherModal = ({
             </h3>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
               {salesman?.code ? `${salesman.code} — ` : ""}
-              {salesman?.name || "Salesman"} · one voucher for all pending
-              invoices (only one voucher per salesman per date).
+              {salesman?.name || "Salesman"}
+              {dimensionName ? ` · ${dimensionName}` : ""}
+              {" · "}
+              one voucher for pending commission in this dimension
+              {fromDate && toDate ? ` (${fromDate} to ${toDate})` : ""}
+              .
             </p>
           </div>
           <Button type="button" variant="secondary" onClick={onClose}>
@@ -213,10 +238,29 @@ const GenerateCommissionVoucherModal = ({
             }
           />
 
+          {reportPeriodCommission > 0 ? (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm dark:border-slate-700 dark:bg-slate-800/60">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-slate-600 dark:text-slate-300">
+                  Report period commission
+                  {dimensionName ? ` (${dimensionName})` : ""}
+                </span>
+                <span className="font-semibold text-slate-800 dark:text-slate-100">
+                  {formatDecimal(reportPeriodCommission)}
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                Voucher total is unpaid commission for this dimension in the
+                report period (already-vouchered amounts are excluded).
+              </p>
+            </div>
+          ) : null}
+
           <div className="rounded-2xl border border-slate-200 dark:border-slate-700">
             <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
               <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
                 Pending invoices
+                {dimensionName ? ` · ${dimensionName}` : ""}
               </p>
               <p className="text-sm font-bold text-indigo-600 dark:text-indigo-300">
                 Total {formatDecimal(totalPending)}
@@ -253,7 +297,8 @@ const GenerateCommissionVoucherModal = ({
               </div>
             ) : (
               <p className="px-4 py-6 text-sm text-slate-500">
-                No pending commission left for this salesman.
+                No pending commission left for this salesman
+                {dimensionName ? ` in ${dimensionName}` : ""}.
               </p>
             )}
           </div>

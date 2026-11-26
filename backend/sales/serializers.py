@@ -1963,10 +1963,14 @@ class SalesmanCommissionPaymentSerializer(serializers.ModelSerializer):
                     # still allow when commission pending exists for this salesman.
                     pass
                 excluded_ids = [self.instance.id] if self.instance else []
+                scope_tenant = (
+                    getattr(request, "tenant_id", None) or request.user.tenant_id
+                )
                 financials = get_salesman_commission_financials(
                     sales_invoice,
                     salesman_id=salesman_id,
                     excluded_payment_ids=excluded_ids,
+                    tenant_id=scope_tenant,
                 )
                 if amount > financials["pending_amount"]:
                     raise serializers.ValidationError(
@@ -2005,10 +2009,12 @@ class SalesmanCommissionPaymentSerializer(serializers.ModelSerializer):
 
         payment = attrs.get("payment", getattr(self.instance, "payment", Decimal("0.00")))
         excluded_ids = [self.instance.id] if self.instance else []
+        scope_tenant = getattr(request, "tenant_id", None) or request.user.tenant_id
         financials = get_salesman_commission_financials(
             sales_invoice,
             salesman_id=salesman_id,
             excluded_payment_ids=excluded_ids,
+            tenant_id=scope_tenant,
         )
         if payment > financials["pending_amount"]:
             raise serializers.ValidationError(
@@ -2033,10 +2039,11 @@ class SalesmanCommissionPaymentSerializer(serializers.ModelSerializer):
 
     def _resolve_payable_account(self):
         request = self.context["request"]
-        tenant_ids = get_user_active_dimension_codes(request.user)
         current = getattr(request, "tenant_id", "") or request.user.tenant_id
-        if current and current not in tenant_ids:
-            tenant_ids.append(current)
+        tenant_ids = [current] if current else []
+        for code in get_user_active_dimension_codes(request.user):
+            if code not in tenant_ids:
+                tenant_ids.append(code)
         return resolve_default_payable_account(tenant_ids)
 
     def _replace_lines(self, payment, resolved_lines):
@@ -2051,7 +2058,8 @@ class SalesmanCommissionPaymentSerializer(serializers.ModelSerializer):
 
     @transaction.atomic
     def create(self, validated_data):
-        tenant_id = self.context["request"].user.tenant_id
+        request = self.context["request"]
+        tenant_id = getattr(request, "tenant_id", None) or request.user.tenant_id
         salesman_id = validated_data.pop("salesman_id")
         sales_invoice_id = validated_data.pop("sales_invoice_id", None)
         payment_account_id = validated_data.pop("payment_account_id", None)

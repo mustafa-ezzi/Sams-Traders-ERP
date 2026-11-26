@@ -279,6 +279,11 @@ const SalesmanReportsPage = () => {
             variant="secondary"
             className="cl-no-print whitespace-nowrap !px-3 !py-1.5 text-xs"
             onClick={() => setVoucherSalesman(row)}
+            title={
+              row.dimension_name
+                ? `Generate voucher for ${row.dimension_name}`
+                : "Generate voucher"
+            }
           >
             Generate Voucher
           </Button>
