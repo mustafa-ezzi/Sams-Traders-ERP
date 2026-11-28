@@ -212,7 +212,12 @@ const GetAllSalesmanCommissionPayment = () => {
                     <th className="px-4 py-3">Paid From</th>
                     <th className="px-4 py-3">Amount</th>
                     <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3">Pending After</th>
+                    <th
+                      className="px-4 py-3"
+                      title="Commission still left on these invoices that is not covered by this voucher"
+                    >
+                      Still Pending
+                    </th>
                     <th className="px-4 py-3">Actions</th>
                   </tr>
                 </thead>
@@ -256,7 +261,10 @@ const GetAllSalesmanCommissionPayment = () => {
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-3 font-semibold text-blue-600 dark:text-blue-400">
+                      <td
+                        className="px-4 py-3 font-semibold text-blue-600 dark:text-blue-400"
+                        title="Not covered by this voucher — still left to voucher later"
+                      >
                         {formatDecimal(record.commissionPendingAmount)}
                       </td>
                       <td className="px-4 py-3">

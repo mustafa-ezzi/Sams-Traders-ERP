@@ -66,12 +66,43 @@ const CreateUpdateSalesmanCommissionPayment = () => {
   const [loadedVoucher, setLoadedVoucher] = useState(null);
   const printCancelledRef = useRef(false);
 
+  const voucherLines = useMemo(() => {
+    const lines = Array.isArray(loadedVoucher?.lines) ? loadedVoucher.lines : [];
+    return lines.filter((line) => line && !line.deleted_at);
+  }, [loadedVoucher]);
+
+  const isMultiInvoiceVoucher = editingId && voucherLines.length > 1;
+
   const selectedInvoice = useMemo(
     () =>
       invoiceOptions.find((invoice) => invoice.id === form.salesInvoiceId) ||
       null,
     [form.salesInvoiceId, invoiceOptions],
   );
+
+  const summary = useMemo(() => {
+    if (isMultiInvoiceVoucher && loadedVoucher) {
+      const voucherAmount = toNumber(loadedVoucher.payment);
+      const pendingAfter = toNumber(loadedVoucher.commissionPendingAmount);
+      const alreadyCleared = toNumber(loadedVoucher.commissionPaidAmount);
+      // Total commission on these invoices ≈ already cleared (incl. this voucher) + leftover
+      const commissionTotal = alreadyCleared + pendingAfter;
+      return {
+        commission: commissionTotal,
+        alreadyCleared,
+        pending: pendingAfter,
+        voucherAmount,
+        mode: "voucher",
+      };
+    }
+    return {
+      commission: toNumber(selectedInvoice?.commission_amount),
+      alreadyCleared: toNumber(selectedInvoice?.paid_amount),
+      pending: toNumber(selectedInvoice?.pending_amount),
+      voucherAmount: toNumber(form.payment),
+      mode: "invoice",
+    };
+  }, [isMultiInvoiceVoucher, loadedVoucher, selectedInvoice, form.payment]);
 
   const loadSetupData = async () => {
     try {
@@ -150,8 +181,9 @@ const CreateUpdateSalesmanCommissionPayment = () => {
   }, [allowedDimensions]);
 
   useEffect(() => {
+    if (isMultiInvoiceVoucher) return;
     loadInvoiceOptions(form.salesmanId, editingId);
-  }, [form.salesmanId, editingId]);
+  }, [form.salesmanId, editingId, isMultiInvoiceVoucher]);
 
   useEffect(() => {
     if (!id) {
@@ -164,8 +196,12 @@ const CreateUpdateSalesmanCommissionPayment = () => {
       try {
         const payment = await salesmanCommissionPaymentService.getById(id);
         if (cancelled) return;
-        await loadInvoiceOptions(payment.salesmanId, payment.id);
-        if (cancelled) return;
+        const lines = Array.isArray(payment.lines) ? payment.lines : [];
+        const multi = lines.length > 1;
+        if (!multi) {
+          await loadInvoiceOptions(payment.salesmanId, payment.id);
+          if (cancelled) return;
+        }
         setLoadedVoucher(payment);
         setForm({
           date: payment.date,
@@ -198,6 +234,7 @@ const CreateUpdateSalesmanCommissionPayment = () => {
   };
 
   const handleSalesmanChange = (salesmanId) => {
+    if (isMultiInvoiceVoucher) return;
     setForm((current) => ({
       ...current,
       salesmanId,
@@ -207,6 +244,7 @@ const CreateUpdateSalesmanCommissionPayment = () => {
   };
 
   const handleInvoiceChange = (salesInvoiceId) => {
+    if (isMultiInvoiceVoucher) return;
     const invoice = invoiceOptions.find((item) => item.id === salesInvoiceId);
     setForm((current) => ({
       ...current,
@@ -216,6 +254,26 @@ const CreateUpdateSalesmanCommissionPayment = () => {
   };
 
   const buildPayload = () => {
+    if (isMultiInvoiceVoucher) {
+      // Keep existing invoice lines; only update header fields.
+      const payload = {
+        date: form.date,
+        salesman_id: form.salesmanId,
+        payment: toNumber(loadedVoucher?.payment ?? form.payment),
+        remarks: form.remarks,
+        lines: voucherLines.map((line) => ({
+          sales_invoice_id: line.sales_invoice?.id || line.sales_invoice_id,
+          amount: toNumber(line.amount),
+        })),
+      };
+      if (form.paymentAccountId) {
+        payload.payment_account_id = form.paymentAccountId;
+      } else {
+        payload.payment_account_id = null;
+      }
+      return payload;
+    }
+
     const payload = {
       date: form.date,
       salesman_id: form.salesmanId,
@@ -239,6 +297,13 @@ const CreateUpdateSalesmanCommissionPayment = () => {
     if (!form.salesmanId) {
       toast.error("Please select a salesman");
       return false;
+    }
+    if (isMultiInvoiceVoucher) {
+      if (!voucherLines.length) {
+        toast.error("This voucher has no invoice lines");
+        return false;
+      }
+      return true;
     }
     if (!form.salesInvoiceId) {
       toast.error("Please select an invoice");
@@ -341,6 +406,13 @@ const CreateUpdateSalesmanCommissionPayment = () => {
             <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
               {title}
             </h2>
+            {isMultiInvoiceVoucher ? (
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                {loadedVoucher?.voucher_number} · {voucherLines.length} invoices
+                · multi-invoice voucher (invoice list is fixed; edit date,
+                remarks, or pay-from only)
+              </p>
+            ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {editingId ? (
@@ -381,31 +453,43 @@ const CreateUpdateSalesmanCommissionPayment = () => {
               }
               placeholder="Search salesman…"
               showAllOptions
+              disabled={isMultiInvoiceVoucher}
             />
 
-            <SearchableSelect
-              label="Selected Salesman's Invoice"
-              required
-              value={form.salesInvoiceId}
-              options={invoiceOptions}
-              onChange={handleInvoiceChange}
-              getOptionLabel={(invoice) =>
-                `${invoice.invoice_number} | Pending ${formatDecimal(invoice.pending_amount)}`
-              }
-              placeholder="Search invoice…"
-              disabled={!form.salesmanId}
-              showAllOptions
-            />
+            {isMultiInvoiceVoucher ? (
+              <FormInput
+                label="Voucher Amount"
+                value={formatDecimal(summary.voucherAmount)}
+                disabled
+                readOnly
+              />
+            ) : (
+              <SearchableSelect
+                label="Selected Salesman's Invoice"
+                required
+                value={form.salesInvoiceId}
+                options={invoiceOptions}
+                onChange={handleInvoiceChange}
+                getOptionLabel={(invoice) =>
+                  `${invoice.invoice_number} | Pending ${formatDecimal(invoice.pending_amount)}`
+                }
+                placeholder="Search invoice…"
+                disabled={!form.salesmanId}
+                showAllOptions
+              />
+            )}
 
-            <FormInput
-              label="Payment *"
-              type="number"
-              min="0.01"
-              step="0.01"
-              required
-              value={form.payment}
-              onChange={(e) => handleChange("payment", e.target.value)}
-            />
+            {isMultiInvoiceVoucher ? null : (
+              <FormInput
+                label="Payment *"
+                type="number"
+                min="0.01"
+                step="0.01"
+                required
+                value={form.payment}
+                onChange={(e) => handleChange("payment", e.target.value)}
+              />
+            )}
 
             <SearchableSelect
               label="Payment Account (optional)"
@@ -427,30 +511,78 @@ const CreateUpdateSalesmanCommissionPayment = () => {
             />
           </div>
 
+          {isMultiInvoiceVoucher ? (
+            <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700">
+              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                  Invoice lines ({voucherLines.length})
+                </p>
+                <p className="text-sm font-bold text-indigo-600 dark:text-indigo-300">
+                  Total {formatDecimal(summary.voucherAmount)}
+                </p>
+              </div>
+              <div className="max-h-72 overflow-y-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500 dark:bg-slate-800/80">
+                    <tr>
+                      <th className="px-4 py-2">Invoice</th>
+                      <th className="px-4 py-2 text-right">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                    {voucherLines.map((line) => (
+                      <tr key={line.id || line.sales_invoice?.id}>
+                        <td className="px-4 py-2 font-medium text-slate-800 dark:text-slate-100">
+                          {line.sales_invoice?.invoice_number || "—"}
+                        </td>
+                        <td className="px-4 py-2 text-right font-semibold text-slate-800 dark:text-slate-100">
+                          {formatDecimal(line.amount)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
+
           <div className="grid gap-3 grid-cols-1 md:grid-cols-3">
             <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 px-4 py-4">
               <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                Commission
+                {summary.mode === "voucher"
+                  ? "Commission on these invoices"
+                  : "Commission"}
               </p>
               <p className="mt-1 text-lg font-bold text-slate-800 dark:text-slate-100">
-                {formatDecimal(selectedInvoice?.commission_amount || 0)}
+                {formatDecimal(summary.commission)}
               </p>
             </div>
             <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 px-4 py-4">
               <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                Already Cleared
+                {summary.mode === "voucher"
+                  ? "Cleared (incl. this voucher)"
+                  : "Already Cleared"}
               </p>
               <p className="mt-1 text-lg font-bold text-slate-800 dark:text-slate-100">
-                {formatDecimal(selectedInvoice?.paid_amount || 0)}
+                {formatDecimal(summary.alreadyCleared)}
               </p>
             </div>
             <div className="rounded-2xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/40 px-4 py-4">
               <p className="text-xs uppercase tracking-wide text-blue-500">
-                Pending Commission
+                {summary.mode === "voucher"
+                  ? "Still Pending"
+                  : "Pending Commission"}
               </p>
               <p className="mt-1 text-xl font-extrabold text-blue-700 dark:text-blue-300">
-                {formatDecimal(selectedInvoice?.pending_amount || 0)}
+                {formatDecimal(summary.pending)}
               </p>
+              {summary.mode === "voucher" ? (
+                <p className="mt-1 text-xs text-blue-600/80 dark:text-blue-300/80">
+                  Not covered by this voucher (
+                  {formatDecimal(summary.voucherAmount)}) — left to voucher
+                  later.
+                </p>
+              ) : null}
             </div>
           </div>
 
